@@ -51,3 +51,4 @@ crates/aios-renderer-web/web-app/pnpm-workspace.yaml
 rust_out
 .gitnexus
 .claude/
+distro/build/aios-rev11-kde*.iso
