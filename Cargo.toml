@@ -29,6 +29,7 @@ members = [
     "crates/aios-terminal",
     "crates/aios-wine",
     "crates/aios-waydroid",
+    "crates/aios-autonomous",
     "crates/aios-ebpf",
     "crates/aios-renderer-voice",
     "crates/aios-hardening",

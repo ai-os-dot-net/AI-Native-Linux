@@ -1,0 +1,38 @@
+[package]
+name = "aios-autonomous"
+description = "AIOS Rev.10 — Autonomous fleet operations, cross-machine healing, distributed cognition."
+edition.workspace = true
+rust-version.workspace = true
+version = "0.1.0"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+aios-action          = { path = "../aios-action" }
+aios-policy          = { path = "../aios-policy" }
+aios-evidence        = { path = "../aios-evidence" }
+aios-fleet           = { path = "../aios-fleet" }
+aios-recovery        = { path = "../aios-recovery" }
+aios-cognitive       = { path = "../aios-cognitive" }
+aios-eval            = { path = "../aios-eval" }
+aios-capability-runtime = { path = "../aios-capability-runtime" }
+aios-sandbox         = { path = "../aios-sandbox" }
+serde                = { workspace = true }
+serde_json           = { workspace = true }
+chrono               = { workspace = true }
+strum                = { workspace = true }
+strum_macros         = { workspace = true }
+thiserror            = { workspace = true }
+ulid                 = { workspace = true }
+blake3               = { workspace = true }
+ed25519-dalek        = { workspace = true }
+tokio                = { workspace = true }
+tracing              = { workspace = true }
+
+[build-dependencies]
+tonic-build         = { workspace = true }
+protoc-bin-vendored = { workspace = true }
+
+[lints]
+workspace = true

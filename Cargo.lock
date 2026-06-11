@@ -91,6 +91,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "aios-autonomous"
+version = "0.1.0"
+dependencies = [
+ "aios-action",
+ "aios-capability-runtime",
+ "aios-cognitive",
+ "aios-eval",
+ "aios-evidence",
+ "aios-fleet",
+ "aios-policy",
+ "aios-recovery",
+ "aios-sandbox",
+ "blake3",
+ "chrono",
+ "ed25519-dalek",
+ "protoc-bin-vendored",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "thiserror 2.0.18",
+ "tokio",
+ "tonic-build",
+ "tracing",
+ "ulid",
+]
+
+[[package]]
 name = "aios-backup"
 version = "0.1.0"
 dependencies = [
