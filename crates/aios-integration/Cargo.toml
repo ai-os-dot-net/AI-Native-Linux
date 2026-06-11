@@ -44,11 +44,16 @@ tokio           = { workspace = true, features = ["rt-multi-thread", "macros", "
 tokio-stream    = { workspace = true }
 chrono          = { workspace = true }
 serde_json      = { workspace = true }
+serde           = { workspace = true }
 ulid            = { workspace = true }
 rand_core       = { workspace = true }
 ed25519-dalek   = { workspace = true }
+base64          = { workspace = true }
+blake3          = { workspace = true }
+strum           = { workspace = true }
 assert_cmd      = "2"
 predicates      = "3"
+# ── Pipeline crates (full pipeline integration tests) ──
 aios-cognitive   = { path = "../aios-cognitive" }
 aios-terminal    = { path = "../aios-terminal" }
 aios-action      = { path = "../aios-action" }
@@ -56,6 +61,19 @@ aios-policy      = { path = "../aios-policy" }
 aios-evidence    = { path = "../aios-evidence" }
 aios-capability-runtime = { path = "../aios-capability-runtime" }
 aios-eval        = { path = "../aios-eval" }
+aios-recovery    = { path = "../aios-recovery" }
+aios-fleet       = { path = "../aios-fleet" }
+aios-autonomous  = { path = "../aios-autonomous" }
+aios-backup      = { path = "../aios-backup" }
+aios-time        = { path = "../aios-time" }
+aios-mobile      = { path = "../aios-mobile" }
+# ── Cross-crate coherence test crates ──
+aios-sandbox     = { path = "../aios-sandbox" }
+aios-hardware    = { path = "../aios-hardware" }
+aios-network     = { path = "../aios-network" }
+aios-container   = { path = "../aios-container" }
+aios-waydroid    = { path = "../aios-waydroid" }
+aios-wine        = { path = "../aios-wine" }
 
 [lints]
 workspace = true

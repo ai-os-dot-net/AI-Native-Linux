@@ -1,0 +1,21 @@
+[Unit]
+Description=AI-OS.NET Autonomous Orchestrator
+Documentation=https://ai-os.net/docs/autonomous
+After=aios-fleet.service aios-cognitive-core.service
+Wants=aios-fleet.service
+
+[Service]
+Type=notify
+ExecStart=/usr/lib/aios/aios-autonomous --orchestrator-mode monitor --config /etc/aios/config.toml
+WatchdogSec=30
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/aios/autonomous /run/aios
+NoNewPrivileges=yes
+SELinuxContext=system_u:system_r:aios_autonomous_t:s0
+
+[Install]
+WantedBy=multi-user.target

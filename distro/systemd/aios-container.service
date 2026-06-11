@@ -1,0 +1,20 @@
+[Unit]
+Description=AI-OS.NET Container Daemon
+Documentation=https://ai-os.net/docs/container
+After=aios-sandbox-composer.service aios-fs-daemon.service
+Requires=aios-sandbox-composer.service
+
+[Service]
+Type=forking
+ExecStart=/usr/lib/aios/aios-container --default-engine podman-rootless --config /etc/aios/config.toml
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/aios/containers /run/aios
+NoNewPrivileges=yes
+SELinuxContext=system_u:system_r:aios_container_t:s0
+
+[Install]
+WantedBy=multi-user.target

@@ -1,12 +1,12 @@
 # =============================================================================
-# AI-OS.NET Root Filesystem Layout — Revision 4
+# AI-OS.NET Root Filesystem Layout — Revision 11
 # =============================================================================
 # Conforms to Linux FHS 3.0 with AIOS-specific additions.
 # SELinux context hints in comments (system_u:object_r:<type>).
 # All directories marked [D], files marked [F], symlinks marked [L].
 # =============================================================================
 # Generated: 2026-06-11
-# Target:     AI-OS.NET REV4 Bootable Distribution
+# Target:     AI-OS.NET REV7-10 Bootable Distribution
 # =============================================================================
 
 /                                          [D]  system_u:object_r:root_t
@@ -39,8 +39,14 @@
 │   │   ├── sealed-key.blob                 [F]  system_u:object_r:aios_etc_t  # TPM2-sealed LUKS key (0o400)
 │   │   ├── verity/                         [D]  system_u:object_r:aios_etc_t
 │   │   │   └── roothash.sig               [F]  system_u:object_r:aios_etc_t  # dm-verity root hash signature
-│   │   └── capsules/                       [D]  system_u:object_r:aios_etc_t
-│   │       └── .gitkeep                    [F]  system_u:object_r:aios_etc_t
+│   │   ├── capsules/                       [D]  system_u:object_r:aios_etc_t
+│   │   │   └── .gitkeep                    [F]  system_u:object_r:aios_etc_t
+│   │   ├── autonomous/                     [D]  system_u:object_r:aios_etc_t  # Autonomous governance constitution
+│   │   ├── fleet/                          [D]  system_u:object_r:aios_etc_t  # Fleet configuration
+│   │   │   └── policies/                   [D]  system_u:object_r:aios_etc_t  # Fleet policy bundles
+│   │   ├── hardening/                      [D]  system_u:object_r:aios_hardening_config_t  # Hardening scanner config
+│   │   │   └── profiles/                   [D]  system_u:object_r:aios_hardening_config_t  # Per-service hardening profiles
+│   │   └── marketplace/                    [D]  system_u:object_r:aios_etc_t  # Marketplace config
 │   │
 │   ├── selinux/                            [D]  system_u:object_r:selinux_config_t
 │   │   ├── config                          [F]  system_u:object_r:selinux_config_t  # SELINUX=enforcing, SELINUXTYPE=aios
@@ -120,10 +126,22 @@
 ├── var/                                    [D]  system_u:object_r:var_t
 │   ├── lib/                                [D]  system_u:object_r:var_lib_t
 │   │   └── aios/                           [D]  system_u:object_r:var_lib_t
-│   │       ├── evidence/                   [D]  system_u:object_r:var_lib_t   # Persistent evidence log (WAL)
-│   │       ├── policy/                     [D]  system_u:object_r:var_lib_t   # Active policy bundles
-│   │       ├── capsules/                   [D]  system_u:object_r:var_lib_t   # Capsule persistent state
+│   │       ├── autonomous/                 [D]  system_u:object_r:aios_autonomous_state_t  # Autonomous orchestrator state
+│   │       │   ├── decisions/              [D]  system_u:object_r:aios_autonomous_state_t  # Autonomous decision records
+│   │       │   └── healing/                [D]  system_u:object_r:aios_autonomous_state_t  # Cross-machine healing state
 │   │       ├── backup/                     [D]  system_u:object_r:var_lib_t   # Local backup staging area
+│   │       ├── capsules/                   [D]  system_u:object_r:var_lib_t   # Capsule persistent state
+│   │       ├── container/                  [D]  system_u:object_r:aios_container_runtime_t  # Container runtime state
+│   │       │   └── passports/              [D]  system_u:object_r:aios_container_runtime_t  # CloudNativePassport store
+│   │       ├── evidence/                   [D]  system_u:object_r:var_lib_t   # Persistent evidence log (WAL)
+│   │       ├── fleet/                      [D]  system_u:object_r:aios_fleet_state_t  # Fleet membership state
+│   │       │   └── clusters/               [D]  system_u:object_r:aios_fleet_state_t  # Cluster configurations
+│   │       ├── marketplace/                [D]  system_u:object_r:aios_marketplace_t  # Marketplace index cache
+│   │       │   ├── listings/               [D]  system_u:object_r:aios_marketplace_t  # Cached capsule listings
+│   │       │   └── publishers/             [D]  system_u:object_r:aios_marketplace_t  # Publisher registry cache
+│   │       ├── policy/                     [D]  system_u:object_r:var_lib_t   # Active policy bundles
+│   │       ├── terminal/                   [D]  system_u:object_r:aios_terminal_state_t  # Terminal session state
+│   │       │   └── sessions/               [D]  system_u:object_r:aios_terminal_state_t  # Active terminal sessions
 │   │       └── vault/                      [D]  system_u:object_r:var_lib_t   # Encrypted vault storage
 │   │
 │   ├── log/                                [D]  system_u:object_r:var_log_t
@@ -137,7 +155,9 @@
 │       ├── capability-runtime.sock         [F]  system_u:object_r:var_run_t   # Unix domain socket
 │       ├── policy-kernel.sock              [F]  system_u:object_r:var_run_t   # Unix domain socket
 │       ├── sandbox.sock                    [F]  system_u:object_r:var_run_t   # Unix domain socket
-│       └── lock/                           [D]  system_u:object_r:var_run_t   # Runtime lock files
+│       ├── lock/                           [D]  system_u:object_r:var_run_t   # Runtime lock files
+│       ├── autonomous/                     [D]  system_u:object_r:var_run_t   # Autonomous runtime state (tmpfs)
+│       └── fleet/                          [D]  system_u:object_r:var_run_t   # Fleet runtime state (tmpfs)
 │
 ├── dev/                                    [D]  system_u:object_r:device_t    # Populated by devtmpfs
 ├── proc/                                   [D]  system_u:object_r:proc_t      # procfs mount point
@@ -160,6 +180,11 @@
 # /var/lib/aios/evidence/.gitkeep         — persistent evidence log genesis marker
 # /var/lib/aios/capsules/.gitkeep         — capsule state genesis marker
 # /var/lib/aios/backup/.gitkeep           — backup staging genesis marker
+# /var/lib/aios/autonomous/.gitkeep       — autonomous orchestrator genesis marker
+# /var/lib/aios/container/.gitkeep        — container runtime genesis marker
+# /var/lib/aios/fleet/.gitkeep            — fleet membership genesis marker
+# /var/lib/aios/marketplace/.gitkeep      — marketplace cache genesis marker
+# /var/lib/aios/terminal/.gitkeep         — terminal state genesis marker
 # /run/aios/.mounted                      — touch file signaling runtime tmpfs is mounted
 #
 # =============================================================================
@@ -175,7 +200,7 @@
 # =============================================================================
 # Directory Count Summary
 # =============================================================================
-# Total directories (excluding symlink targets): 61
+# Total directories (excluding symlink targets): 81
 # Total regular files (placeholder/required):    14 + 25 .so files + service files
 # Symlinks:                                       3 (bin, sbin, lib -> usr variants)
 # =============================================================================

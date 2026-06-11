@@ -1,0 +1,39 @@
+# AI-OS.NET CI Runner Image
+# Debian Bookworm + Rust 1.94 + ISO toolchain
+# Build:   docker build -f distro/build/Dockerfile.ci -t aios-ci:rev4 .
+# Run:     docker run --rm -v "$PWD:/build" aios-ci:rev4 /build/distro/build/ci-build-all.sh
+
+FROM debian:bookworm-slim
+
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV CARGO_HOME=/usr/local/cargo
+ENV PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Rust build essentials
+    curl \
+    build-essential \
+    protobuf-compiler \
+    libclang-dev \
+    pkg-config \
+    libssl-dev \
+    # ISO assembly toolchain
+    xorriso \
+    squashfs-tools \
+    cpio \
+    xz-utils \
+    mtools \
+    systemd-boot \
+    cryptsetup-bin \
+    tpm2-tools \
+    busybox-static \
+    # Utility
+    ca-certificates \
+    git \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+       | sh -s -- -y --default-toolchain 1.94 \
+       --profile minimal \
+       --component clippy rustfmt \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# AI-OS.NET First Boot Wizard — Revision 4
+# AI-OS.NET First Boot Wizard — Revision 11
 # Runs once on first boot after bare-metal installation.
 # Creates AIOS identity, configures security, and prepares the system
 # for normal operation.
@@ -32,6 +32,10 @@ TPM_PERSISTENT_HANDLE="0x81008001"
 RECOVERY_SHARDS_DIR="${AIOS_VAR}/vault/shards"
 SECURITY_PROFILE_FILE="${AIOS_ETC}/security-profile"
 MOBILE_PAIRING_DIR="${AIOS_ETC}/mobile"
+FLEET_DIR="${AIOS_VAR}/fleet"
+AUTONOMOUS_DIR="${AIOS_ETC}/autonomous"
+MARKETPLACE_DIR="${AIOS_VAR}/marketplace"
+CONTAINER_DIR="${AIOS_VAR}/container"
 CONFIG_FILE="/etc/aios/config.toml"
 
 if [[ ! -f "${FIRST_BOOT_FLAG}" ]]; then
@@ -40,7 +44,7 @@ if [[ ! -f "${FIRST_BOOT_FLAG}" ]]; then
 fi
 
 echo "============================================"
-echo "  AI-OS.NET First Boot Wizard -- Revision 4"
+echo "  AI-OS.NET First Boot Wizard -- Revision 11"
 echo "  $(date --iso-8601=seconds)"
 echo "  Host: $(cat /proc/sys/kernel/hostname 2>/dev/null || echo 'unknown')"
 echo "============================================"
@@ -100,6 +104,10 @@ now_rfc3339() {
 # ---------------------------------------------------------------------------
 # Helper: append an evidence record to the genesis log
 # ---------------------------------------------------------------------------
+warn() {
+    echo "  [WARN] $*" >&2
+}
+
 record_evidence() {
     local record_type="$1"
     local evidence_json="$2"
@@ -751,7 +759,12 @@ cat > "${GENESIS_FILE}" <<EOFGEN
     {"type": "BACKUP_CONTRACT_CREATED", "phase": 7},
     {"type": "RECOVERY_SHARDS_CREATED", "phase": 7.5},
     {"type": "MOBILE_PAIRING_CREATED", "phase": 8},
-    {"type": "FIRST_BOOT_COMPLETE", "phase": 10}
+    {"type": "FLEET_MEMBERSHIP_INITIALIZED", "phase": 10},
+    {"type": "AUTONOMOUS_GOVERNANCE_INITIALIZED", "phase": 11},
+    {"type": "MARKETPLACE_INITIALIZED", "phase": 12},
+    {"type": "CONTAINER_RUNTIME_INITIALIZED", "phase": 13},
+    {"type": "SYSTEM_READINESS_CHECKED", "phase": 14},
+    {"type": "FIRST_BOOT_COMPLETE", "phase": 15}
   ]
 }
 EOFGEN
@@ -762,14 +775,270 @@ log_stage "evidence/genesis" "OK" "Genesis block created"
 record_evidence "GENESIS_BLOCK_CREATED" "$(cat <<EOF
 {
   "genesis_id": "gen_${HOST_ID}",
-  "record_count": 10,
+  "record_count": 15,
   "host_id": "${HOST_ID}"
 }
 EOF
 )"
 
 # ---------------------------------------------------------------------------
-# PHASE 10: COMPLETE
+# PHASE 10: INITIALIZE FLEET MEMBERSHIP
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Phase 10: Fleet Membership ---"
+echo ""
+
+mkdir -p "${FLEET_DIR}"
+
+cat > "${FLEET_DIR}/membership.json" <<EOFFLEET
+{
+  "fleet_id": "",
+  "host_id": "${HOST_ID}",
+  "state": "standalone",
+  "coordinator": false,
+  "peers": [],
+  "discovery_enabled": false,
+  "gossip_port": 0,
+  "created_at": "$(now_rfc3339)",
+  "created_by": "_system:service:firstboot-coordinator"
+}
+EOFFLEET
+
+chmod 0644 "${FLEET_DIR}/membership.json"
+log_stage "fleet" "OK" "Fleet membership initialized (standalone)"
+
+record_evidence "FLEET_MEMBERSHIP_INITIALIZED" "$(cat <<EOF
+{
+  "state": "standalone",
+  "coordinator": false,
+  "host_id": "${HOST_ID}"
+}
+EOF
+)"
+
+# ---------------------------------------------------------------------------
+# PHASE 11: INITIALIZE AUTONOMOUS GOVERNANCE
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Phase 11: Autonomous Governance ---"
+echo ""
+
+mkdir -p "${AUTONOMOUS_DIR}"
+
+cat > "${AUTONOMOUS_DIR}/constitution.json" <<EOFCONST
+{
+  "version": "1.0.0",
+  "host_id": "${HOST_ID}",
+  "autonomy_level": "advisory",
+  "orchestrator_mode": "monitor",
+  "max_concurrent_actions": 5,
+  "require_human_approval_for": [
+    "system_configuration",
+    "network_policy_changes",
+    "security_policy_changes"
+  ],
+  "audit_log_retention_days": 90,
+  "created_at": "$(now_rfc3339)",
+  "created_by": "_system:service:firstboot-coordinator"
+}
+EOFCONST
+
+chmod 0644 "${AUTONOMOUS_DIR}/constitution.json"
+log_stage "autonomous" "OK" "Governance constitution initialized (advisory/monitor)"
+
+record_evidence "AUTONOMOUS_GOVERNANCE_INITIALIZED" "$(cat <<EOF
+{
+  "autonomy_level": "advisory",
+  "orchestrator_mode": "monitor",
+  "host_id": "${HOST_ID}"
+}
+EOF
+)"
+
+# ---------------------------------------------------------------------------
+# PHASE 12: INITIALIZE MARKETPLACE
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Phase 12: Marketplace ---"
+echo ""
+
+mkdir -p "${MARKETPLACE_DIR}"
+
+cat > "${MARKETPLACE_DIR}/index.json" <<EOFMARKET
+{
+  "marketplace_id": "aios-${HOST_ID}",
+  "host_id": "${HOST_ID}",
+  "registered_agents": [],
+  "registered_skills": [],
+  "active_listings": 0,
+  "pricing_model": "token",
+  "settlement_mode": "offline",
+  "created_at": "$(now_rfc3339)",
+  "created_by": "_system:service:firstboot-coordinator"
+}
+EOFMARKET
+
+chmod 0644 "${MARKETPLACE_DIR}/index.json"
+log_stage "marketplace" "OK" "Marketplace index initialized (empty)"
+
+record_evidence "MARKETPLACE_INITIALIZED" "$(cat <<EOF
+{
+  "marketplace_id": "aios-${HOST_ID}",
+  "active_listings": 0,
+  "host_id": "${HOST_ID}"
+}
+EOF
+)"
+
+# ---------------------------------------------------------------------------
+# PHASE 13: INITIALIZE CONTAINER RUNTIME
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Phase 13: Container Runtime ---"
+echo ""
+
+mkdir -p "${CONTAINER_DIR}"
+
+CONTAINER_RUNTIME="none"
+if command -v podman &>/dev/null; then
+    CONTAINER_RUNTIME="podman"
+    log_stage "container/runtime" "OK" "Podman detected"
+    PODMAN_VERSION=$(podman --version 2>/dev/null | awk '{print $NF}' || echo "unknown")
+    echo "  Podman version: ${PODMAN_VERSION}"
+elif command -v docker &>/dev/null; then
+    CONTAINER_RUNTIME="docker"
+    log_stage "container/runtime" "WARN" "Docker detected (podman preferred)"
+else
+    log_stage "container/runtime" "WARN" "No container runtime detected -- podman not installed"
+fi
+
+cat > "${CONTAINER_DIR}/config.json" <<EOFCONTAINER
+{
+  "runtime": "${CONTAINER_RUNTIME}",
+  "host_id": "${HOST_ID}",
+  "default_registry": "localhost:5000",
+  "insecure_registries": [],
+  "max_containers": 16,
+  "default_network": "aios-bridge",
+  "storage_driver": "overlay",
+  "created_at": "$(now_rfc3339)",
+  "created_by": "_system:service:firstboot-coordinator"
+}
+EOFCONTAINER
+
+chmod 0644 "${CONTAINER_DIR}/config.json"
+log_stage "container" "OK" "Container runtime config initialized (runtime: ${CONTAINER_RUNTIME})"
+
+record_evidence "CONTAINER_RUNTIME_INITIALIZED" "$(cat <<EOF
+{
+  "runtime": "${CONTAINER_RUNTIME}",
+  "host_id": "${HOST_ID}"
+}
+EOF
+)"
+
+# ---------------------------------------------------------------------------
+# PHASE 14: FINAL SYSTEM READINESS CHECK
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Phase 14: System Readiness Check ---"
+echo ""
+
+READINESS_OK=true
+MISSING_BINARIES=""
+
+echo "  Checking 34-crate binary integrity..."
+echo ""
+
+# Core system crates expected in /usr/lib/aios/ and /usr/bin/aios
+EXPECTED_CRATES=(
+    "aios-core"         "aios-identity"     "aios-evidence"
+    "aios-fleet"        "aios-autonomous"   "aios-marketplace"
+    "aios-container"    "aios-backup"        "aios-recovery"
+    "aios-firewall"     "aios-audit"         "aios-proxy"
+    "aios-dns"          "aios-ntp"           "aios-ca"
+    "aios-tpm"          "aios-verity"        "aios-selinux"
+    "aios-monitor"      "aios-logger"        "aios-metrics"
+    "aios-api"          "aios-gateway"       "aios-scheduler"
+    "aios-storage"      "aios-filesystem"    "aios-network"
+    "aios-crypto"       "aios-keystore"      "aios-certmanager"
+    "aios-bootstrap"    "aios-upgrader"      "aios-telemetry"
+    "aios-runtime"      "aios-first-boot"
+)
+
+CRATE_FOUND=0
+CRATE_MISSING=0
+
+for crate in "${EXPECTED_CRATES[@]}"; do
+    found=false
+    if [[ -f "/usr/lib/aios/${crate}" ]]; then
+        found=true
+        ((CRATE_FOUND++)) || true
+    elif [[ -f "/usr/bin/${crate}" ]]; then
+        found=true
+        ((CRATE_FOUND++)) || true
+    elif [[ -f "/usr/bin/aios-${crate}" ]]; then
+        found=true
+        ((CRATE_FOUND++)) || true
+    fi
+    if [[ "${found}" == "false" ]]; then
+        MISSING_BINARIES+="  ${crate}\n"
+        ((CRATE_MISSING++)) || true
+    fi
+done
+
+TOTAL_CRATES=${#EXPECTED_CRATES[@]}
+echo "  Found:   ${CRATE_FOUND} / ${TOTAL_CRATES}"
+echo "  Missing: ${CRATE_MISSING} / ${TOTAL_CRATES}"
+echo ""
+
+if [[ "${CRATE_MISSING}" -gt 0 ]]; then
+    warn "${CRATE_MISSING} crate binary/binaries missing:"
+    echo -e "${MISSING_BINARIES}"
+    READINESS_OK=false
+fi
+
+# Check that aios binary itself exists
+if ! command -v aios &>/dev/null; then
+    warn "Primary 'aios' CLI binary not found in PATH"
+    READINESS_OK=false
+else
+    echo "  aios CLI: $(command -v aios)"
+    log_stage "readiness/cli" "OK" "aios binary found"
+fi
+
+# Check core systemd services exist (if systemd is present)
+if command -v systemctl &>/dev/null; then
+    REQUIRED_SERVICES=(
+        "aios-core.service"      "aios-fleet.service"
+        "aios-autonomous.service" "aios-marketplace.service"
+        "aios-api.service"       "aios-monitor.service"
+    )
+    for svc in "${REQUIRED_SERVICES[@]}"; do
+        if systemctl list-unit-files "${svc}" &>/dev/null; then
+            log_stage "readiness/${svc}" "OK" "Service unit found"
+        else
+            warn "Service unit '${svc}' not found"
+        fi
+    done
+fi
+
+log_stage "readiness" "$(if ${READINESS_OK}; then echo 'OK'; else echo 'WARN'; fi)" \
+    "${CRATE_FOUND}/${TOTAL_CRATES} crate binaries present"
+
+record_evidence "SYSTEM_READINESS_CHECKED" "$(cat <<EOF
+{
+  "crates_found": ${CRATE_FOUND},
+  "crates_missing": ${CRATE_MISSING},
+  "total_crates": ${TOTAL_CRATES},
+  "readiness_ok": ${READINESS_OK},
+  "host_id": "${HOST_ID}"
+}
+EOF
+)"
+
+# ---------------------------------------------------------------------------
+# PHASE 15: COMPLETE
 # ---------------------------------------------------------------------------
 echo ""
 echo "============================================"

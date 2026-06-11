@@ -1,0 +1,20 @@
+[Unit]
+Description=AI-OS.NET Fleet Coordinator
+Documentation=https://ai-os.net/docs/fleet
+After=aios-capability-runtime.service aios-network-daemon.service
+Wants=aios-capability-runtime.service aios-network-daemon.service
+
+[Service]
+Type=notify
+ExecStart=/usr/lib/aios/aios-fleet --fleet-mode membership --config /etc/aios/config.toml
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/aios/fleet /run/aios
+NoNewPrivileges=yes
+SELinuxContext=system_u:system_r:aios_fleet_t:s0
+
+[Install]
+WantedBy=multi-user.target

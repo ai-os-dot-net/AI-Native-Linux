@@ -1,4 +1,4 @@
-//! `aios-first-boot` — AI-OS.NET First Boot Wizard (Revision 4)
+//! `aios-first-boot` — AI-OS.NET First Boot Wizard (Revision 11)
 //!
 //! Runs once on first boot after bare-metal installation. Creates the AIOS host
 //! identity, configures security, enrolls TPM attestation, creates the recovery
@@ -49,8 +49,8 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[command(
     name = "aios-first-boot",
-    about = "AI-OS.NET First Boot Wizard (Revision 4)",
-    version = "0.2.0"
+    about = "AI-OS.NET First Boot Wizard (Revision 11)",
+    version = "0.3.0"
 )]
 struct Cli {
     /// Path to the AIOS configuration file.
@@ -94,6 +94,10 @@ const BACKUP_DIR: &str = "/etc/aios/backup";
 const EVIDENCE_DIR: &str = "/var/lib/aios/evidence";
 const RECOVERY_SHARDS_DIR: &str = "/var/lib/aios/vault/shards";
 const MOBILE_PAIRING_DIR: &str = "/etc/aios/mobile";
+const FLEET_DIR: &str = "/var/lib/aios/fleet";
+const AUTONOMOUS_DIR: &str = "/etc/aios/autonomous";
+const MARKETPLACE_DIR: &str = "/var/lib/aios/marketplace";
+const CONTAINER_DIR: &str = "/var/lib/aios/container";
 const SUBJECTS_DIR: &str = "/etc/aios/subjects";
 const TPM_DIR: &str = "/etc/aios/tpm";
 const TPM_PERSISTENT_HANDLE: &str = "0x81008001";
@@ -1035,6 +1039,11 @@ fn phase_9_evidence(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
         "BACKUP_CONTRACT_CREATED",
         "RECOVERY_SHARDS_CREATED",
         "MOBILE_PAIRING_CREATED",
+        "FLEET_MEMBERSHIP_INITIALIZED",
+        "AUTONOMOUS_GOVERNANCE_INITIALIZED",
+        "MARKETPLACE_INITIALIZED",
+        "CONTAINER_RUNTIME_INITIALIZED",
+        "SYSTEM_READINESS_CHECKED",
         "FIRST_BOOT_COMPLETE",
     ];
 
@@ -1133,7 +1142,7 @@ fn main() -> ExitCode {
     }
 
     println!("============================================");
-    println!("  AI-OS.NET First Boot Wizard -- Revision 4");
+    println!("  AI-OS.NET First Boot Wizard -- Revision 11");
     println!("  {}", now_rfc3339());
     println!("============================================");
     println!();
@@ -1162,6 +1171,16 @@ fn run_phases(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBootErro
     phase_7_5_recovery_shards(ctx)?;
     phase_8_mobile_pairing(ctx)?;
     phase_9_evidence(ctx)?;
+    // TODO(Rev.11): Phase 10 — Initialize Fleet Membership
+    //   create /var/lib/aios/fleet/membership.json with standalone state
+    // TODO(Rev.11): Phase 11 — Initialize Autonomous Governance
+    //   create /etc/aios/autonomous/constitution.json with advisory/monitor defaults
+    // TODO(Rev.11): Phase 12 — Initialize Marketplace
+    //   create /var/lib/aios/marketplace/index.json with empty state
+    // TODO(Rev.11): Phase 13 — Initialize Container Runtime
+    //   detect podman/docker, create /var/lib/aios/container/config.json
+    // TODO(Rev.11): Phase 14 — System Readiness Check
+    //   verify 34-crate binaries present in /usr/lib/aios/ and /usr/bin/
     phase_10_complete(ctx)?;
     Ok(())
 }

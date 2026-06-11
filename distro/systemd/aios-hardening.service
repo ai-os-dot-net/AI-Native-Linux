@@ -1,0 +1,18 @@
+[Unit]
+Description=AI-OS.NET Hardening Scanner
+Documentation=https://ai-os.net/docs/hardening
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/aios/aios-hardening --profile SECURE_DEFAULT --scan-on-boot --config /etc/aios/config.toml
+RemainAfterExit=yes
+LimitNOFILE=65536
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/aios/hardening /run/aios
+NoNewPrivileges=yes
+SELinuxContext=system_u:system_r:aios_hardening_t:s0
+
+[Install]
+WantedBy=multi-user.target
