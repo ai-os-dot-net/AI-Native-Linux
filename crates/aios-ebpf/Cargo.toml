@@ -1,0 +1,34 @@
+[package]
+name = "aios-ebpf"
+description = "AIOS Rev.6 — eBPF Desktop Telemetry Foundation (BPF program registry, desktop session telemetry, INV-025 enforcement)."
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+aios-action   = { path = "../aios-action" }
+aios-evidence = { path = "../aios-evidence" }
+aios-sandbox  = { path = "../aios-sandbox" }
+serde         = { workspace = true }
+serde_json    = { workspace = true }
+thiserror     = { workspace = true }
+tokio         = { workspace = true, features = ["sync"] }
+tracing       = { workspace = true }
+chrono        = { workspace = true }
+ulid          = { workspace = true }
+blake3        = { workspace = true }
+hex           = { workspace = true }
+ed25519-dalek = { workspace = true }
+strum         = { workspace = true }
+strum_macros  = { workspace = true }
+async-trait   = { workspace = true }
+
+[dev-dependencies]
+rand_core = { workspace = true }
+tokio     = { workspace = true }
+
+[lints]
+workspace = true

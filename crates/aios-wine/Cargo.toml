@@ -1,0 +1,29 @@
+[package]
+name = "aios-wine"
+description = "AIOS Rev.6 — Wine/Proton Windows App Capsule Driver"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+aios-action   = { path = "../aios-action" }
+aios-evidence = { path = "../aios-evidence" }
+aios-policy   = { path = "../aios-policy" }
+aios-sandbox  = { path = "../aios-sandbox" }
+serde         = { workspace = true }
+serde_json    = { workspace = true }
+thiserror     = { workspace = true }
+tokio         = { workspace = true }
+tracing       = { workspace = true }
+chrono        = { workspace = true }
+ulid          = { workspace = true }
+strum         = { workspace = true }
+strum_macros  = { workspace = true }
+blake3        = { workspace = true }
+ed25519-dalek = { workspace = true }
+
+[lints]
+workspace = true

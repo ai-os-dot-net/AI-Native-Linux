@@ -1,0 +1,54 @@
+# AI-OS.NET Rev.6 — Terminal emulator capsule AppArmor profile.
+#
+# Most restrictive profile in the desktop capsule family.
+# Allows PTY allocation and basic shell execution only.
+# No network, no GPU, no IPC beyond Wayland socket.
+
+#include <tunables/global>
+#include <aios-desktop-base>
+
+profile aios-terminal {
+
+  @{CAPSULE_HOME}=/var/lib/aios/capsules/terminal/
+
+  owner @{CAPSULE_HOME}/ r,
+  owner @{CAPSULE_HOME}/** rwlkmix,
+
+  # ── Terminal binary ────────────────────────────────────────────
+  /usr/bin/kitty mr,
+  /usr/lib/kitty/ r,
+  /usr/lib/kitty/** mr,
+
+  # ── Shell and standard utilities ───────────────────────────────
+  /usr/bin/bash mr,
+  /usr/bin/zsh mr,
+  /usr/bin/sh mr,
+  /usr/bin/env mr,
+  /usr/bin/ls mr,
+  /usr/bin/cat mr,
+
+  # ── PTY allocation ────────────────────────────────────────────
+  owner /dev/pts/* rw,
+  /dev/ptmx rw,
+  # ptrace is denied in base — termcaps use ioctl, not ptrace.
+  capability sys_tty_config,
+
+  # ── Terminfo ───────────────────────────────────────────────────
+  /usr/share/terminfo/ r,
+  /usr/share/terminfo/** r,
+
+  # ── No network ─────────────────────────────────────────────────
+  deny network inet,
+  deny network inet6,
+  deny network raw,
+  deny network packet,
+
+  # ── No GPU ─────────────────────────────────────────────────────
+  deny /dev/dri/ rw,
+  deny /dev/dri/** rw,
+
+  # ── No IPC beyond Wayland socket ───────────────────────────────
+  deny /run/user/[0-9]*/bus rw,
+  deny dbus bus=system,
+
+}

@@ -1,75 +1,53 @@
 {
   "project_goal": "AI-Native Linux (AI-OS.NET) workspace — constitutional architecture, full 10-revision roadmap",
   "current_milestone": "Rev.6 Daily-driver Desktop — KDE Plasma integration",
-  "current_step": "rev6-planning",
-  "current_task_title": "Rev.5 Complete — 8 agents, Ollama/vLLM adapters, ProductionCognitiveCore, TranslatorEngine, HealthMonitor, S20 Terminal crate, E2E tests",
-  "current_task_id": "TSK-REV5-COMPLETE",
+  "current_step": "rev6-display-manager-done",
+  "current_task_title": "Rev.6 Display Manager Integration & Desktop Session Management",
+  "current_task_id": "TSK-REV6-002",
   "completed_steps": [
+    "TSK-REV6-002: Display Manager Integration (12 files, 1405 lines): SDDM QML theme (Main.qml 328L, PostureIndicator 46L, SubjectSelector 112L), session-manager.sh (337L POSIX, 13 functions), aios-plasma.desktop (11L), 3 autostart scripts (renderer 30L, cognitive 75L, evidence-tray 49L), desktop README (140L), test suite (207L, 32 tests all passing)",
+    "TSK-REV6-001: Real Wayland compositor backend (1052 lines, 18 tests): RealWaylandClient connects to $WAYLAND_DISPLAY via Unix socket, negotiates globals, binds wlr-layer-shell-unstable-v1 and xdg-shell, creates surfaces with Zone→Layer mapping, supports commit/disconnect lifecycle, wired into InMemoryKdeRenderer via with_wayland_compositor() builder",
     "Rev.5 Live Cognition (8 agents, 8502 lines): OllamaAdapter(798L,17T), VllmAdapter(1092L,22T), ProductionCognitiveCore(920L,19T), TranslatorEngine(530L,19T), HealthMonitor(779L,14T), S20 Terminal crate(2635L,118T), E2E integration(455L,7T), model lifecycle systemd+scripts(354L)",
-    "OS Research (7 value-add modules, 5781 lines, 165 tests)",
-    "R3-W1 Platform Hardening (8 modules: TPM, SELinux, IMA, dm-verity, FIPS, SBOM, GDPR, security_profile)",
-    "R3-W2 Capsule Infrastructure (5 modules: capsule_lifecycle, state_sandbox, capsule_evidence, cgroups, rollback_engine)",
-    "R3-W3 Action Execution (5 modules: terminal, action_fabric, approval_gate, dispatch_queue, dispatcher)",
-    "R3-W4-W6 (3 modules: driver_capsule, kernel_personality, package_rosetta)",
-    "R3-W7/W8 Integration (lib.rs re-exports, compilation fixes, 578 tests pass)",
-    "R3-W7/W8 New Crates S23-S28 (6 crates, 250 tests, 5572 lines: aios-mobile, aios-container, aios-fleet, aios-backup, aios-eval, aios-time)",
-    "Rev.1-3: Vision, Core (4475 tests), Spec (44 files), Implementation (48+ modules in capability-runtime, 6 new crates)",
-    "Distro files: rootfs-layout.txt (181 lines), initramfs/init (361 lines), initramfs/rescue.sh, initramfs/aios-preinit, fstab, crypttab, hostname, 13 systemd service+target files",
-    "Installer scripts: aios-installer.sh (467 lines, 14 phases), aios-quick-install.sh (320 lines, CI-ready), README.md (196 lines)",
-    "First-boot wizard: aios-first-boot.sh (819 lines, 10 phases), aios-first-boot.rs (1225 lines, Rust binary), Cargo.toml (28 lines)",
-    "TSK-REV5-003: Ollama HTTP adapter (798 lines, 17 tests, all passing) — OllamaAdapter, generate/generate_stream/list_models/health_check, evidence emission, typed errors"
+    "Distro files: rootfs-layout.txt, initramfs/init (361L), rescue.sh, aios-preinit, fstab, crypttab, hostname, 13 systemd service+target files",
+    "Installer scripts: aios-installer.sh (467 lines), aios-quick-install.sh (320 lines), README.md (196 lines)",
+    "First-boot wizard: aios-first-boot.sh (819 lines), aios-first-boot.rs (1225 lines), Cargo.toml"
   ],
   "remaining_steps": [
     "Rev.4: Generate bootable ISO image (aios-rev4.iso) from installed rootfs + installer",
     "Rev.5: Wire OllamaAdapter into ProviderDispatcher dispatch path",
     "Rev.5: Add vLLM adapter",
-    "Rev.6: Daily-driver desktop — KDE Plasma integration",
+    "Rev.6: Add buffered rendering to RealWaylandClient (wl_shm pool + memfd pixel buffer)",
+    "Rev.6: Implement KwinScript integration for window management",
+    "Rev.6: Recovery shell session (separate KWin process)",
     "Rev.7: Fleet, cluster & cloud — K8s as governed capsules",
     "Rev.8: Certified hardening — SELinux/STIG/NIST/CIS, FIPS, EU AI Act",
     "Rev.9: Ecosystem & marketplace — signed repos, SDK",
     "Rev.10: Autonomous AI-OS — self-healing, fleet autonomy"
   ],
   "files_touched": [
-    "distro/installer/aios-installer.sh",
-    "distro/installer/aios-quick-install.sh",
-    "distro/installer/README.md",
-    "distro/first-boot/aios-first-boot.sh",
-    "distro/first-boot/aios-first-boot.rs",
-    "distro/first-boot/Cargo.toml",
-    "Cargo.toml (added reqwest, futures, bytes, tokio-util workspace deps)",
-    "crates/aios-cognitive/Cargo.toml (added reqwest, futures deps)",
-    "crates/aios-cognitive/src/lib.rs (added pub mod adapter)",
-    "crates/aios-cognitive/src/adapter/mod.rs (new, 1 line)",
-    "crates/aios-cognitive/src/adapter/ollama.rs (new, 798 lines, 17 tests)"
+    "distro/desktop/session-manager.sh (new, 337 lines, POSIX shell, 13 functions)",
+    "distro/desktop/aios-plasma.desktop (new, 11 lines, XDG XSession entry)",
+    "distro/desktop/sddm-aios-theme/Main.qml (new, 328 lines, QML login screen)",
+    "distro/desktop/sddm-aios-theme/theme.conf (new, 11 lines)",
+    "distro/desktop/sddm-aios-theme/components/SubjectSelector.qml (new, 112 lines)",
+    "distro/desktop/sddm-aios-theme/components/PostureIndicator.qml (new, 46 lines)",
+    "distro/desktop/sddm-aios-theme/README.md (new, 59 lines)",
+    "distro/desktop/plasma-autostart/aios-renderer-kde.sh (new, 30 lines)",
+    "distro/desktop/plasma-autostart/aios-cognitive-init.sh (new, 75 lines)",
+    "distro/desktop/plasma-autostart/aios-evidence-tray.sh (new, 49 lines)",
+    "distro/desktop/README.md (new, 140 lines)",
+    "distro/desktop/tests/test-session-start.sh (new, 207 lines, 32 tests)"
   ],
   "discovered_constraints": [
     "GitLab-first push policy: push to gitlab remote (192.168.1.180), NOT directly to GitHub",
-    "Agent module re-export pattern: add to lib.rs with OS-RESEARCH comment, then re-export section",
-    "DateTime<Utc> Display uses space-separated format, not ISO 8601",
-    "Container/K8s crates need Podman (not Docker) as default engine",
-    "All 6 S23-S28 crates use workspace deps (no external deps needed)",
-    "Installer follows distro conventions: ANSI colour helpers (msg/warn/err/info), ── section separators, set -euo pipefail",
-    "Interactive installer needs TTY for disk confirmation and recovery key acknowledgment",
-    "Quick installer uses env vars only — no TTY required for CI",
-    "tokio::io::Lines<R> does NOT implement futures::Stream without tokio-stream io-util feature",
-    "serde_json json!() macro infers integer types; values > 2^31-1 overflow i32 — use raw JSON strings instead",
-    "f32 serde round-trips via f64 in serde_json — exact float comparisons in tests need approximate checks"
+    "workspace-level clippy::unwrap_used, expect_used, panic, todo, unimplemented, unsafe_code are ALL denied",
+    "Shell scripts must be POSIX-compatible (#!/bin/sh, no bashisms) and pass bash -n",
+    "SDDM QML theme uses SddmComponents 2.0, QtQuick 2.15, QtQuick.Controls 2.15",
+    "session-manager.sh reads posture from /etc/aios/time-posture before starting Plasma"
   ],
   "discovered_dependencies": [
-    "aios-fleet → aios-action, aios-policy, aios-evidence, aios-network, aios-distribution, aios-sandbox",
-    "aios-backup → aios-action, aios-policy, aios-evidence, aios-fs, aios-vault, aios-recovery, aios-sandbox, aios-distribution",
-    "aios-eval → aios-action, aios-policy, aios-evidence, aios-cognitive",
-    "aios-time → aios-action, aios-policy, aios-evidence, aios-network, aios-recovery",
-    "aios-mobile → aios-action, aios-policy, aios-evidence, aios-cognitive, aios-vault",
-    "aios-container → aios-action, aios-policy, aios-evidence, aios-apps, aios-sandbox, aios-network, aios-distribution",
-    "aios-cognitive (adapter/ollama) → reqwest 0.12, futures 0.3"
+    "Session manager depends on: aios CLI, policy-kernel daemon, evidence-log daemon, dbus-launch, tpm2_pcrread"
   ],
-  "last_errors": [
-    "streaming: Lines<R> Stream impl requires tokio-stream io-util feature — switched to text()+lines()+stream::iter approach",
-    "test: serde_json json!() 4936700928 overflows i32 — switched to raw JSON string"
-  ],
-  "last_verification_result": "cargo test -p aios-cognitive: ALL TESTS PASS (70+19+20+14+12+19+18+16+9+15+14+6+16+20+23+0 = 291+ tests). 17 new adapter tests pass. 0 compile warnings from aios-cognitive.",
-  "roadmap_url": "https://ai-os.net/roadmap/",
-  "total_crates": 25,
-  "total_tests_approx": "846+ (578 capability-runtime + 250 S23-S28 + 17 new ollama adapter + 1 pre-existing)"
+  "last_errors": [],
+  "last_verification_result": "All 5 shell scripts pass bash -n. 32/32 tests pass (syntax, shebang, function definitions, desktop entry, autostart files, SDDM theme files). Total 1405 lines across 12 files."
 }

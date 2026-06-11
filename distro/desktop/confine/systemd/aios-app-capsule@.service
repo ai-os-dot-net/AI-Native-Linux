@@ -1,0 +1,90 @@
+# AI-OS.NET Rev.6 — Desktop app capsule systemd template unit.
+#
+# systemd hardening directives for all desktop capsules.
+# Instantiated as: aios-app-capsule@<app_id>.service
+#
+# Works alongside the AppArmor profile aios-{app_id}.
+# See: distro/desktop/confine/README.md
+
+[Unit]
+Description=AI-OS Desktop App Capsule (%i)
+Documentation=https://aios.net/docs/rev6/desktop-confinement
+After=network.target
+Before=graphical-session.target
+PartOf=aios-capsule.slice
+
+[Service]
+Type=simple
+Slice=aios-capsule.slice
+
+# ── Environment ──────────────────────────────────────────────────
+Environment=AIOS_CAPSULE_ID=%i
+Environment=AIOS_CAPSULE_HOME=/var/lib/aios/capsules/%i
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=DISPLAY=:0
+
+# ── Working directory ───────────────────────────────────────────
+WorkingDirectory=/var/lib/aios/capsules/%i
+
+# ── Exec (placeholder — overridden by capsule manager) ──────────
+ExecStart=/usr/bin/aios-capsule-launcher %i
+
+# ── User ─────────────────────────────────────────────────────────
+User=%i
+Group=aios-capsule
+
+# ── Sandboxing ───────────────────────────────────────────────────
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateUsers=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+
+# ── Memory hardening ────────────────────────────────────────────
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+
+# ── Real-time ────────────────────────────────────────────────────
+RestrictRealtime=yes
+
+# ── SUID/SGID ───────────────────────────────────────────────────
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+
+# ── Address family restriction ───────────────────────────────────
+# Base: UNIX + NETLINK only.
+# Network-capable apps (browser) override via drop-in.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+
+# ── Seccomp syscall filter ───────────────────────────────────────
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# ── AppArmor profile ─────────────────────────────────────────────
+# The capsule manager writes the profile name at launch time.
+AppArmorProfile=aios-%i
+
+# ── Resource limits ──────────────────────────────────────────────
+CPUQuota=10%
+MemoryMax=64M
+TasksMax=8
+LimitNOFILE=64
+LimitNPROC=4
+
+# ── Namespaces ───────────────────────────────────────────────────
+PrivateNetwork=yes
+PrivateIPC=yes
+PrivateMounts=yes
+MountAPIVFS=no
+
+[Install]
+WantedBy=aios-capsule.target

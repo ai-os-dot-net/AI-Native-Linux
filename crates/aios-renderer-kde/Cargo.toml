@@ -30,6 +30,11 @@ aios-apps      = { path = "../aios-apps" }
 aios-evidence  = { path = "../aios-evidence" }
 aios-policy    = { path = "../aios-policy" }
 
+# Rev.6: Real Wayland compositor binding for KDE Plasma
+wayland-client         = { version = "0.31", features = ["dlopen"] }
+wayland-protocols      = { version = "0.32", features = ["client", "unstable"] }
+wayland-protocols-wlr  = { version = "0.3", features = ["client"] }
+
 # T-136: optional cxx-qt bridge (off by default → headless CI skips Qt6 build)
 cxx-qt     = { workspace = true, optional = true }
 cxx-qt-lib = { workspace = true, optional = true }

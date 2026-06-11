@@ -20,6 +20,7 @@ use crate::node_kind::NodeKind;
 use crate::recovery_shell::DegradedTrigger;
 use crate::types::{KdeSurfaceDescriptor, KdeSurfaceId, RendererMode};
 use crate::visual_token::VisualToken;
+use crate::wayland_compositor::RealWaylandClient;
 use crate::zone::{CompositionZone, ZoneLayer};
 
 // ── Request / receipt DTOs ────────────────────────────────────────────────────
@@ -161,6 +162,7 @@ struct KdeRendererState {
 pub struct InMemoryKdeRenderer {
     state: RwLock<KdeRendererState>,
     emitter: Option<Arc<dyn KdeEvidenceEmitter>>,
+    compositor: Option<Arc<std::sync::Mutex<RealWaylandClient>>>,
 }
 
 impl InMemoryKdeRenderer {
@@ -176,6 +178,7 @@ impl InMemoryKdeRenderer {
                 active_tokens: Vec::new(),
             }),
             emitter: None,
+            compositor: None,
         }
     }
 
@@ -186,6 +189,18 @@ impl InMemoryKdeRenderer {
     #[must_use]
     pub fn with_emitter(mut self, emitter: Arc<dyn KdeEvidenceEmitter>) -> Self {
         self.emitter = Some(emitter);
+        self
+    }
+
+    /// Attach a real Wayland compositor client for KDE Plasma surface management.
+    ///
+    /// When set, every `allocate_surface` call creates a real Wayland
+    /// surface (`wl_surface`) with the appropriate role (wlr-layer-shell or
+    /// xdg-shell) in addition to the in-memory tracking. When `None`, the
+    /// renderer operates as an in-memory test double.
+    #[must_use]
+    pub fn with_wayland_compositor(mut self, client: RealWaylandClient) -> Self {
+        self.compositor = Some(Arc::new(std::sync::Mutex::new(client)));
         self
     }
 }
@@ -256,6 +271,23 @@ impl KdeRenderer for InMemoryKdeRenderer {
 
         state.node_kinds.insert(desc.id.clone(), req.node_kind);
         state.surfaces.insert(desc.id.clone(), desc.clone());
+
+        // Create real Wayland surface if a compositor is attached.
+        if let Some(ref compositor) = self.compositor {
+            let wayland_client = compositor.lock().map_err(|e| {
+                KdeRendererError::Internal(format!(
+                    "wayland compositor mutex poisoned: {e}"
+                ))
+            })?;
+            wayland_client
+                .create_surface_for_zone(desc.id.clone(), req.zone)
+                .map_err(|e| {
+                    KdeRendererError::Internal(format!(
+                        "wayland surface creation failed: {e}"
+                    ))
+                })?;
+        }
+
         drop(state);
 
         // Emit surface allocation evidence.

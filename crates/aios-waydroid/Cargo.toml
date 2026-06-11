@@ -1,0 +1,24 @@
+[package]
+name = "aios-waydroid"
+description = "AIOS Rev.6 — Waydroid Android App Capsule Adapter"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+aios-action   = { path = "../aios-action" }
+aios-evidence = { path = "../aios-evidence" }
+aios-sandbox  = { path = "../aios-sandbox" }
+serde         = { workspace = true }
+serde_json    = { workspace = true }
+thiserror     = { workspace = true }
+tokio         = { workspace = true }
+tracing       = { workspace = true }
+chrono        = { workspace = true }
+ulid          = { workspace = true }
+
+[lints]
+workspace = true

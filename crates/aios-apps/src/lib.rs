@@ -29,6 +29,7 @@ pub mod package_store;
 pub mod runtime;
 pub mod service;
 pub mod session;
+pub mod session_container_driver;
 pub mod session_driver;
 pub mod update_driver;
 pub mod version_chain;
@@ -68,6 +69,7 @@ pub use session::{
     SessionContainerMode, SessionContainerRuntime, SessionContainerState, SessionFailureClass,
     SessionId, SessionRecord, StreamProtocol,
 };
+pub use session_container_driver::{SessionContainerConfig, SessionContainerDriver};
 pub use session_driver::{
     CapabilityHandle, InMemorySessionDriver, OpenSessionRequest, Principal, SessionDescriptor,
     SessionDriver, SessionExitReason, SessionFilter, SessionMetrics, SessionState,

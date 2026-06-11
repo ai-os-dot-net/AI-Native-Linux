@@ -1,0 +1,91 @@
+# AI-OS.NET Rev.6 — SELinux type enforcement for aios_renderer_t.
+#
+# This policy confines the AI-OS renderer process (GPU composition
+# and desktop rendering). It transitions from unconfined_t and
+# grants only the minimum privileges required.
+#
+# Build: make -f /usr/share/selinux/devel/Makefile aios_renderer.pp
+# Load:  semodule -i aios_renderer.pp
+#
+# See: distro/desktop/confine/README.md
+
+policy_module(aios_renderer, 1.0.0)
+
+# ── Type declarations ────────────────────────────────────────────
+type aios_renderer_t;
+type aios_renderer_exec_t;
+application_domain(aios_renderer_t, aios_renderer_exec_t)
+role system_r types aios_renderer_t;
+
+# ── Domain transition from unconfined_t ──────────────────────────
+# When the session manager launches the renderer, it transitions
+# from unconfined_t → aios_renderer_t.
+domain_auto_trans(unconfined_t, aios_renderer_exec_t, aios_renderer_t)
+
+# ── Wayland socket access ────────────────────────────────────────
+# Renderer needs to talk to the compositor.
+allow aios_renderer_t user_tmp_t:sock_file { create unlink write };
+allow aios_renderer_t user_tmp_t:unix_stream_socket connectto;
+allow aios_renderer_t self:unix_stream_socket create_stream_socket_perms;
+
+# ── PipeWire / D-Bus (session bus only) ──────────────────────────
+allow aios_renderer_t session_dbusd_t:unix_stream_socket connectto;
+allow aios_renderer_t self:dbus { acquire_svc send_msg };
+
+# ── GPU device access ────────────────────────────────────────────
+# DRI render node and card node for direct rendering.
+allow aios_renderer_t dri_device_t:chr_file { read write ioctl open };
+allow aios_renderer_t device_t:dir search;
+allow aios_renderer_t sysfs_t:dir search;
+allow aios_renderer_t sysfs_t:file { getattr open read };
+
+# ── GPU memory ──────────────────────────────────────────────────
+allow aios_renderer_t tmpfs_t:file { read write map };
+allow aios_renderer_t self:shm { create destroy read write };
+allow aios_renderer_t self:memfd_create { create read write };
+
+# ── Shared libraries ─────────────────────────────────────────────
+allow aios_renderer_t lib_t:dir search;
+allow aios_renderer_t lib_t:file { getattr open read execute execute_no_trans map };
+allow aios_renderer_t usr_t:dir search;
+allow aios_renderer_t usr_t:file { getattr open read };
+allow aios_renderer_t ld_so_cache_t:file { getattr open read };
+allow aios_renderer_t ld_so_t:file { getattr open read execute execute_no_trans map };
+
+# ── Font rendering ──────────────────────────────────────────────
+allow aios_renderer_t fonts_t:dir search;
+allow aios_renderer_t fonts_t:file { getattr open read map };
+allow aios_renderer_t fonts_cache_t:dir search;
+allow aios_renderer_t fonts_cache_t:file { getattr open read };
+
+# ── Logging ─────────────────────────────────────────────────────
+allow aios_renderer_t var_log_t:dir search;
+allow aios_renderer_t var_log_t:file { getattr open append };
+allow aios_renderer_t var_log_t:lnk_file read;
+
+# ── /etc passwd/group (getpwuid / getgrgid) ─────────────────────
+allow aios_renderer_t passwd_file_t:file { getattr open read };
+allow aios_renderer_t etc_t:dir search;
+
+# ── AI-OS config ────────────────────────────────────────────────
+allow aios_renderer_t etc_t:dir search;
+allow aios_renderer_t etc_t:file { getattr open read };
+
+# ── /proc access (self only) ────────────────────────────────────
+allow aios_renderer_t self:process { getattr signal };
+allow aios_renderer_t proc_t:dir search;
+allow aios_renderer_t proc_t:file { getattr open read };
+allow aios_renderer_t self:dir search;
+allow aios_renderer_t self:file { getattr open read };
+
+# ── Explicit denies ─────────────────────────────────────────────
+# No raw packet sockets
+neverallow aios_renderer_t self:rawip_socket *;
+neverallow aios_renderer_t self:packet_socket *;
+# No system administration
+neverallow aios_renderer_t self:capability { sys_admin sys_module sys_rawio sys_boot };
+# No loading kernel modules
+neverallow aios_renderer_t self:capability2 sys_module;
+# No network sockets (renderer is display-only)
+neverallow aios_renderer_t self:tcp_socket *;
+neverallow aios_renderer_t self:udp_socket *;

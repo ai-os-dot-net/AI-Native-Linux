@@ -1,0 +1,48 @@
+# AI-OS.NET Rev.6 — LibreOffice capsule AppArmor profile.
+#
+# Extends aios-desktop-base with:
+#   - Read/write to capsule ~/Documents/
+#   - No network access
+#   - No GPU compute (passive display only via X11 fallback)
+
+#include <tunables/global>
+#include <aios-desktop-base>
+
+profile aios-office-libreoffice {
+
+  @{CAPSULE_HOME}=/var/lib/aios/capsules/libreoffice/
+
+  owner @{CAPSULE_HOME}/ r,
+  owner @{CAPSULE_HOME}/** rwlkmix,
+
+  # ── Documents access (capsule-scoped) ──────────────────────────
+  owner @{CAPSULE_HOME}/Documents/ r,
+  owner @{CAPSULE_HOME}/Documents/** rwlkmix,
+
+  # ── LibreOffice binaries and libraries ─────────────────────────
+  /usr/lib/libreoffice/ r,
+  /usr/lib/libreoffice/** mr,
+  /usr/bin/libreoffice mr,
+  /usr/bin/soffice mr,
+
+  # ── Additional shared data ─────────────────────────────────────
+  /usr/share/libreoffice/ r,
+  /usr/share/libreoffice/** r,
+
+  # ── Network — fully denied (office apps are offline) ───────────
+  deny network inet,
+  deny network inet6,
+  deny network raw,
+  deny network packet,
+
+  # ── No GPU compute — passive display only ─────────────────────
+  deny /dev/dri/ rw,
+  deny /dev/dri/** rw,
+
+  # ── Deny secrets and other capsule dirs ────────────────────────
+  deny @{CAPSULE_HOME}/.ssh/ rwxlkmix,
+  deny @{CAPSULE_HOME}/.ssh/** rwxlkmix,
+  deny @{CAPSULE_HOME}/.gnupg/ rwxlkmix,
+  deny @{CAPSULE_HOME}/.gnupg/** rwxlkmix,
+
+}

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Encoding=UTF-8
+Type=XSession
+Exec=/usr/share/xsessions/aios-session-manager.sh
+TryExec=/usr/share/xsessions/aios-session-manager.sh
+Name=AI-OS.NET (KDE Plasma)
+Name[bg]=AI-OS.NET (KDE Plasma)
+Comment=AI-governed KDE Plasma desktop session with identity and evidence tracking
+Comment[bg]=AI-управлявана KDE Plasma десктоп сесия с проследяване на идентичност и доказателства
+X-KDE-PluginInfo-Version=1.0
+DesktopNames=KDE

@@ -27,6 +27,10 @@ members = [
     "crates/aios-mobile",
     "crates/aios-eval",
     "crates/aios-terminal",
+    "crates/aios-wine",
+    "crates/aios-waydroid",
+    "crates/aios-ebpf",
+    "crates/aios-renderer-voice",
 ]
 
 # Crates added later (per §22 MVP golden path order):

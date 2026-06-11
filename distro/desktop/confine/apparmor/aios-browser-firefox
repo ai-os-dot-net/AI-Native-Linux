@@ -1,0 +1,62 @@
+# AI-OS.NET Rev.6 — Firefox browser capsule AppArmor profile.
+#
+# Extends aios-desktop-base with:
+#   - Network access (HTTP/HTTPS/DNS)
+#   - Per-capsule ~/.mozilla/ under /var/lib/aios/capsules/firefox/
+#   - GPU access (DRI for WebGL)
+#   - Denies ~/.ssh, ~/.gnupg
+#
+# Usage: ln -s aios-desktop-base aios-browser-firefox &&
+#        aa-enforce /etc/apparmor.d/aios-browser-firefox
+
+#include <tunables/global>
+#include <aios-desktop-base>
+
+profile aios-browser-firefox flags=(attach_disconnected) {
+
+  # Capsule home (per-app writable root)
+  @{CAPSULE_HOME}=/var/lib/aios/capsules/firefox/
+
+  owner @{CAPSULE_HOME}/ r,
+  owner @{CAPSULE_HOME}/** rwlkmix,
+  owner @{CAPSULE_HOME}/.mozilla/ r,
+  owner @{CAPSULE_HOME}/.mozilla/** rwlkmix,
+  owner @{CAPSULE_HOME}/.cache/mozilla/ r,
+  owner @{CAPSULE_HOME}/.cache/mozilla/** rwlkmix,
+
+  # ── Browser binary ─────────────────────────────────────────────
+  /usr/lib/firefox/ r,
+  /usr/lib/firefox/** mr,
+  /usr/bin/firefox mr,
+
+  # ── Network access ─────────────────────────────────────────────
+  # Allow TCP for HTTP/HTTPS and UDP for DNS
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+
+  # ── GPU / DRI for WebGL ────────────────────────────────────────
+  /dev/dri/ r,
+  owner /dev/dri/renderD[0-9]* rw,
+
+  # ── Deny secrets paths ─────────────────────────────────────────
+  deny @{CAPSULE_HOME}/.ssh/ rwxlkmix,
+  deny @{CAPSULE_HOME}/.ssh/** rwxlkmix,
+  deny @{CAPSULE_HOME}/.gnupg/ rwxlkmix,
+  deny @{CAPSULE_HOME}/.gnupg/** rwxlkmix,
+  deny /root/.ssh/ rwxlkmix,
+  deny /root/.ssh/** rwxlkmix,
+  deny /root/.gnupg/ rwxlkmix,
+  deny /root/.gnupg/** rwxlkmix,
+
+  # ── Deny other browser profiles' capsule dirs ─────────────────
+  deny /var/lib/aios/capsules/chromium/ rwxlkmix,
+  deny /var/lib/aios/capsules/chromium/** rwxlkmix,
+
+  # ── Capability additions for browser ──────────────────────────
+  # net_bind_service for ephemeral port binding blocked by default;
+  # rely on kernel's autobind on connect().
+  # No extra capabilities needed beyond base.
+
+}

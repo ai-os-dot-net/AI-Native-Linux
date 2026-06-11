@@ -1,0 +1,158 @@
+# -*- mode: apparmor -*-
+# AI-OS.NET Rev.6 — Base AppArmor profile for desktop app capsules.
+#
+# All desktop app profiles include this base via:
+#   #include <aios-desktop-base>
+#
+# Generated from SandboxProfile by aios-sandbox confinement_generator.
+# See: crates/aios-sandbox/src/confinement_generator.rs
+# See: distro/desktop/confine/README.md
+
+#include <tunables/global>
+
+profile aios-desktop-base {
+  #include <abstractions/base>
+  #include <abstractions/dbus-strict>
+  #include <abstractions/fonts>
+  #include <abstractions/lightdm>
+
+  # ── Per-app capsule writable area ──────────────────────────────
+  # Each app profile overrides @{CAPSULE_HOME} for its own app_id.
+  # The base enforces the capsule root prefix pattern.
+  owner /var/lib/aios/capsules/*/ r,
+  owner /var/lib/aios/capsules/*/** rwlkmix,
+
+  # ── AI-OS system config (read-only) ───────────────────────────
+  /etc/aios/ r,
+  /etc/aios/** r,
+
+  # ── XDG base directories (read-only skeleton) ─────────────────
+  /etc/xdg/ r,
+  /etc/xdg/** r,
+
+  # ── System shared data (read-only) ────────────────────────────
+  /usr/share/ r,
+  /usr/share/** r,
+
+  # ── System libraries (read / exec for dynamic linking) ────────
+  /usr/lib/ r,
+  /usr/lib/** mr,
+  /usr/lib{,32,64}/** mr,
+  /lib/ r,
+  /lib/** mr,
+  /lib{,32,64}/** mr,
+
+  # ── Locale / timezone ─────────────────────────────────────────
+  /usr/share/locale/ r,
+  /usr/share/locale/** r,
+  /etc/localtime r,
+  /etc/timezone r,
+
+  # ── PulseAudio / PipeWire via abstract sockets ─────────────────
+  unix (abstract="pulseaudio"),
+  unix (abstract="pipewire-0"),
+
+  # ── Wayland compositor socket ──────────────────────────────────
+  owner /run/user/[0-9]*/ r,
+  owner /run/user/[0-9]*/wayland-[0-9]* rw,
+
+  # ── X11 fallback (MIT-SHM) — required for apps without Wayland ─
+  /tmp/.X11-unix/X[0-9]* rw,
+  owner /tmp/.XIM-[0-9]* rw,
+  /tmp/.ICE-unix/ r,
+  /tmp/.ICE-unix/* rw,
+
+  # ── Shared memory (MIT-SHM) ────────────────────────────────────
+  owner /dev/shm/* rwm,
+
+  # ── DRI / GPU devices — allowed by inclusion; per-app policy ──
+  # profiles override with explicit device paths when GpuPolicy
+  # grants DRI/Vulkan access.
+  deny /dev/dri/ r,
+  deny /dev/dri/** rw,
+
+  # ── Vulkan (denied by default; overridden in GPU-capable apps) ─
+  deny /dev/dri/renderD[0-9]* rw,
+
+  # ── Deny /proc and /sys write — allow only read ────────────────
+  @{PROC}/ r,
+  @{PROC}/[0-9]*/ r,
+  @{PROC}/[0-9]*/status r,
+  @{PROC}/[0-9]*/stat r,
+  @{PROC}/[0-9]*/fd/ r,
+  @{PROC}/[0-9]*/fd/* r,
+  @{PROC}/[0-9]*/maps r,
+  @{PROC}/[0-9]*/mounts r,
+  @{PROC}/[0-9]*/mountinfo r,
+  @{PROC}/[0-9]*/auxv r,
+  @{PROC}/[0-9]*/cmdline r,
+  @{PROC}/[0-9]*/environ r,
+  @{PROC}/[0-9]*/exe r,
+  @{PROC}/cpuinfo r,
+  @{PROC}/meminfo r,
+  @{PROC}/stat r,
+  @{PROC}/uptime r,
+  @{PROC}/loadavg r,
+  @{PROC}/version r,
+  @{PROC}/filesystems r,
+  @{PROC}/sys/kernel/random/entropy_avail r,
+
+  deny @{PROC}/sys/ rw,
+  deny @{PROC}/sys/** rw,
+  deny @{PROC}/sys/kernel/** rwxlkmix,
+  deny /sys/kernel/ rw,
+  deny /sys/kernel/** rwxlkmix,
+
+  # ── sysfs (read-only where needed) ─────────────────────────────
+  /sys/devices/ r,
+  /sys/devices/** r,
+  deny /sys/class/** rw,
+  deny /sys/bus/** rw,
+
+  # ── Deny dangerous filesystem locations ────────────────────────
+  deny /boot/** rwxlkmix,
+  deny /root/** rwxlkmix,
+  deny /etc/shadow rwxlkmix,
+  deny /etc/sudoers rwxlkmix,
+  deny /etc/sudoers.d/** rwxlkmix,
+
+  # ── Deny kernel facilities ─────────────────────────────────────
+  deny /dev/kmsg rw,
+  deny /dev/mem rwxlkmix,
+  deny /dev/kmem rwxlkmix,
+  deny /dev/port rwxlkmix,
+
+  # ── Capability restrictions ────────────────────────────────────
+  # ptrace is always denied — it breaks cross-capsule isolation.
+  deny capability sys_ptrace,
+  # sys_admin is always denied — raw administrative power.
+  deny capability sys_admin,
+  # sys_module denied — no kernel module loading.
+  deny capability sys_module,
+  # sys_rawio denied — no raw I/O port access.
+  deny capability sys_rawio,
+  # sys_boot denied — no reboot/shutdown from capsule.
+  deny capability sys_boot,
+
+  # ── Network (denied by default; per-app) ───────────────────────
+  # Each app profile may override with explicit network rules.
+  # The base denies everything.
+  deny network inet,
+  deny network inet6,
+  deny network raw,
+  deny network packet,
+
+  # ── Signal / IPC ───────────────────────────────────────────────
+  signal (receive) peer=unconfined,
+  signal (send) peer=aios-desktop-base,
+
+  # ── ptrace (cross-capsule deny) ────────────────────────────────
+  deny ptrace (readby) peer=aios-desktop-base,
+  deny ptrace (tracedby) peer=aios-desktop-base,
+
+  # ── DBus — allow session bus ───────────────────────────────────
+  # Deny system bus by default; per-app profiles may allow.
+  dbus bus=session,
+  deny dbus bus=system,
+
+}

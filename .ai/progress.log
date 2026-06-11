@@ -993,3 +993,15 @@ T-186: M18 closer + acceptance test + v0.1.0 version bump + S11.4 sub-spec final
 
 2026-06-11T00:00:00Z | TSK-REV4-001 | created | First-boot wizard: aios-first-boot.sh (819 lines, 10-phase Bash script — hardware verification, host identity, security profile, operator creation, TPM attestation, dm-verity, backup contract, recovery shards, mobile pairing, evidence genesis), aios-first-boot.rs (1225 lines Rust binary — uses aios-action, aios-policy, aios-evidence, aios-vault, aios-fs, aios-backup crates), Cargo.toml (standalone workspace). Verification: bash -n passes, cargo check compiles cleanly, all 4 unit tests pass. | SUCCESS | ISO image generation next
 [2026-06-11T17:31:10+03:00] TSK-REV5-003: Created Ollama HTTP adapter (798 lines, 17 tests). Added reqwest+futures to workspace deps. Created crates/aios-cognitive/src/adapter/ollama.rs with OllamaAdapter, OllamaGenerateRequest, OllamaGenerateResponse, OllamaModelInfo, OllamaError. Methods: generate(), generate_stream(), list_models(), health_check(). Evidence integration on generate(). All tests pass. Status: SUCCESS. Next: wire into ProviderDispatcher.
+[2026-06-11] TSK-REV6-001 | STEP: Real Wayland compositor backend for AIOS KDE Plasma renderer
+  FILES CREATED:
+    - crates/aios-renderer-kde/src/wayland_compositor.rs (1052 lines, 18 tests)
+  FILES MODIFIED:
+    - crates/aios-renderer-kde/Cargo.toml (+3 wayland deps)
+    - crates/aios-renderer-kde/src/renderer.rs (+compositor field, +with_wayland_compositor() builder)
+    - crates/aios-renderer-kde/src/lib.rs (+wayland_compositor module, +5 exports)
+  COMMANDS:
+    - cargo check -p aios-renderer-kde → 0 errors, 0 warnings
+    - cargo test -p aios-renderer-kde → 204/204 tests pass
+  RESULT: SUCCESS
+  NEXT: TSK-REV6-002 (KWin scripting integration or buffered rendering)

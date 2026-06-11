@@ -1,0 +1,57 @@
+# AI-OS.NET Rev.6 — Media player capsule AppArmor profile.
+#
+# Extends aios-desktop-base with:
+#   - Full PulseAudio / PipeWire audio access
+#   - GPU DRI + Vulkan for video decode/display
+#   - Media codec library directories
+
+#include <tunables/global>
+#include <aios-desktop-base>
+
+profile aios-media-player {
+
+  @{CAPSULE_HOME}=/var/lib/aios/capsules/media/
+
+  owner @{CAPSULE_HOME}/ r,
+  owner @{CAPSULE_HOME}/** rwlkmix,
+
+  # ── Media files ────────────────────────────────────────────────
+  owner @{CAPSULE_HOME}/Music/ r,
+  owner @{CAPSULE_HOME}/Music/** rwlkmix,
+  owner @{CAPSULE_HOME}/Videos/ r,
+  owner @{CAPSULE_HOME}/Videos/** rwlkmix,
+
+  # ── PulseAudio / PipeWire ──────────────────────────────────────
+  # Audio via abstract sockets (allowed in base).
+  # Additional PulseAudio cookie.
+  owner @{CAPSULE_HOME}/.config/pulse/ r,
+  owner @{CAPSULE_HOME}/.config/pulse/** rw,
+  owner @{CAPSULE_HOME}/.pulse-cookie rw,
+
+  # ── DRI / GPU for video decode ─────────────────────────────────
+  /dev/dri/ r,
+  owner /dev/dri/card[0-9]* rw,
+  owner /dev/dri/renderD[0-9]* rw,
+
+  # ── Vulkan ICDs & layers ───────────────────────────────────────
+  /usr/share/vulkan/ r,
+  /usr/share/vulkan/** r,
+  /etc/vulkan/ r,
+  /etc/vulkan/** r,
+
+  # ── Media codec libraries ──────────────────────────────────────
+  /usr/lib/x86_64-linux-gnu/libavcodec* mr,
+  /usr/lib/x86_64-linux-gnu/libavformat* mr,
+  /usr/lib/x86_64-linux-gnu/libavutil* mr,
+  /usr/lib/x86_64-linux-gnu/libswscale* mr,
+  /usr/lib/x86_64-linux-gnu/libva* mr,
+  /usr/lib/x86_64-linux-gnu/libvdpau* mr,
+  /usr/lib/x86_64-linux-gnu/libvulkan* mr,
+  /usr/lib/x86_64-linux-gnu/dri/ r,
+  /usr/lib/x86_64-linux-gnu/dri/* mr,
+
+  # ── Deny network (media is local) ──────────────────────────────
+  deny network inet,
+  deny network inet6,
+
+}

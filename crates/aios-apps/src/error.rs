@@ -149,4 +149,8 @@ pub enum AppsError {
     /// A resource referenced by the bridge layer was not found.
     #[error("not found: {0}")]
     NotFound(String),
+
+    /// Session container runtime operation failed.
+    #[error("session container error: {0}")]
+    SessionContainerError(String),
 }

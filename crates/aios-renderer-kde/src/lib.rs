@@ -21,6 +21,7 @@ pub mod token_compile;
 pub mod types;
 pub mod visual_token;
 pub mod wayland;
+pub mod wayland_compositor;
 pub mod zone;
 
 pub use compilation::{CompilationContext, CompilationRule, NodeSurfaceKind};
@@ -47,6 +48,10 @@ pub use visual_token::{VisualToken, VisualTokenKind};
 pub use wayland::{
     evaluate_surface_request, WaylandClient, WaylandInteractivity, WaylandProtocol,
     WaylandSurfaceGrant, WaylandSurfaceLayer, WaylandSurfaceRequest,
+};
+pub use wayland_compositor::{
+    zone_to_wlr_layer, LayerKeyboardInteractivity, RealWaylandClient, RealWaylandSurface,
+    WaylandSurfaceRole,
 };
 pub use zone::{CompositionZone, ZoneLayer};
 
