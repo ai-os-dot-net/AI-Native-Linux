@@ -25,6 +25,7 @@ pub mod remote_execution;
 pub mod remote_routing;
 pub mod remote_sandbox;
 pub mod trust_delegation;
+pub mod zero_trust;
 
 pub use cluster_overlay::{
     ClusterOverlayError, ClusterOverlayNetwork, CoordinatorElection, MeshConnection,
@@ -72,3 +73,7 @@ pub use remote_sandbox::{
     CrossHostSandboxError, CrossHostSandboxFloor, SecurityProfileLevel, StricterOf,
 };
 pub use trust_delegation::CrossOrgTrustDelegation;
+pub use zero_trust::{
+    PostureDrift, TrustLevel, ZeroTrustCheck, ZeroTrustCheckResult, ZeroTrustEngine,
+    ZeroTrustEvidence, ZeroTrustEvidenceKind, ZeroTrustPolicy, ZeroTrustPosture,
+};

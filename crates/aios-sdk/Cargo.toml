@@ -1,0 +1,31 @@
+[package]
+name = "aios-sdk"
+description = "AIOS SDK for third-party developers building AIOS capsules and apps (rev.9)."
+edition.workspace = true
+rust-version.workspace = true
+version = "0.1.0"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+aios-action       = { path = "../aios-action" }
+aios-apps         = { path = "../aios-apps" }
+aios-distribution = { path = "../aios-distribution" }
+aios-evidence     = { path = "../aios-evidence" }
+serde             = { workspace = true }
+serde_json        = { workspace = true }
+thiserror         = { workspace = true }
+chrono            = { workspace = true }
+strum             = { workspace = true }
+strum_macros      = { workspace = true }
+ulid              = { workspace = true }
+ed25519-dalek     = { workspace = true }
+blake3            = { workspace = true }
+
+[dev-dependencies]
+tokio    = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

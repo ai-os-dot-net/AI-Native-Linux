@@ -1,19 +1,19 @@
 {
   "project_goal": "AIOS — AI-Native Linux daily-driver OS with constitutional security model",
-  "current_milestone": "Rev.7 Fleet, cluster & cloud",
-  "current_task_id": "TSK-REV7-002",
-  "current_task_title": "Fleet Membership Lifecycle Driver",
-  "current_step": "Implementation complete — pending test execution on clean tree",
+  "current_milestone": "Rev.8 Certified hardening — SELinux/STIG/NIST/CIS, FIPS, EU AI Act",
+  "current_task_id": "TSK-REV8-001",
+  "current_task_title": "SELinux MAC Policy Engine for Rev.8",
+  "current_step": "Implementation complete — 50 tests pass (22 original + 27 new + 1 cross-module)",
   "completed_steps": [
     "OS Research (7 modules, 5,781 lines)",
-    "Rev.3 through Rev.6 (all prior milestones)",
-    "TSK-REV7-002: membership_driver.rs (1781L, 801 production + 980 test), error.rs (45L), membership.rs updated (223L). 51 tests (37 driver + 14 membership)."
+    "Rev.3 through Rev.7 (all prior milestones)",
+    "TSK-REV8-001: selinux.rs extended from 1,135 to 2,721 lines. Added MacPolicyLifecycle, MacPolicyCompiler, AvcDecision, AvcAuditEngine, McsLabel, MlsLabel, SelinuxPolicyGate, SelinuEvidenceEvent. Extended SeLinuxDomain with MLS/MCS/transitions/booleans/file_contexts. Extended SePolicyBundle with bundle_id/version/signature/file_contexts/booleans/ports. Fixed 4 pre-existing compilation blockers (security_profile.rs Default, ima.rs/tpm.rs Serde, sbom.rs/boot_attestation.rs EnumCount). 50 tests all pass."
   ],
-  "files_touched": 77,
+  "files_touched": 82,
   "discovered_constraints": [
     "INV-025: AI cannot author/load eBPF programs",
     "INV-026: Host policy supremacy — unilateral withdrawal from any state",
-    "Rev.7 pre-existing errors in distribution_rollout.rs and fleet_recovery.rs block full cargo test"
+    "4 pre-existing compilation errors fixed (serde/strum imports, Default derive)"
   ],
-  "last_verification_result": "membership_driver.rs compiles clean under cargo check. Pre-existing errors in unrelated modules block full test run."
+  "last_verification_result": "cargo check passes. 50/50 selinux tests pass (27 new Rev.8 tests)."
 }

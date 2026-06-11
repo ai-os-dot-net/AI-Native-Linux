@@ -31,6 +31,9 @@ members = [
     "crates/aios-waydroid",
     "crates/aios-ebpf",
     "crates/aios-renderer-voice",
+    "crates/aios-hardening",
+    "crates/aios-marketplace",
+    "crates/aios-sdk",
 ]
 
 # Crates added later (per §22 MVP golden path order):

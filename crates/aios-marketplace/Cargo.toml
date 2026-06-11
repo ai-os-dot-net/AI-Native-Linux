@@ -1,0 +1,28 @@
+[package]
+name = "aios-marketplace"
+description = "AIOS S11.2 centralized marketplace and app store — publisher onboarding, capability review, listings, curated feeds, app passports."
+edition.workspace = true
+rust-version.workspace = true
+version = "0.1.0"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+aios-action       = { path = "../aios-action" }
+aios-evidence     = { path = "../aios-evidence" }
+aios-policy       = { path = "../aios-policy" }
+aios-distribution = { path = "../aios-distribution" }
+aios-eval         = { path = "../aios-eval" }
+serde             = { workspace = true }
+serde_json        = { workspace = true }
+chrono            = { workspace = true }
+strum             = { workspace = true }
+strum_macros      = { workspace = true }
+thiserror         = { workspace = true }
+ulid              = { workspace = true }
+blake3            = { workspace = true }
+ed25519-dalek     = { workspace = true }
+
+[lints]
+workspace = true

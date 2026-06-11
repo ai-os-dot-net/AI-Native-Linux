@@ -78,7 +78,9 @@ use std::collections::HashMap;
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Re-use capsule identity from the namespace module for evidence linking.
+use serde::{Deserialize, Serialize};
+use strum_macros::{EnumCount, EnumIter};
+
 use super::capsule_namespace::CapsuleId;
 
 // ---------------------------------------------------------------------------
@@ -91,7 +93,7 @@ use super::capsule_namespace::CapsuleId;
 /// with a specific hash function. A typical TPM exposes SHA-1 (bank 0)
 /// and SHA-256 (bank 1). SHA-384 and SHA-512 banks are optional and
 /// present on server-class TPMs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum PcrBank {
     /// TPM_ALG_SHA1 (0x0004) — legacy, 20-byte digest.
     Sha1,

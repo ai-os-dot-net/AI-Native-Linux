@@ -6,6 +6,8 @@
 #![allow(clippy::too_long_first_doc_paragraph)]
 /// External bridge contracts (Flathub/OCI/apt/dnf/pacman).
 pub mod bridges;
+/// External repository bridges (Flathub, Snap Store, Docker Hub, AUR, etc.).
+pub mod external_repos;
 /// System composition graph types (S11.4 §2 I5).
 pub mod composition;
 /// Composition engine: validation, topological ordering, default wiring (S11.4 §2 I5).
@@ -24,6 +26,9 @@ pub mod evidence;
 /// System integration test harness (M18 T-185) — wires all 9 L10 subsystems
 /// behind a shared in-memory evidence emitter for acceptance-grade E2E tests.
 pub mod harness;
+/// Marketplace API integration bridge — capsule discovery, install, sync, feeds,
+/// billing plans, and license verification (S11.4 §3).
+pub mod marketplace_bridge;
 /// Identifier newtypes for integration resources.
 pub mod ids;
 /// 6-state integration lifecycle FSM (S11.4 §2 I1).
@@ -68,7 +73,7 @@ pub use evidence::{
     IntegrationRecordType, WithIntegrationEmitter,
 };
 pub use harness::SystemIntegrationHarness;
-pub use ids::{ComposedSystemId, IntegrationId, StandardSubscriptionId, VendorContractId};
+pub use ids::{ComposedSystemId, ExternalRepoBridgeId, IntegrationId, StandardSubscriptionId, VendorContractId};
 pub use lifecycle::{IntegrationLifecycleLabel, IntegrationLifecycleState};
 pub use orchestrator::{Orchestrator, ServiceHealthSummary, ServiceScaffoldStatus};
 pub use record_catalogue::{
@@ -81,6 +86,16 @@ pub use standard_registry::{
 };
 pub use vendor::{VendorIntegrationContract, VendorKind, VendorTrustClass};
 pub use vendor_registry::VendorIntegrationRegistry;
+
+pub use external_repos::{
+    ExternalPackage, ExternalRepoBridge, ExternalRepoKind, ExternalRepoRegistry, RepoHealthCheck,
+    RepoSyncState, SecurityProfile, permitted_repo_kinds, repo_kind_permitted,
+};
+pub use marketplace_bridge::{
+    BillingPlan, CapsuleDetail, CapsuleDiscoveryService, FeedKind, FeedSubscription,
+    InstallFromMarketplace, InstallOutcome, LicenseVerification, MarketplaceIntegration,
+    MarketplaceListing, MarketplaceSync, SyncOutcome, UpdatePolicy,
+};
 
 /// Crate version marker used by closure-invariant tests in T-186.
 pub const DEFAULT_CODE_VERSION: &str = "aios-integration/0.1.0-T186";

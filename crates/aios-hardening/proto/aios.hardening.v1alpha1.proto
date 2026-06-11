@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package aios.hardening.v1alpha1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+message HardeningScanRequest {
+  string profile_label = 1;
+}
+
+message ProbeResultProto {
+  string check_id = 1;
+  string probe_class = 2;
+  string status = 3;
+  string observed = 4;
+  string expected = 5;
+  string remediation_hint = 6;
+}
+
+message HardeningScanResultProto {
+  string scan_id = 1;
+  google.protobuf.Timestamp scanned_at = 2;
+  string profile_label = 3;
+  repeated ProbeResultProto probe_results = 4;
+  uint32 passed = 5;
+  uint32 failed = 6;
+  uint32 warned = 7;
+  uint32 skipped = 8;
+  uint32 errors = 9;
+  bool promotion_blocked = 10;
+}
+
+service HardeningScanner {
+  rpc Scan(HardeningScanRequest) returns (HardeningScanResultProto);
+  rpc HealthCheck(google.protobuf.Empty) returns (google.protobuf.Empty);
+}

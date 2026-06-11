@@ -72,12 +72,13 @@ use std::fmt;
 /// The integer discriminant encodes the strictness ordinal and is stable
 /// across wire representations.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SecurityProfile {
     /// Developer workstation — minimal enforcement, maximum flexibility.
     /// SELinux permissive, no Secure Boot requirement, debug logging.
+    #[default]
     DevRelaxed = 0,
 
     /// Production baseline — moderate enforcement for networked systems.

@@ -24,6 +24,8 @@ tokio           = { workspace = true, features = ["sync", "macros"] }
 async-trait     = { workspace = true }
 ed25519-dalek   = { workspace = true }
 blake3          = { workspace = true }
+strum           = { workspace = true }
+strum_macros    = { workspace = true }
 tonic           = { workspace = true }
 prost           = { workspace = true }
 prost-types     = { workspace = true }

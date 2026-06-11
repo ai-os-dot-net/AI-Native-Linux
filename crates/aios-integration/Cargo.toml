@@ -19,6 +19,7 @@ aios-action     = { path = "../aios-action" }
 aios-evidence   = { path = "../aios-evidence" }
 aios-policy     = { path = "../aios-policy" }
 aios-sgr        = { path = "../aios-sgr" }
+aios-distribution = { path = "../aios-distribution" }
 serde           = { workspace = true }
 serde_json      = { workspace = true }
 thiserror       = { workspace = true }

@@ -228,6 +228,8 @@ dependencies = [
  "rand_core 0.6.4",
  "serde",
  "serde_json",
+ "strum",
+ "strum_macros",
  "thiserror 2.0.18",
  "tokio",
  "tonic",
@@ -361,6 +363,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "aios-hardening"
+version = "0.1.0"
+dependencies = [
+ "aios-evidence",
+ "aios-policy",
+ "chrono",
+ "protoc-bin-vendored",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "thiserror 2.0.18",
+ "tokio",
+ "tonic-build",
+ "tracing",
+ "ulid",
+]
+
+[[package]]
 name = "aios-hardware"
 version = "0.1.0"
 dependencies = [
@@ -396,6 +417,7 @@ dependencies = [
  "aios-action",
  "aios-capability-runtime",
  "aios-cognitive",
+ "aios-distribution",
  "aios-eval",
  "aios-evidence",
  "aios-policy",
@@ -419,6 +441,26 @@ dependencies = [
  "tonic",
  "tonic-build",
  "tracing",
+ "ulid",
+]
+
+[[package]]
+name = "aios-marketplace"
+version = "0.1.0"
+dependencies = [
+ "aios-action",
+ "aios-distribution",
+ "aios-eval",
+ "aios-evidence",
+ "aios-policy",
+ "blake3",
+ "chrono",
+ "ed25519-dalek",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "thiserror 2.0.18",
  "ulid",
 ]
 
@@ -690,6 +732,27 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-build",
+ "ulid",
+]
+
+[[package]]
+name = "aios-sdk"
+version = "0.1.0"
+dependencies = [
+ "aios-action",
+ "aios-apps",
+ "aios-distribution",
+ "aios-evidence",
+ "blake3",
+ "chrono",
+ "ed25519-dalek",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
  "ulid",
 ]
 

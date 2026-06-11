@@ -24,8 +24,10 @@ pub mod evidence;
 pub mod integration;
 pub mod knowledge_db;
 pub mod orchestration;
+pub mod recipe_registry;
 pub mod package;
 pub mod package_store;
+pub mod rosetta_solver;
 pub mod runtime;
 pub mod service;
 pub mod session;
@@ -57,6 +59,11 @@ pub use knowledge_db::{AppProfileMutation, CompatibilityKnowledgeDB};
 pub use orchestration::{
     LaunchOutcome, OrchestrationKind, VMFallbackKind, WaydroidIsolationLevel, WinePrefixKind,
 };
+pub use recipe_registry::{
+    Recipe, RecipeId, RecipeInstallResult, RecipeRegistry, RecipeReview, RecipeState,
+    RecipeTrustBadge, RecipeVerificationStatus, ReviewId, ReviewVerdict, RECIPE_APPROVED,
+    RECIPE_DEPRECATED, RECIPE_FLAGGED, RECIPE_INSTALLED, RECIPE_PUBLISHED, RECIPE_SUBMITTED,
+};
 pub use package::{
     PackageContentKind, PackageId, PackageObjectKind, PackageObjectState, PackageRecord,
     RollbackKind,
@@ -79,6 +86,11 @@ pub use update_driver::{
     FailureClass, InMemoryUpdateDriver, RollbackExitState, RollbackReason, RollbackReceipt,
     UpdateOutcome, UpdatePlan, UpdatePlanId, UpdatePlanRequest, UpdateRollbackDriver, UpdateState,
     UpdateVerification,
+};
+pub use rosetta_solver::{
+    CompatibilityScore, ComplexityBand, ConversionStrategy, IsolationLevel, PackageFormat,
+    PackagePassport, ProvenanceGrade, RosettaSolver, RosettaTranslation, ShadowInstall,
+    ShadowInstallState,
 };
 pub use version_chain::{PackageState, VersionChain, VersionChainEntry};
 

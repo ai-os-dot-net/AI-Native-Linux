@@ -46,6 +46,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod airgap_store;
 pub mod canonical;
 pub mod catalog;
 pub mod cve_binding;
@@ -70,11 +71,17 @@ pub mod rollout;
 pub mod rotation;
 pub mod service;
 pub mod takedown;
+pub mod publisher_trust;
 pub mod trust;
 pub mod trust_chain;
 pub mod verifier;
 pub mod version;
 
+pub use airgap_store::{
+    AirgapAuditEvent, AirgapAuditLog, AirgapAuditLogEntry, AirgapInstallSource, AirgapPackage,
+    AirgapProfileGate, AirgapStoreBuilder, AirgapStoreManifest, AirgapStoreMedium,
+    AirgapUpdateSet, blocks_live_registry, requires_airgap_only,
+};
 pub use canonical::{content_hash, manifest_canonical_hash, signing_payload};
 pub use catalog::{PublisherCatalog, SigningKeyCatalog};
 pub use cve_binding::{apply_cve_binding, CveAction, CveEnforcementLevel, PackageCveBinding};
@@ -119,6 +126,10 @@ pub use rotation::{
     RotationOutcome,
 };
 pub use takedown::TakedownReason;
+pub use publisher_trust::{
+    AuditEntry, PublisherAuditTrail, PublisherReputation, PublisherTrustPolicy, ReputationEngine,
+    ReputationEvent, SigningKeyRotation, TrustTier,
+};
 pub use trust::PublisherTrustLevel;
 pub use trust_chain::{
     canonical_depth, AiosRootKey, LinkSignature, PackageSigningKey, PublisherRoot, SignedPayload,

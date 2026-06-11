@@ -41,6 +41,7 @@ fn recovery_state(mode: RecoveryMode) -> RecoveryState {
         exit_planned_at: None,
         reason: (mode == RecoveryMode::Recovery).then(|| "BOOT_FAILURE_AUTO".to_owned()),
         operator_grant: None,
+        active_sub_boundaries: Vec::new(),
     }
 }
 

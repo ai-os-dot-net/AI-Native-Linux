@@ -5,7 +5,7 @@
     {"id": "TSK-REV6-003", "title": "Rev.6 KwinScript integration for window management", "status": "pending", "priority": "medium"},
     {"id": "TSK-REV6-004", "title": "Rev.6 Buffered rendering (wl_shm pool + memfd)", "status": "pending", "priority": "medium"},
     {"id": "TSK-REV7", "title": "Rev.7 Fleet, cluster & cloud — K8s as governed capsules", "status": "in_progress", "priority": "medium"},
-    {"id": "TSK-REV8", "title": "Rev.8 Certified hardening — SELinux/STIG/NIST/CIS, FIPS, EU AI Act", "status": "pending", "priority": "medium"},
+    {"id": "TSK-REV8", "title": "Rev.8 Certified hardening — SELinux/STIG/NIST/CIS, FIPS, EU AI Act", "status": "in_progress", "priority": "high"},
     {"id": "TSK-REV9", "title": "Rev.9 Ecosystem & marketplace — signed repos, SDK", "status": "pending", "priority": "medium"},
     {"id": "TSK-REV10", "title": "Rev.10 Autonomous AI-OS — self-healing, fleet autonomy", "status": "pending", "priority": "medium"}
   ],

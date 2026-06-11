@@ -1,0 +1,31 @@
+[package]
+name = "aios-hardening"
+description = "AI-OS.NET Rev.8 centralized hardening audit scanner (S16.3)."
+edition.workspace = true
+rust-version.workspace = true
+version = "0.1.0"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+aios-evidence = { path = "../aios-evidence" }
+aios-policy = { path = "../aios-policy" }
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+chrono       = { workspace = true }
+strum        = { workspace = true }
+strum_macros = { workspace = true }
+thiserror    = { workspace = true }
+ulid         = { workspace = true }
+tokio        = { workspace = true, features = ["macros", "rt"] }
+tracing     = { workspace = true }
+
+[dev-dependencies]
+
+[build-dependencies]
+tonic-build = { workspace = true }
+protoc-bin-vendored = { workspace = true }
+
+[lints]
+workspace = true

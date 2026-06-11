@@ -54,9 +54,11 @@
 //!   corresponding golden hash entry results in `Unknown` appraisal
 //!   state; no file is implicitly trusted.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
+use strum_macros::{EnumCount, EnumIter};
 
 // ---------------------------------------------------------------------------
 // ImaMeasurement — single file-integrity measurement
@@ -263,7 +265,7 @@ impl ImaMeasurementList {
 /// assert!(ImaAppraisalState::Trusted.is_clean());
 /// assert!(!ImaAppraisalState::Untrusted.is_clean());
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ImaAppraisalState {
     /// File hash matches the expected (golden) hash.
     Trusted,

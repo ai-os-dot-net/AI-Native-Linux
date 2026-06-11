@@ -86,6 +86,9 @@ pub mod tpm;
 pub mod selinux;
 /// Security Profile Matrix — Rev.3 S16.1 four-profile model with 14 dimensions.
 pub mod security_profile;
+/// Service Hardening Score Gates — S16.7 measurable, scored, gated
+/// hardening posture for AIOS systemd services.
+pub mod service_hardening;
 /// OS-RESEARCH: Linux IMA/EVM integrity measurement and appraisal (S16.4).
 pub mod ima;
 /// R3-W1: dm-verity / IPE immutable root filesystem integrity.
@@ -115,6 +118,9 @@ pub mod gdpr;
 pub mod kernel_personality;
 /// R3-W6.1: Package Rosetta — universal intake across deb/rpm/flatpak/snap/appimage/nix/oci/source.
 pub mod package_rosetta;
+/// S16.4 — Measured Boot Attestation Chain: TPM quote → measured boot log →
+/// IMA appraisal → dm-verity root hash assembled into a single attestation report.
+pub mod boot_attestation;
 
 pub use adapter_handle::RealAdapterHandle;
 pub use adapter_manifest::AdapterManifest;
@@ -184,6 +190,12 @@ pub use security_profile::{
     FipsOverlay, ProfileDimension, ProfileManifest, ProfileMatrix, ProfileRequirement,
     ProfileTransition, SecurityProfile,
 };
+// S16.7 — Service hardening score gates re-exports
+pub use service_hardening::{
+    DirectiveResult, GateVerdict, HardeningBaseline, HardeningDirective,
+    HardeningDirectiveValue, HardeningScore, HardeningScoreCalculator,
+    ServiceClass, ServiceHardeningPolicy, ServiceHardeningScoredEvidence,
+};
 // IMA re-exports
 pub use ima::{
     ImaAppraisalState, ImaMeasurement, ImaMeasurementList, ImaPolicy, ImaVerifier,
@@ -191,14 +203,26 @@ pub use ima::{
 };
 // SELinux re-exports
 pub use selinux::{
-    AvcDenial, SeLinuxContext, SeLinuxDomain, SeLinuxPermission, SeLinuxRule,
-    SePolicyBundle, SePolicyValidator, ValidationError, AIOS_DATA_DOMAIN, AIOS_SYSTEM_DOMAIN,
+    AvcAuditEngine, AvcDecision, AvcDecisionKind, AvcDenial, MacPolicyCompiler,
+    MacPolicyLifecycle, MacPolicyRequirement, McsLabel, MlsLabel, SeLinuxContext,
+    SeLinuxDomain, SeLinuxPermission, SeLinuxRule, SePolicyBundle, SePolicyValidator,
+    SelinuxPolicyGate, SelinuEvidenceEvent, ValidationError, AIOS_DATA_DOMAIN,
+    AIOS_SYSTEM_DOMAIN,
 };
 // R3-W1: verity, SBOM, FIPS re-exports
 pub use verity::{IpePolicy, VerityHashTree, VerityImage, VerityResult, VerityVerifier};
-pub use sbom::{SbomComponent, SbomDocument, SbomFormat, SlsaProvenance, VexStatement, VexStatus};
+pub use sbom::{
+    ReproStatus, ReproducibleBuildReceipt, SbomComponent, SbomDocument, SbomFormat,
+    SbomGenerator, SbomRelationship, SbomRelationshipKind, SlcaProvenanceAttestation,
+    SlcaProvenanceLevel, SlsaProvenance, SupplyChainEvidenceRecordType, VexJustification,
+    VexStatement, VexStatus,
+};
 pub use fips::{
-    ComplianceOperation, CryptoProvider, FipsBoundary, FipsMode,
+    ComplianceOperation, CryptoProvider, FipsAlgorithm, FipsAlgorithmStatus,
+    FipsBoundary, FipsBoundaryValidation, FipsCryptoEvidenceLog,
+    FipsCryptoOperation, FipsCryptoOperationType, FipsEvidenceType,
+    FipsMode, FipsOverlayState, FipsSelfTest, FipsSelfTestRunner,
+    FipsSelfTestType, ParallelShaEvidence,
 };
 // R3-W2: Lifecycle, rollback, state sandbox re-exports
 pub use capsule_lifecycle::{CapsuleLifecycle, CapsuleLifecycleManager, CapsuleLifecycleState};
@@ -227,11 +251,19 @@ pub use action_fabric::{
 };
 // R3-W1: GDPR crypto-shred re-exports
 pub use gdpr::{
-    AuditEntry, AuditTrail, CryptoShredKey, DataCategory, DataClassification,
-    DataGovernanceRegistry, DataSubject, ExportBundle, RetentionPolicy,
+    AuditEntry, AuditExportFormat, AuditTrail, CryptoShredEvidence, CryptoShredKey,
+    CryptoShredRequest, CryptoShredScope, DataCategory, DataClassification,
+    DataGovernanceRegistry, DataResidencyConstraint, DataResidencyEnforcer,
+    DataResidencyPolicy, DataSubject, ExportBundle, GdprAuditExport, GdprAuditExporter,
+    ResidencyRegion, RetentionClass, RetentionPolicy, RightToBeForgottenPipeline,
     ShredEvidence, ShredRequest, ShredResult,
 };
 // R3-W6.1: Package Rosetta re-exports
 pub use package_rosetta::{
     PackageFormat, PackagePassport, PackageRegistry, ShadowInstall, ShadowResult,
+};
+// S16.4 — Boot attestation re-exports
+pub use boot_attestation::{
+    attest_boot_chain, BootAttestationChain, BootAttestationError, BootAttestationReport,
+    BootAttestedPayload, BootIntegrityState, MeasuredBootPolicy,
 };

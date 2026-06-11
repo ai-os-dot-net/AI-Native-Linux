@@ -24,3 +24,8 @@ id_newtype!(
 );
 
 id_newtype!(ComposedSystemId, "Unique identifier for a composed system.");
+
+id_newtype!(
+    ExternalRepoBridgeId,
+    "Unique identifier for an external repository bridge."
+);
