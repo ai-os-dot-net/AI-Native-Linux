@@ -1,5 +1,7 @@
 use crate::enums::FleetMembershipState;
+use crate::error::MembershipError;
 
+#[derive(Debug, Clone)]
 pub struct FleetMembership {
     pub membership_id: String,
     pub host_id: String,
@@ -36,16 +38,37 @@ impl FleetMembership {
             (FleetMembershipState::Attesting, FleetMembershipState::Enrolled) => Some(target),
 
             (FleetMembershipState::Enrolled, FleetMembershipState::Suspended) => Some(target),
+            (FleetMembershipState::Enrolled, FleetMembershipState::Expelled) => Some(target),
 
             (_, FleetMembershipState::Withdrawn) => Some(target),
 
             (FleetMembershipState::Enrolled, FleetMembershipState::Quarantined) => Some(target),
             (FleetMembershipState::Quarantined, FleetMembershipState::Expelled) => Some(target),
 
-            (FleetMembershipState::Expelled, FleetMembershipState::Withdrawn) => Some(target),
-
             (FleetMembershipState::Expelled, _) => None,
             _ => None,
+        }
+    }
+
+    /// Validates and applies a state transition. Returns an error if the
+    /// transition is invalid per the FSM table (14 allowed edges, 8 states).
+    ///
+    /// INV-026: The `Withdrawn` target is always accepted from any state
+    /// because host policy supremacy is a constitutional constant — no
+    /// cluster action can override a host's unilateral withdrawal.
+    pub fn transition_to(
+        &mut self,
+        new_state: FleetMembershipState,
+    ) -> Result<(), MembershipError> {
+        match self.transition(new_state) {
+            Some(target) => {
+                self.state = target;
+                Ok(())
+            }
+            None => Err(MembershipError::InvalidTransition {
+                from: self.state,
+                to: new_state,
+            }),
         }
     }
 

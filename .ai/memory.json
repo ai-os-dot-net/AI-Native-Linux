@@ -1,29 +1,19 @@
 {
   "project_goal": "AIOS — AI-Native Linux daily-driver OS with constitutional security model",
-  "current_milestone": "Rev.6 Complete — Daily-driver desktop",
-  "current_task_id": "TSK-REV6-COMPLETE",
-  "current_task_title": "Rev.6 Daily-driver desktop — 8 agent components verified + committed",
+  "current_milestone": "Rev.7 Fleet, cluster & cloud",
+  "current_task_id": "TSK-REV7-002",
+  "current_task_title": "Fleet Membership Lifecycle Driver",
+  "current_step": "Implementation complete — pending test execution on clean tree",
   "completed_steps": [
     "OS Research (7 modules, 5,781 lines)",
-    "Rev.3 R3-W1..W8 (48 modules, 578 tests in aios-capability-runtime + 6 crates S23-S28, 250 tests)",
-    "Rev.4 Boot ISO (38 files, 10,628 lines: kernel config, initramfs, rootfs, systemd 13 units, build system, installer, CI/CD, first-boot)",
-    "Rev.5 Live Cognition (29 files, 8,502 lines: Ollama, vLLM, ProductionCognitiveCore, LLM Translator, aios-terminal S20, HealthMonitor, E2E integration, 242 tests)",
-    "Rev.6 KDE Wayland binding (wayland_compositor.rs, 1052 lines, 18 tests)",
-    "Rev.6 Session container runtime (session_container_driver.rs, 1450 lines, 40 tests)",
-    "Rev.6 SDDM display manager (12 files, 1405 lines, 32 assertions)",
-    "Rev.6 Desktop confinement (7 config files + confinement_generator.rs, 798 lines, 26 tests)",
-    "Rev.6 Wine/Proton capsule driver (aios-wine crate, 10 files, 1619 lines, 46 tests)",
-    "Rev.6 Waydroid Android adapter (aios-waydroid crate, 8 files, 1721 lines, 59 tests)",
-    "Rev.6 eBPF desktop telemetry (aios-ebpf crate, 8 files, 3144 lines, 86 tests)",
-    "Rev.6 Voice renderer (aios-renderer-voice crate, 9 files, 58 tests)"
+    "Rev.3 through Rev.6 (all prior milestones)",
+    "TSK-REV7-002: membership_driver.rs (1781L, 801 production + 980 test), error.rs (45L), membership.rs updated (223L). 51 tests (37 driver + 14 membership)."
   ],
-  "files_touched": 74,
+  "files_touched": 77,
   "discovered_constraints": [
-    "KDE renderer was typed skeleton only — Wayland socket I/O needed wayland-client crate",
-    "Session container requires Podman/Docker OCI runtime",
-    "SELinux aios_renderer_t must be custom-compiled type enforcement",
     "INV-025: AI cannot author/load eBPF programs",
-    "INV-031: Voice surface is policy surface, never authority"
+    "INV-026: Host policy supremacy — unilateral withdrawal from any state",
+    "Rev.7 pre-existing errors in distribution_rollout.rs and fleet_recovery.rs block full cargo test"
   ],
-  "last_verification_result": "cargo check 0 errors, all tests pass, committed 16c59c3"
+  "last_verification_result": "membership_driver.rs compiles clean under cargo check. Pre-existing errors in unrelated modules block full test run."
 }

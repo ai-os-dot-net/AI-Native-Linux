@@ -23,6 +23,8 @@ strum_macros      = { workspace = true }
 thiserror         = { workspace = true }
 ulid              = { workspace = true }
 blake3            = { workspace = true }
+ed25519-dalek     = { workspace = true }
+tokio             = { workspace = true }
 
 [build-dependencies]
 tonic-build         = { workspace = true }

@@ -1,9 +1,11 @@
+use serde::{Deserialize, Serialize};
+
 use crate::enums::{ContainerAdmissionDecision, ContainerEngine, IsolationLevel};
 
 /// A Cloud-Native Passport is the cryptographically-signed identity document
 /// for a container workload. It carries image provenance, runtime preferences,
 /// and the admission decision.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CloudNativePassport {
     pub passport_id: String,
     pub workload_id: String,

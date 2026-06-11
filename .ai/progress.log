@@ -321,6 +321,26 @@
          envelope_to_bytes / envelope_from_bytes in conversions.rs.
   Next: T-024 cache + perf budget (S2.3 §13 + §15); T-025 M3 closer.
 
+2026-06-11T00:00:00Z  TSK-REV7-006  Cloud Image Builder for AI-OS.NET — 9 files, 1483 lines total
+  Files created:
+    distro/cloud/build-cloud-image.sh           (551 lines, 10-phase pipeline)
+    distro/cloud/cloud-init/aios-cloud-config.yml (192 lines)
+    distro/cloud/packer/aws-ami.pkr.hcl         (168 lines)
+    distro/cloud/packer/gcp-image.pkr.hcl       (150 lines)
+    distro/cloud/packer/variables.pkr.hcl       (111 lines)
+    distro/cloud/README.md                      (128 lines)
+    distro/cloud/tests/test-build-syntax.sh     (48 lines)
+    distro/cloud/tests/test-packer-validate.sh  (56 lines)
+    distro/cloud/tests/test-cloud-init-syntax.sh (79 lines)
+  Verification:
+    bash -n distro/cloud/build-cloud-image.sh          PASS
+    bash -n distro/cloud/tests/test-build-syntax.sh    PASS
+    bash -n distro/cloud/tests/test-packer-validate.sh PASS
+    bash -n distro/cloud/tests/test-cloud-init-syntax.sh PASS
+    test-build-syntax.sh                               PASS (1/1)
+  Status: SUCCESS
+  Next: TSK-REV7-007 (Fleet coordinator bootstrap) or TSK-REV7-008 (K8s capsule integration)
+
 2026-05-24T09:15:00Z  T-024  aios-policy — determinism + decision cache + perf benchmark (S2.3 §13 + §15 + §18.1)
   Files added:
     crates/aios-policy/src/snapshot.rs           (~280 LoC, 5 inline tests)
@@ -1005,3 +1025,4 @@ T-186: M18 closer + acceptance test + v0.1.0 version bump + S11.4 sub-spec final
     - cargo test -p aios-renderer-kde → 204/204 tests pass
   RESULT: SUCCESS
   NEXT: TSK-REV6-002 (KWin scripting integration or buffered rendering)
+[2026-06-11T16:41:38Z] TSK-REV7-002 — FleetMembershipDriver implemented. Files: membership_driver.rs (1781L), error.rs (45L), membership.rs (+22L for transition_to). 51 tests (37 driver + 14 membership). cargo check passes for driver code; pre-existing errors in distribution_rollout.rs, fleet_recovery.rs block full test run. STATUS: PARTIAL (tests unrun due to external breakage). NEXT: Fix pre-existing errors or isolate driver tests.

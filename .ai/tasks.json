@@ -1,27 +1,28 @@
 {
   "backlog": [
-    {"id": "TSK-REV4-001", "title": "Rev.4 Boot ISO — live bootable AIOS distribution", "status": "pending", "priority": "high"},
-    {"id": "TSK-REV5", "title": "Rev.5 Live cognition — Ollama/vLLM on live machine", "status": "pending", "priority": "medium"},
+    {"id": "TSK-REV4-001", "title": "Rev.4 Boot ISO — live bootable AIOS distribution", "status": "completed", "priority": "high"},
+    {"id": "TSK-REV5", "title": "Rev.5 Live cognition — Ollama/vLLM on live machine", "status": "completed", "priority": "medium"},
     {"id": "TSK-REV6-003", "title": "Rev.6 KwinScript integration for window management", "status": "pending", "priority": "medium"},
     {"id": "TSK-REV6-004", "title": "Rev.6 Buffered rendering (wl_shm pool + memfd)", "status": "pending", "priority": "medium"},
-    {"id": "TSK-REV7", "title": "Rev.7 Fleet, cluster & cloud — K8s as governed capsules", "status": "pending", "priority": "medium"},
+    {"id": "TSK-REV7", "title": "Rev.7 Fleet, cluster & cloud — K8s as governed capsules", "status": "in_progress", "priority": "medium"},
     {"id": "TSK-REV8", "title": "Rev.8 Certified hardening — SELinux/STIG/NIST/CIS, FIPS, EU AI Act", "status": "pending", "priority": "medium"},
     {"id": "TSK-REV9", "title": "Rev.9 Ecosystem & marketplace — signed repos, SDK", "status": "pending", "priority": "medium"},
     {"id": "TSK-REV10", "title": "Rev.10 Autonomous AI-OS — self-healing, fleet autonomy", "status": "pending", "priority": "medium"}
   ],
   "current": {
-    "id": "TSK-REV6-002",
-    "title": "Rev.6 Display Manager Integration & Desktop Session Management",
+    "id": "TSK-REV7-006",
+    "title": "Cloud Image Builder for AI-OS.NET",
     "status": "completed"
   },
   "completed": [
-    {"id": "TSK-REV6-002", "title": "Rev.6 Display Manager Integration (12 files, 1405 lines): SDDM QML theme, session-manager.sh (337L POSIX), aios-plasma.desktop, 3 autostart scripts, desktop README, test suite (32 tests all passing)", "status": "completed"},
+    {"id": "TSK-REV6-002", "title": "Rev.6 Display Manager Integration (12 files, 1405 lines)", "status": "completed"},
     {"id": "TSK-REV6-001", "title": "Rev.6 Wayland Compositor Backend: RealWaylandClient (1052L, 18 tests)", "status": "completed"},
-    {"id": "REV3-COMPLETE", "title": "Rev.3 — All hardening + S23-S28 crates. 578 capability-runtime tests + 250 new crate tests.", "status": "completed"},
+    {"id": "TSK-REV7-006", "title": "Cloud Image Builder (9 files, 1483 lines): build-cloud-image.sh (551L), cloud-init YAML (192L), packer templates (430L), tests (183L), README (128L)", "status": "completed"},
+    {"id": "REV3-COMPLETE", "title": "Rev.3 — All hardening + S23-S28 crates. 578 capability-runtime tests.", "status": "completed"},
     {"id": "REV2-COMPLETE", "title": "Rev.2 — 19 crates, 4475 tests, all closed enum types with wire forms", "status": "completed"},
     {"id": "REV1-COMPLETE", "title": "Rev.1 — Vision + Constitutional core", "status": "completed"}
   ],
   "blocked": [],
-  "roadmap_version": "2026-06-11-Rev.6-Desktop-DM-Integration",
+  "roadmap_version": "2026-06-11-Rev.7-Cloud-Images",
   "roadmap_next": "Rev.4 Boot ISO → Rev.5 Live cognition → Rev.6 Desktop → Rev.7 Fleet → Rev.8 Hardening → Rev.9 Ecosystem → Rev.10 Autonomous"
 }

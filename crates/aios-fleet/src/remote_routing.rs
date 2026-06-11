@@ -1,5 +1,6 @@
 use crate::enums::{RemoteRoutingClass, RemoteRoutingReason};
 
+#[derive(Debug, Clone)]
 pub struct RemoteWorkloadRouting {
     pub routing_id: String,
     pub workload_ref: String,

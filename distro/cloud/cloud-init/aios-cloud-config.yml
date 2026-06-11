@@ -1,0 +1,192 @@
+#cloud-config
+# =============================================================================
+# AI-OS.NET Cloud-Init Configuration — Revision 7
+# =============================================================================
+# Applied at /etc/cloud/cloud.cfg.d/99-aios-cloud.cfg within the cloud image.
+# Handles hostname, SSH keys, fleet enrollment, SELinux, TPM2, and first-boot.
+# =============================================================================
+
+# ── System identity ──────────────────────────────────────────────────────────
+
+hostname: aios
+preserve_hostname: false
+fqdn: aios.local
+manage_etc_hosts: true
+
+# ── User accounts ────────────────────────────────────────────────────────────
+
+users:
+  - name: aios
+    gecos: AI-OS.NET System User
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: [adm, systemd-journal, aios]
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${AIOS_SSH_AUTHORIZED_KEY}
+
+ssh_pwauth: false
+disable_root: true
+disable_root_opts: "no-port-forwarding,no-agent-forwarding,no-X11-forwarding"
+
+# ── Package management ───────────────────────────────────────────────────────
+
+package_update: false
+package_upgrade: false
+
+# ── Timezone and locale ──────────────────────────────────────────────────────
+
+timezone: UTC
+locale: en_US.UTF-8
+
+# ── Network configuration ─────────────────────────────────────────────────────
+
+write_files:
+  - path: /etc/systemd/network/20-wired.network
+    content: |
+      [Match]
+      Name=en* eth*
+      [Network]
+      DHCP=yes
+      IPv6AcceptRA=yes
+      [DHCPv4]
+      RouteMetric=10
+      [IPv6AcceptRA]
+      RouteMetric=10
+    permissions: '0644'
+    owner: root:root
+
+  - path: /etc/systemd/resolved.conf
+    content: |
+      [Resolve]
+      DNS=127.0.0.53
+      FallbackDNS=1.1.1.1 8.8.8.8
+      Domains=~.
+      DNSSEC=allow-downgrade
+      DNSOverTLS=opportunistic
+    permissions: '0644'
+    owner: root:root
+
+  # ── Fleet enrollment configuration ────────────────────────────────────
+
+  - path: /etc/aios/config.toml
+    content: |
+      # AI-OS.NET Configuration — Cloud Edition (Revision 7)
+      [system]
+      version = "${AIOS_VERSION}"
+      hostname = "${AIOS_HOSTNAME}"
+      [fleet]
+      enroll_on_boot = true
+      coordinator_host = "${AIOS_FLEET_COORDINATOR}"
+      coordinator_port = 9090
+      tls_verify = true
+      node_role = "worker"
+      [paths]
+      data_dir = "/var/lib/aios"
+      config_dir = "/etc/aios/config.d"
+      evidence_dir = "/var/lib/aios/evidence"
+      policy_dir = "/var/lib/aios/policy"
+      capsule_dir = "/var/lib/aios/capsules"
+      backup_dir = "/var/lib/aios/backup"
+      [network]
+      dns_servers = ["127.0.0.53"]
+      [security]
+      selinux_enforcing = true
+      measured_boot = false
+      fips_mode = false
+      [evidence]
+      log_format = "jsonl"
+      retention_days = 90
+      sign_evidence = true
+      [policy]
+      bundle_dir = "/var/lib/aios/policy"
+      default_policy = "permissive"
+      [capability_runtime]
+      grpc_listen = "0.0.0.0:50051"
+      adapter_dir = "/usr/lib/aios"
+      sandbox_default = "bubblewrap"
+      [cognitive]
+      default_provider = "local"
+      model_cache_dir = "/var/cache/aios/models"
+      [logging]
+      level = "info"
+      journald = true
+    permissions: '0644'
+    owner: root:root
+
+  - path: /etc/aios/fleet-coordinator
+    content: |
+      ${AIOS_FLEET_COORDINATOR}
+    permissions: '0644'
+    owner: root:root
+
+  - path: /etc/aios/fleet-token
+    content: |
+      ${AIOS_FLEET_TOKEN}
+    permissions: '0600'
+    owner: root:root
+
+  - path: /etc/aios/node-id
+    content: |
+      ${AIOS_NODE_ID}
+    permissions: '0644'
+    owner: root:root
+
+  - path: /opt/aios/first-boot
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      if [ -x /usr/lib/aios/aios-first-boot ]; then
+          /usr/lib/aios/aios-first-boot --headless --accept-defaults 2>&1 | \
+              tee /var/log/aios/first-boot.log
+      fi
+      if [ -x /usr/bin/aios ]; then
+          /usr/bin/aios fleet enroll \
+              --coordinator "$(cat /etc/aios/fleet-coordinator 2>/dev/null || echo '')" \
+              --token "$(cat /etc/aios/fleet-token 2>/dev/null || echo '')" \
+              2>&1 | tee -a /var/log/aios/fleet-enroll.log || true
+      fi
+      rm -f /opt/aios/first-boot
+    permissions: '0755'
+    owner: root:root
+
+# ── SELinux state ────────────────────────────────────────────────────────────
+
+selinux_mode: enforcing
+selinux_type: aios
+selinux_relabel: true
+
+# ── Boot commands ─────────────────────────────────────────────────────────────
+
+bootcmd:
+  # Ensure /var/log/aios exists early
+  - [ mkdir, -p, /var/log/aios ]
+  # Grow root partition to fill instance disk
+  - [ growpart, /dev/sda, 2 ]
+  - [ resize2fs, /dev/sda2 ]
+
+# ── Run-commands (runs late in boot, after network) ──────────────────────────
+
+runcmd:
+  # Enable AIOS systemd units
+  - [ systemctl, enable, aios.target ]
+  - [ systemctl, enable, systemd-networkd ]
+  - [ systemctl, enable, systemd-resolved ]
+  # Attempt TPM2 enrollment (skip if no TPM — cloud VMs typically lack TPM2)
+  - [ /usr/bin/aios, tpm2, enroll, '||', true ]
+  # Run first-boot if present
+  - '[ -x /opt/aios/first-boot ] && /opt/aios/first-boot || true'
+  # Finalize — remove the first-boot marker
+  - [ rm, -f, /opt/aios/first-boot ]
+
+# ── Power state ───────────────────────────────────────────────────────────────
+
+power_state:
+  mode: reboot
+  message: AI-OS.NET cloud-init complete. Rebooting.
+  timeout: 30
+  condition: 'test -f /var/lib/cloud/instance/boot-finished'
+
+# ── Final message ─────────────────────────────────────────────────────────────
+
+final_message: "AI-OS.NET cloud-init completed at $TIMESTAMP — fleet enrollment ready."
