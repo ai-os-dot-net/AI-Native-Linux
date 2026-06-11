@@ -161,7 +161,19 @@ HAS_TPM2TOOLS=false
 HAS_VERITYSETUP=false
 HAS_LOADPOLICY=false
 
-check_opt busybox       "busybox-static (initramfs busybox)" && HAS_BUSYBOX=true || true
+check_opt busybox       "busybox-static (initramfs busybox)" && HAS_BUSYBOX=true || {
+    # openSUSE names it busybox-static
+    if command -v busybox-static >/dev/null 2>&1; then
+        HAS_BUSYBOX=true
+        BUSYBOX_CMD="busybox-static"
+        info "busybox-static found"
+    else
+        HAS_BUSYBOX=false
+    fi
+}
+
+# Use the correct busybox binary name
+BUSYBOX_CMD="${BUSYBOX_CMD:-busybox}"
 check_opt bootctl       "systemd-boot (EFI boot manager)"     && HAS_SYSTEMD_BOOT=true || true
 check_opt cryptsetup    "cryptsetup (LUKS in initramfs)"      && HAS_CRYPTSETUP=true || true
 check_opt tpm2_unseal   "tpm2-tools (TPM2 unseal)"            && HAS_TPM2TOOLS=true || true
@@ -555,31 +567,45 @@ info "SELinux config installed (policy is a placeholder — build with aios-seli
 
 ok "SELinux policy installed."
 
-# ── Step 7: Copy systemd-boot EFI stub ───────────────────────────────────────
+# ── Step 7: Prepare grub.cfg (boot menu for GRUB2 via grub2-mkrescue) ─────────
 
-step "Step 7: Preparing EFI boot files"
+step "Step 7: Creating GRUB2 boot configuration"
 
-mkdir -p "${ROOTFS_DIR}/usr/lib/systemd/boot/efi"
+mkdir -p "${ROOTFS_DIR}/boot/grub"
 
-if ${HAS_SYSTEMD_BOOT}; then
-    BOOTCTL="$(command -v bootctl)"
-    SYSTEMD_EFI_STUB="/usr/lib/systemd/boot/efi/systemd-bootx64.efi"
-    if [ "${ARCH}" = "aarch64" ]; then
-        SYSTEMD_EFI_STUB="/usr/lib/systemd/boot/efi/systemd-bootaa64.efi"
-    fi
+# Detect grub2-mkrescue (the one tool that handles EFI ISO creation correctly)
+GRUB2_MKRESCUE="$(command -v grub2-mkrescue 2>/dev/null || echo '')"
+HAS_GRUB2=false
+[ -n "${GRUB2_MKRESCUE}" ] && HAS_GRUB2=true
 
-    if [ -f "${SYSTEMD_EFI_STUB}" ]; then
-        cp "${SYSTEMD_EFI_STUB}" "${ROOTFS_DIR}/usr/lib/systemd/boot/efi/"
-        info "systemd-boot EFI stub installed from ${SYSTEMD_EFI_STUB}"
-    else
-        warn "systemd-boot EFI stub not found at ${SYSTEMD_EFI_STUB}"
-        warn "EFI boot may not work — install systemd-boot package"
-    fi
+# Generate grub.cfg for the live ISO
+cat > "${ROOTFS_DIR}/boot/grub/grub.cfg" <<'GRUBCFG'
+set timeout=5
+set default=0
+
+menuentry "AI-OS.NET Rev.11 Live" {
+    linux /live/vmlinuz root=live:CDLABEL=AIOS_REV11 rd.live.image rd.live.overlay=tmpfs quiet loglevel=3 aios.fleet.mode=standalone aios.autonomous.level=advisory
+    initrd /live/initrd.img
+}
+
+menuentry "AI-OS.NET Rev.11 Live (debug)" {
+    linux /live/vmlinuz root=live:CDLABEL=AIOS_REV11 rd.live.image rd.live.overlay=tmpfs loglevel=7 aios.fleet.mode=standalone aios.autonomous.level=advisory
+    initrd /live/initrd.img
+}
+
+menuentry "AI-OS.NET Rev.11 Recovery Shell" {
+    linux /live/vmlinuz root=live:CDLABEL=AIOS_REV11 rd.live.image rescue systemd.unit=rescue.target
+    initrd /live/initrd.img
+}
+GRUBCFG
+
+if ${HAS_GRUB2}; then
+    info "grub2-mkrescue detected — ISO will be UEFI-bootable with GRUB2"
 else
-    warn "bootctl not found — systemd-boot EFI stub not installed"
+    warn "grub2-mkrescue not found — install grub2-x86_64-efi package"
 fi
 
-ok "EFI boot files prepared."
+ok "GRUB2 boot configuration prepared."
 
 # ── Step 8: Install kernel ───────────────────────────────────────────────────
 
@@ -610,20 +636,39 @@ install_kernel() {
 }
 
 if [ "${KERNEL_SOURCE}" = "host" ]; then
-    # Try to find kernel on the host
+    # Try to find kernel on the host — search /usr/lib/modules (modern), then /boot (legacy)
     VMLINUX=""
     INITRD=""
+
+    # Primary: /usr/lib/modules/<version>/vmlinuz (kernel-default RPM layout)
+    if [ -d "/usr/lib/modules" ]; then
+        for kdir in /usr/lib/modules/*/; do
+            candidate="${kdir}vmlinuz"
+            if [ -f "${candidate}" ]; then
+                VMLINUX="${candidate}"
+                info "Kernel found: ${candidate}"
+                break
+            fi
+        done
+    fi
+
+    # Fallback: /boot/ patterns
+    if [ -z "${VMLINUX}" ]; then
+        for candidate in \
+            /boot/vmlinuz-linux \
+            /boot/vmlinuz-linux-lts \
+            /boot/vmlinuz-"$(uname -r)" \
+            /boot/vmlinuz; do
+            if [ -f "${candidate}" ]; then
+                VMLINUX="${candidate}"
+                break
+            fi
+        done
+    fi
+
+    # Initramfs: try /boot/initrd (RPM default), then patterns
     for candidate in \
-        /boot/vmlinuz-linux \
-        /boot/vmlinuz-linux-lts \
-        /boot/vmlinuz-"$(uname -r)" \
-        /boot/vmlinuz; do
-        if [ -f "${candidate}" ]; then
-            VMLINUX="${candidate}"
-            break
-        fi
-    done
-    for candidate in \
+        /boot/initrd \
         /boot/initramfs-linux.img \
         /boot/initramfs-linux-lts.img \
         /boot/initramfs-"$(uname -r)".img \
@@ -635,7 +680,7 @@ if [ "${KERNEL_SOURCE}" = "host" ]; then
     done
 
     if [ -z "${VMLINUX}" ]; then
-        warn "No kernel found in /boot/ — ISO will boot kernelless."
+        warn "No kernel found — ISO will boot kernelless."
         warn "Set KERNEL_SOURCE to a kernel directory or file path."
     else
         install_kernel "${VMLINUX}" "${INITRD}"
@@ -666,26 +711,35 @@ step "Step 9: Building initramfs"
 cp -r "${REPO_ROOT}/distro/aios-boot/initramfs" "${INITRAMFS_DIR}"
 chmod +x "${INITRAMFS_DIR}/init"
 
-# Install busybox in initramfs
+# Install busybox in initramfs — try busybox-static first (openSUSE), then busybox
 if ${HAS_BUSYBOX}; then
-    BUSYBOX_BIN="$(command -v busybox)"
+    BUSYBOX_BIN="$(command -v "${BUSYBOX_CMD}" 2>/dev/null || command -v busybox-static 2>/dev/null || echo '')"
+    if [ -z "${BUSYBOX_BIN}" ] || [ ! -f "${BUSYBOX_BIN}" ]; then
+        warn "busybox binary not found at expected path — initramfs will lack shell."
+        BUSYBOX_BIN=""
+    fi
     mkdir -p "${INITRAMFS_DIR}/bin"
-    cp "${BUSYBOX_BIN}" "${INITRAMFS_DIR}/bin/busybox"
-    chmod 755 "${INITRAMFS_DIR}/bin/busybox"
 
-    # Install busybox symlinks
-    for applet in sh ls cat cp mv rm mkdir mount umount switch_root \
-                  grep sed head printf sleep test echo true false \
-                  dd mknod ln chmod chown sync reboot poweroff \
-                  blkid find xargs cut tr wc which; do
-        ln -sf busybox "${INITRAMFS_DIR}/bin/${applet}" 2>/dev/null || true
-    done
+    if [ -n "${BUSYBOX_BIN}" ] && [ -f "${BUSYBOX_BIN}" ]; then
+        cp "${BUSYBOX_BIN}" "${INITRAMFS_DIR}/bin/busybox"
+        chmod 755 "${INITRAMFS_DIR}/bin/busybox"
 
-    # Symlink /bin/sh for compat
-    mkdir -p "${INITRAMFS_DIR}/sbin"
-    ln -sf ../bin/busybox "${INITRAMFS_DIR}/sbin/init" 2>/dev/null || true
-    ln -sf /bin/busybox  "${INITRAMFS_DIR}/bin/sh" 2>/dev/null || true
-    info "Busybox installed in initramfs with common applets."
+        # Install busybox symlinks
+        for applet in sh ls cat cp mv rm mkdir mount umount switch_root \
+                      grep sed head printf sleep test echo true false \
+                      dd mknod ln chmod chown sync reboot poweroff \
+                      blkid find xargs cut tr wc which; do
+            ln -sf busybox "${INITRAMFS_DIR}/bin/${applet}" 2>/dev/null || true
+        done
+
+        # Symlink /bin/sh for compat
+        mkdir -p "${INITRAMFS_DIR}/sbin"
+        ln -sf ../bin/busybox "${INITRAMFS_DIR}/sbin/init" 2>/dev/null || true
+        ln -sf /bin/busybox  "${INITRAMFS_DIR}/bin/sh" 2>/dev/null || true
+        info "Busybox installed in initramfs with common applets."
+    else
+        warn "Busybox binary not available — initramfs shell will not function."
+    fi
 else
     warn "busybox not found — initramfs will be non-functional!"
     warn "Install busybox-static package."
@@ -720,6 +774,11 @@ cp "${REPO_ROOT}/distro/aios-boot/initramfs/aios-preinit" "${INITRAMFS_DIR}/etc/
 INITRAMFS_SIZE=$(du -h "${INITRAMFS_OUT}" | cut -f1)
 ok "Initramfs built: ${INITRAMFS_OUT} (${INITRAMFS_SIZE})"
 
+# Copy initramfs to ISO staging for GRUB to find during live boot
+mkdir -p "${ISO_DIR}/live"
+cp "${INITRAMFS_OUT}" "${ISO_DIR}/live/initrd.img"
+info "Initramfs copied to ISO staging: live/initrd.img"
+
 # ── Step 10: Create squashfs root image ──────────────────────────────────────
 
 step "Step 10: Creating squashfs root image"
@@ -750,133 +809,56 @@ mksquashfs "${ROOTFS_DIR}" "${ISO_DIR}/live/aios.squashfs" \
 SQUASHFS_SIZE=$(du -h "${ISO_DIR}/live/aios.squashfs" | cut -f1)
 ok "Squashfs root created: live/aios.squashfs (${SQUASHFS_SIZE})"
 
-# ── Step 11: Create EFI boot image ───────────────────────────────────────────
+# ── Step 11: Prepare ISO staging and assemble with grub2-mkrescue ─────────────
 
-step "Step 11: Creating EFI boot image"
-
-mkdir -p "${ISO_DIR}/EFI/BOOT"
-
-# Create FAT filesystem image for EFI
-EFI_SIZE_MB=64
-dd if=/dev/zero of="${EFI_IMG}" bs=1M count="${EFI_SIZE_MB}" status=none
-mkfs.vfat -F 32 -n "AIOS_EFI" "${EFI_IMG}" >/dev/null 2>&1
-
-# Create directory structure inside the FAT image
-MTOOLS_SKIP_CHECK=1
-export MTOOLS_SKIP_CHECK
-
-info "Populating EFI image..."
-
-# Install systemd-boot into the EFI image
-if ${HAS_SYSTEMD_BOOT}; then
-    SYSTEMD_EFI_STUB="/usr/lib/systemd/boot/efi/systemd-bootx64.efi"
-    if [ "${ARCH}" = "aarch64" ]; then
-        SYSTEMD_EFI_STUB="/usr/lib/systemd/boot/efi/systemd-bootaa64.efi"
-    fi
-
-    if [ -f "${SYSTEMD_EFI_STUB}" ]; then
-        mmd -i "${EFI_IMG}" ::/EFI
-        mmd -i "${EFI_IMG}" ::/EFI/BOOT
-        if [ "${ARCH}" = "aarch64" ]; then
-            mcopy -i "${EFI_IMG}" "${SYSTEMD_EFI_STUB}" ::/EFI/BOOT/BOOTAA64.EFI
-        else
-            mcopy -i "${EFI_IMG}" "${SYSTEMD_EFI_STUB}" ::/EFI/BOOT/BOOTX64.EFI
-        fi
-        info "systemd-boot installed in EFI image."
-    else
-        warn "systemd-boot EFI stub not found — EFI image will be empty."
-    fi
-fi
-
-# Create loader configuration
-LOADER_CONF_DIR="${BUILD_DIR}/loader-entries"
-mkdir -p "${LOADER_CONF_DIR}"
-
-cat > "${LOADER_CONF_DIR}/loader.conf" <<'EOF'
-timeout 5
-console-mode keep
-default aios-*
-editor no
-auto-entries no
-auto-firmware no
-EOF
-
-cat > "${LOADER_CONF_DIR}/aios-live.conf" <<'EOF'
-title   AI-OS.NET Live (Revision 11)
-linux   /live/vmlinuz
-initrd  /live/initrd.img
-options root=live:CDLABEL=AIOS_REV11 rd.live.image rd.live.overlay=tmpfs quiet loglevel=3 aios.fleet.mode=standalone aios.autonomous.level=advisory aios.container.engine=podman-rootless
-EOF
-
-# Copy loader config into EFI image
-if [ -f "${LOADER_CONF_DIR}/loader.conf" ]; then
-    mmd -i "${EFI_IMG}" ::/loader
-    mmd -i "${EFI_IMG}" ::/loader/entries
-    mcopy -i "${EFI_IMG}" "${LOADER_CONF_DIR}/loader.conf" ::/loader/loader.conf
-    mcopy -i "${EFI_IMG}" "${LOADER_CONF_DIR}/aios-live.conf" ::/loader/entries/aios-live.conf
-fi
-
-# Copy EFI image to ISO staging
-cp "${EFI_IMG}" "${ISO_DIR}/EFI/efiboot.img"
-
-ok "EFI boot image created (${EFI_SIZE_MB} MB)."
-
-# ── Step 12: Assemble final ISO ──────────────────────────────────────────────
-
-step "Step 12: Assembling ISO with xorriso"
+step "Step 11: Assembling bootable ISO with grub2-mkrescue"
 
 mkdir -p "$(dirname "${OUTPUT}")"
 
-VOLID="AIOS_REV11"
-VOLID_DATE="${DATE_STAMP:2}" # last 6 digits of YYYYMMDD
-VOLID="${VOLID:0:11}${VOLID_DATE}" # truncate to 17 chars max
+# grub2-mkrescue expects a directory tree with /boot/grub/grub.cfg
+# We already have: ${ROOTFS_DIR}/boot/grub/grub.cfg (Step 7)
+#   ${ISO_DIR}/live/vmlinuz + initrd.img (Step 8)
+#   ${ISO_DIR}/live/aios.squashfs (Step 10)
 
-# Use simpler volid
-VOLID="AIOS_REV11"
+# Copy kernel and initramfs into ISO staging
+# (These were placed in ISO_DIR by Step 8 already)
 
-ISOHYBRID_MBR="/usr/lib/ISOLINUX/isohdpfx.bin"
-if [ ! -f "${ISOHYBRID_MBR}" ]; then
-    ISOHYBRID_MBR="/usr/lib/syslinux/bios/isohdpfx.bin"
-fi
-if [ ! -f "${ISOHYBRID_MBR}" ]; then
-    ISOHYBRID_MBR=""
-    warn "ISOLINUX/isohdpfx.bin not found — ISO will not be hybrid (BIOS-bootable)."
-fi
+# Install rootfs grub.cfg into ISO staging for grub2-mkrescue to find
+mkdir -p "${ISO_DIR}/boot/grub"
+cp "${ROOTFS_DIR}/boot/grub/grub.cfg" "${ISO_DIR}/boot/grub/grub.cfg"
 
-if [ -n "${ISOHYBRID_MBR}" ] && [ -f "${ISOHYBRID_MBR}" ]; then
-    xorriso -as mkisofs \
-        -iso-level 3 \
-        -full-iso9660-filenames \
-        -volid "${VOLID}" \
-        -eltorito-boot isolinux/isolinux.bin \
-        -eltorito-catalog isolinux/boot.cat \
-        -no-emul-boot \
-        -boot-load-size 4 \
-        -boot-info-table \
-        -isohybrid-mbr "${ISOHYBRID_MBR}" \
-        -eltorito-alt-boot \
-        -e EFI/efiboot.img \
-        -no-emul-boot \
-        -isohybrid-gpt-basdat \
-        -append_partition 2 0xef "${ISO_DIR}/EFI/efiboot.img" \
-        -output "${OUTPUT}" \
-        "${ISO_DIR}"
+# Copy rootfs content that should be on the ISO filesystem (not just squashfs)
+# grub2-mkrescue includes everything in ISO_DIR
+
+if ${HAS_GRUB2}; then
+    # grub2-mkrescue creates a UEFI-bootable + BIOS-bootable ISO
+    "${GRUB2_MKRESCUE}" \
+        -o "${OUTPUT}" \
+        "${ISO_DIR}" 2>&1 | tail -3
+    ISO_RC=$?
 else
-    # EFI-only ISO (no BIOS boot)
+    # Fallback: EFI-only ISO with manual xorriso
+    warn "grub2-mkrescue not found — falling back to manual xorriso (EFI may not boot)"
     xorriso -as mkisofs \
-        -iso-level 3 \
-        -full-iso9660-filenames \
-        -volid "${VOLID}" \
-        -eltorito-alt-boot \
-        -e EFI/efiboot.img \
-        -no-emul-boot \
+        -iso-level 3 -full-iso9660-filenames \
+        -volid "AIOS_REV11" \
+        -eltorito-alt-boot -e EFI/efiboot.img -no-emul-boot \
         -isohybrid-gpt-basdat \
-        -append_partition 2 0xef "${ISO_DIR}/EFI/efiboot.img" \
         -output "${OUTPUT}" \
-        "${ISO_DIR}"
+        "${ISO_DIR}" 2>&1 | tail -1
+    ISO_RC=$?
+fi
+
+if [ "${ISO_RC}" -ne 0 ] || [ ! -f "${OUTPUT}" ]; then
+    die "ISO assembly failed. Check logs above."
 fi
 
 ISO_SIZE=$(du -h "${OUTPUT}" | cut -f1)
+if ${HAS_GRUB2}; then
+    info "Bootloader: GRUB2 (via grub2-mkrescue)"
+else
+    info "Bootloader: manual xorriso (EFI-only)"
+fi
 ok "ISO assembled: ${OUTPUT} (${ISO_SIZE})"
 
 # ── Verification ─────────────────────────────────────────────────────────────
@@ -899,7 +881,7 @@ check_iso_item() {
 
 check_iso_item "Squashfs root"              "${ISO_DIR}/live/aios.squashfs"
 check_iso_item "Kernel image"               "${ISO_DIR}/live/vmlinuz"
-check_iso_item "EFI boot image"             "${ISO_DIR}/EFI/efiboot.img"
+check_iso_item "GRUB config"                "${ISO_DIR}/boot/grub/grub.cfg"
 check_iso_item "Systemd config"             "${ROOTFS_DIR}/etc/systemd/system/aios.target"
 check_iso_item "AIOS config"                "${ROOTFS_DIR}/etc/aios/config.toml"
 check_iso_item "OS release"                 "${ROOTFS_DIR}/etc/os-release"
