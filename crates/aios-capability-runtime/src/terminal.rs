@@ -101,7 +101,7 @@ pub enum TerminalMode {
 
 /// Closed four-state FSM for action proposal lifecycle.
 ///
-/// ```
+/// ```text
 /// Pending ──► Approved ──► (execute)
 ///    │
 ///    ├────────► Denied      (terminal)
