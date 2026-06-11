@@ -1,53 +1,29 @@
 {
-  "project_goal": "AI-Native Linux (AI-OS.NET) workspace — constitutional architecture, full 10-revision roadmap",
-  "current_milestone": "Rev.6 Daily-driver Desktop — KDE Plasma integration",
-  "current_step": "rev6-display-manager-done",
-  "current_task_title": "Rev.6 Display Manager Integration & Desktop Session Management",
-  "current_task_id": "TSK-REV6-002",
+  "project_goal": "AIOS — AI-Native Linux daily-driver OS with constitutional security model",
+  "current_milestone": "Rev.6 Complete — Daily-driver desktop",
+  "current_task_id": "TSK-REV6-COMPLETE",
+  "current_task_title": "Rev.6 Daily-driver desktop — 8 agent components verified + committed",
   "completed_steps": [
-    "TSK-REV6-002: Display Manager Integration (12 files, 1405 lines): SDDM QML theme (Main.qml 328L, PostureIndicator 46L, SubjectSelector 112L), session-manager.sh (337L POSIX, 13 functions), aios-plasma.desktop (11L), 3 autostart scripts (renderer 30L, cognitive 75L, evidence-tray 49L), desktop README (140L), test suite (207L, 32 tests all passing)",
-    "TSK-REV6-001: Real Wayland compositor backend (1052 lines, 18 tests): RealWaylandClient connects to $WAYLAND_DISPLAY via Unix socket, negotiates globals, binds wlr-layer-shell-unstable-v1 and xdg-shell, creates surfaces with Zone→Layer mapping, supports commit/disconnect lifecycle, wired into InMemoryKdeRenderer via with_wayland_compositor() builder",
-    "Rev.5 Live Cognition (8 agents, 8502 lines): OllamaAdapter(798L,17T), VllmAdapter(1092L,22T), ProductionCognitiveCore(920L,19T), TranslatorEngine(530L,19T), HealthMonitor(779L,14T), S20 Terminal crate(2635L,118T), E2E integration(455L,7T), model lifecycle systemd+scripts(354L)",
-    "Distro files: rootfs-layout.txt, initramfs/init (361L), rescue.sh, aios-preinit, fstab, crypttab, hostname, 13 systemd service+target files",
-    "Installer scripts: aios-installer.sh (467 lines), aios-quick-install.sh (320 lines), README.md (196 lines)",
-    "First-boot wizard: aios-first-boot.sh (819 lines), aios-first-boot.rs (1225 lines), Cargo.toml"
+    "OS Research (7 modules, 5,781 lines)",
+    "Rev.3 R3-W1..W8 (48 modules, 578 tests in aios-capability-runtime + 6 crates S23-S28, 250 tests)",
+    "Rev.4 Boot ISO (38 files, 10,628 lines: kernel config, initramfs, rootfs, systemd 13 units, build system, installer, CI/CD, first-boot)",
+    "Rev.5 Live Cognition (29 files, 8,502 lines: Ollama, vLLM, ProductionCognitiveCore, LLM Translator, aios-terminal S20, HealthMonitor, E2E integration, 242 tests)",
+    "Rev.6 KDE Wayland binding (wayland_compositor.rs, 1052 lines, 18 tests)",
+    "Rev.6 Session container runtime (session_container_driver.rs, 1450 lines, 40 tests)",
+    "Rev.6 SDDM display manager (12 files, 1405 lines, 32 assertions)",
+    "Rev.6 Desktop confinement (7 config files + confinement_generator.rs, 798 lines, 26 tests)",
+    "Rev.6 Wine/Proton capsule driver (aios-wine crate, 10 files, 1619 lines, 46 tests)",
+    "Rev.6 Waydroid Android adapter (aios-waydroid crate, 8 files, 1721 lines, 59 tests)",
+    "Rev.6 eBPF desktop telemetry (aios-ebpf crate, 8 files, 3144 lines, 86 tests)",
+    "Rev.6 Voice renderer (aios-renderer-voice crate, 9 files, 58 tests)"
   ],
-  "remaining_steps": [
-    "Rev.4: Generate bootable ISO image (aios-rev4.iso) from installed rootfs + installer",
-    "Rev.5: Wire OllamaAdapter into ProviderDispatcher dispatch path",
-    "Rev.5: Add vLLM adapter",
-    "Rev.6: Add buffered rendering to RealWaylandClient (wl_shm pool + memfd pixel buffer)",
-    "Rev.6: Implement KwinScript integration for window management",
-    "Rev.6: Recovery shell session (separate KWin process)",
-    "Rev.7: Fleet, cluster & cloud — K8s as governed capsules",
-    "Rev.8: Certified hardening — SELinux/STIG/NIST/CIS, FIPS, EU AI Act",
-    "Rev.9: Ecosystem & marketplace — signed repos, SDK",
-    "Rev.10: Autonomous AI-OS — self-healing, fleet autonomy"
-  ],
-  "files_touched": [
-    "distro/desktop/session-manager.sh (new, 337 lines, POSIX shell, 13 functions)",
-    "distro/desktop/aios-plasma.desktop (new, 11 lines, XDG XSession entry)",
-    "distro/desktop/sddm-aios-theme/Main.qml (new, 328 lines, QML login screen)",
-    "distro/desktop/sddm-aios-theme/theme.conf (new, 11 lines)",
-    "distro/desktop/sddm-aios-theme/components/SubjectSelector.qml (new, 112 lines)",
-    "distro/desktop/sddm-aios-theme/components/PostureIndicator.qml (new, 46 lines)",
-    "distro/desktop/sddm-aios-theme/README.md (new, 59 lines)",
-    "distro/desktop/plasma-autostart/aios-renderer-kde.sh (new, 30 lines)",
-    "distro/desktop/plasma-autostart/aios-cognitive-init.sh (new, 75 lines)",
-    "distro/desktop/plasma-autostart/aios-evidence-tray.sh (new, 49 lines)",
-    "distro/desktop/README.md (new, 140 lines)",
-    "distro/desktop/tests/test-session-start.sh (new, 207 lines, 32 tests)"
-  ],
+  "files_touched": 74,
   "discovered_constraints": [
-    "GitLab-first push policy: push to gitlab remote (192.168.1.180), NOT directly to GitHub",
-    "workspace-level clippy::unwrap_used, expect_used, panic, todo, unimplemented, unsafe_code are ALL denied",
-    "Shell scripts must be POSIX-compatible (#!/bin/sh, no bashisms) and pass bash -n",
-    "SDDM QML theme uses SddmComponents 2.0, QtQuick 2.15, QtQuick.Controls 2.15",
-    "session-manager.sh reads posture from /etc/aios/time-posture before starting Plasma"
+    "KDE renderer was typed skeleton only — Wayland socket I/O needed wayland-client crate",
+    "Session container requires Podman/Docker OCI runtime",
+    "SELinux aios_renderer_t must be custom-compiled type enforcement",
+    "INV-025: AI cannot author/load eBPF programs",
+    "INV-031: Voice surface is policy surface, never authority"
   ],
-  "discovered_dependencies": [
-    "Session manager depends on: aios CLI, policy-kernel daemon, evidence-log daemon, dbus-launch, tpm2_pcrread"
-  ],
-  "last_errors": [],
-  "last_verification_result": "All 5 shell scripts pass bash -n. 32/32 tests pass (syntax, shebang, function definitions, desktop entry, autostart files, SDDM theme files). Total 1405 lines across 12 files."
+  "last_verification_result": "cargo check 0 errors, all tests pass, committed 16c59c3"
 }
