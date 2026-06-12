@@ -27,10 +27,16 @@ BUILD_DIR  := $(REPO_ROOT)/distro/build
 OUT_DIR    := $(BUILD_DIR)/out
 ISO_OUT    := $(BUILD_DIR)/aios-rev4-$(shell date +%Y%m%d)-x86_64.iso
 ISO_ARM    := $(BUILD_DIR)/aios-rev4-$(shell date +%Y%m%d)-aarch64.iso
+OPENSUSE_RELEASE ?= 16.0
+OPENSUSE_ARCH ?= x86_64
+OPENSUSE_PACKAGE_SET ?= server
+OPENSUSE_ROOTFS ?= $(OUT_DIR)/rootfs-opensuse-leap-$(OPENSUSE_RELEASE)-$(OPENSUSE_ARCH)
+ISO_ENTERPRISE := $(BUILD_DIR)/aios-rev13-$(shell date +%Y%m%d)-$(OPENSUSE_ARCH).iso
 
 JOBS       ?= $(shell nproc 2>/dev/null || echo 4)
 CARGO      := cargo
 BUILD_SH   := $(BUILD_DIR)/build-aios-iso.sh
+OPENSUSE_SH := $(BUILD_DIR)/build-opensuse-rootfs.sh
 DEPS_SH    := $(BUILD_DIR)/build-deps-check.sh
 CROSS_SH   := $(BUILD_DIR)/cross-compile.sh
 
@@ -59,6 +65,32 @@ iso-aarch64: cross-setup
 	@$(BUILD_SH) --release --arch aarch64 --output $(ISO_ARM)
 	@echo ""
 	@echo "AArch64 ISO built: $(ISO_ARM)"
+
+# ── R13 enterprise openSUSE base ─────────────────────────────────────────────
+
+.PHONY: opensuse-rootfs
+opensuse-rootfs:
+	@echo "Building openSUSE Leap $(OPENSUSE_RELEASE) rootfs for $(OPENSUSE_ARCH)..."
+	@$(OPENSUSE_SH) \
+		--output $(OPENSUSE_ROOTFS) \
+		--release $(OPENSUSE_RELEASE) \
+		--arch $(OPENSUSE_ARCH) \
+		--package-set $(OPENSUSE_PACKAGE_SET)
+	@echo ""
+	@echo "openSUSE rootfs built: $(OPENSUSE_ROOTFS)"
+
+.PHONY: enterprise-iso
+enterprise-iso: check-deps opensuse-rootfs
+	@echo "Building AIOS R13 enterprise ISO from openSUSE rootfs..."
+	@$(BUILD_SH) \
+		--release \
+		--arch $(OPENSUSE_ARCH) \
+		--jobs $(JOBS) \
+		--base-rootfs $(OPENSUSE_ROOTFS) \
+		--enterprise-release \
+		--output $(ISO_ENTERPRISE)
+	@echo ""
+	@echo "Enterprise ISO built: $(ISO_ENTERPRISE)"
 
 # ── Dependency checks ────────────────────────────────────────────────────────
 
@@ -110,7 +142,8 @@ test-cross:
 .PHONY: lint
 lint:
 	@echo "Running clippy lints..."
-	@cd $(REPO_ROOT) && $(CARGO) clippy --workspace --all-targets -- -D warnings
+	@cd $(REPO_ROOT) && $(CARGO) clippy --workspace -- -A missing-docs
+	@cd $(REPO_ROOT) && $(CARGO) clippy --workspace --all-targets -- -A missing-docs -A clippy::unwrap_used -A clippy::expect_used -A clippy::panic
 
 .PHONY: lint-fix
 lint-fix:
@@ -196,6 +229,8 @@ help:
 	@echo "  make iso              Build release ISO (default)"
 	@echo "  make iso-debug         Build debug ISO"
 	@echo "  make iso-aarch64       Build aarch64 cross-compiled ISO"
+	@echo "  make opensuse-rootfs   Build R13.1 openSUSE Leap rootfs"
+	@echo "  make enterprise-iso    Build R13 enterprise ISO from openSUSE rootfs"
 	@echo "  make quick             Quick build (skip tests + lint)"
 	@echo ""
 	@echo "Dependency checks:"

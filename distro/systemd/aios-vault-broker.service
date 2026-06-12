@@ -4,8 +4,8 @@ Documentation=https://ai-os.net/docs/vault-broker
 Before=aios-capability-runtime.service
 
 [Service]
-Type=notify
-ExecStart=/usr/lib/aios/aios-vault-broker --config /etc/aios/config.toml --vault-dir /var/lib/aios/vault
+Type=simple
+ExecStart=/usr/lib/aios/aios-system run-service aios-vault-broker --config /etc/aios/config.toml
 Restart=always
 RestartSec=3
 LimitNOFILE=65536

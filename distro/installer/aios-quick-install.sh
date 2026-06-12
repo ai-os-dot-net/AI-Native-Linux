@@ -17,11 +17,15 @@ set -euo pipefail
 #   AIOS_PROFILE             Security profile (default: CI_BARE)
 #   AIOS_ESP_SIZE_MB         ESP size in MiB (default: 512)
 #   AIOS_BOOT_SIZE_MB        Boot size in MiB (default: 1024)
+#   AIOS_RECOVERY_SIZE_MB    Recovery partition size in MiB (default: 2048)
+#   AIOS_ROLLBACK_SIZE_MB    Rollback partition size in MiB (default: 4096)
+#   AIOS_HASH_SIZE_MB        dm-verity hash partition size in MiB (default: 1024)
 #   AIOS_MIN_DISK_GB         Minimum disk GB (default: 40)
 #   AIOS_SQUASHFS            Path to squashed rootfs (auto-detected if unset)
 #   AIOS_SKIP_VERITY=1       Skip dm-verity setup
 #   AIOS_SKIP_TPM=1          Skip TPM2 sealing
 #   AIOS_SKIP_SELINUX=1      Skip SELinux setup
+#   AIOS_SELINUX_MODE        SELinux mode (permissive|enforcing|disabled)
 #
 # EXIT CODES:
 #   0   Success
@@ -40,8 +44,8 @@ set -euo pipefail
 # =============================================================================
 
 readonly AIOS_VERSION="REV4"
-readonly AIOS_BUILD_ID="$(date -u +%Y%m%dT%H%M%SZ)"
-readonly SCRIPT_NAME="${0##*/}"
+AIOS_BUILD_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+readonly AIOS_BUILD_ID
 
 # ── Log helpers (no colour, structured for CI log parsers) ────────────────────
 
@@ -68,6 +72,8 @@ cleanup_on_failure() {
     if [ "${SETUP_MOUNTED}" -eq 1 ]; then
         umount "${TARGET_MOUNT}/boot/efi" 2>/dev/null || true
         umount "${TARGET_MOUNT}/boot"     2>/dev/null || true
+        umount "${TARGET_MOUNT}/recovery" 2>/dev/null || true
+        umount "${TARGET_MOUNT}/var/lib/aios/rollback" 2>/dev/null || true
         umount "${TARGET_MOUNT}"           2>/dev/null || true
     fi
     if [ -b "/dev/mapper/aios-cryptroot" ]; then
@@ -105,7 +111,11 @@ validate_env() {
     PROFILE="${AIOS_PROFILE:-CI_BARE}"
     ESP_SIZE_MB="${AIOS_ESP_SIZE_MB:-512}"
     BOOT_SIZE_MB="${AIOS_BOOT_SIZE_MB:-1024}"
+    RECOVERY_SIZE_MB="${AIOS_RECOVERY_SIZE_MB:-2048}"
+    ROLLBACK_SIZE_MB="${AIOS_ROLLBACK_SIZE_MB:-4096}"
+    HASH_SIZE_MB="${AIOS_HASH_SIZE_MB:-1024}"
     MIN_DISK_GB="${AIOS_MIN_DISK_GB:-40}"
+    SELINUX_MODE="${AIOS_SELINUX_MODE:-permissive}"
     AIOS_SQUASHFS="${AIOS_SQUASHFS:-/run/initramfs/live/aios.squashfs}"
 
     if [ ! -f "${AIOS_SQUASHFS}" ]; then
@@ -159,9 +169,12 @@ do_partition() {
     sleep 1
 
     sgdisk --clear \
-        --new=1:0:+${ESP_SIZE_MB}M  --typecode=1:ef00 --change-name=1:AIOS_ESP \
-        --new=2:0:+${BOOT_SIZE_MB}M --typecode=2:8300 --change-name=2:AIOS_BOOT \
-        --new=3:0:0                 --typecode=3:8309 --change-name=3:AIOS_LUKS \
+        "--new=1:0:+${ESP_SIZE_MB}M"  --typecode=1:ef00 --change-name=1:AIOS_ESP \
+        "--new=2:0:+${BOOT_SIZE_MB}M" --typecode=2:8300 --change-name=2:AIOS_BOOT \
+        "--new=3:0:+${RECOVERY_SIZE_MB}M" --typecode=3:8300 --change-name=3:AIOS_RECOVERY \
+        "--new=4:0:+${ROLLBACK_SIZE_MB}M" --typecode=4:8300 --change-name=4:AIOS_ROLLBACK \
+        "--new=5:0:+${HASH_SIZE_MB}M" --typecode=5:8300 --change-name=5:AIOS_HASH \
+        --new=6:0:0                 --typecode=6:8309 --change-name=6:AIOS_LUKS \
         "${TARGET_DISK}" || die "Partition creation failed" 4
 
     partprobe "${TARGET_DISK}" 2>/dev/null || true
@@ -176,13 +189,17 @@ do_partition() {
 
     ESP_PART="${TARGET_DISK}${_suffix}1"
     BOOT_PART="${TARGET_DISK}${_suffix}2"
-    LUKS_PART="${TARGET_DISK}${_suffix}3"
+    RECOVERY_PART="${TARGET_DISK}${_suffix}3"
+    ROLLBACK_PART="${TARGET_DISK}${_suffix}4"
+    ROOT_HASH_PART="${TARGET_DISK}${_suffix}5"
+    ROOT_HASH_DEV="${ROOT_HASH_PART}"
+    LUKS_PART="${TARGET_DISK}${_suffix}6"
 
-    for _p in "${ESP_PART}" "${BOOT_PART}" "${LUKS_PART}"; do
+    for _p in "${ESP_PART}" "${BOOT_PART}" "${RECOVERY_PART}" "${ROLLBACK_PART}" "${ROOT_HASH_PART}" "${LUKS_PART}"; do
         lsblk -n "${_p}" >/dev/null 2>&1 || die "Partition ${_p} not created" 4
     done
 
-    msg "Partitions: ESP=${ESP_PART} BOOT=${BOOT_PART} LUKS=${LUKS_PART}"
+    msg "Partitions: ESP=${ESP_PART} BOOT=${BOOT_PART} RECOVERY=${RECOVERY_PART} ROLLBACK=${ROLLBACK_PART} HASH=${ROOT_HASH_PART} LUKS=${LUKS_PART}"
 }
 
 # ── Filesystems ───────────────────────────────────────────────────────────────
@@ -191,7 +208,9 @@ do_filesystems() {
     info "=== Creating filesystems ==="
     mkfs.vfat -F 32 -n AIOS_ESP "${ESP_PART}" || die "mkfs.vfat ESP failed" 6
     mkfs.ext4 -q -L AIOS_BOOT "${BOOT_PART}" || die "mkfs.ext4 boot failed" 6
-    msg "ESP + BOOT formatted"
+    mkfs.ext4 -q -L AIOS_RECOVERY "${RECOVERY_PART}" || die "mkfs.ext4 recovery failed" 6
+    mkfs.ext4 -q -L AIOS_ROLLBACK "${ROLLBACK_PART}" || die "mkfs.ext4 rollback failed" 6
+    msg "ESP + BOOT + RECOVERY + ROLLBACK formatted"
 }
 
 # ── Encryption ────────────────────────────────────────────────────────────────
@@ -237,6 +256,12 @@ do_deploy() {
     msg "Extracting squashfs (${AIOS_SQUASHFS})..."
     unsquashfs -f -d "${TARGET_MOUNT}" "${AIOS_SQUASHFS}" || die "unsquashfs failed" 7
 
+    mkdir -p "${TARGET_MOUNT}/recovery" "${TARGET_MOUNT}/var/lib/aios/rollback"
+    mount -t ext4 -o defaults,noatime "${RECOVERY_PART}" "${TARGET_MOUNT}/recovery" \
+        || die "Recovery mount failed" 7
+    mount -t ext4 -o defaults,noatime "${ROLLBACK_PART}" "${TARGET_MOUNT}/var/lib/aios/rollback" \
+        || die "Rollback mount failed" 7
+
     msg "Rootfs extracted. $(du -sh "${TARGET_MOUNT}" 2>/dev/null | awk '{print $1}') on disk."
 }
 
@@ -245,13 +270,16 @@ do_deploy() {
 do_configure() {
     info "=== Generating system configuration ==="
 
-    local _root_uuid _boot_uuid _esp_uuid _luks_uuid
+    local _root_uuid _boot_uuid _esp_uuid _recovery_uuid _rollback_uuid _luks_uuid
     _root_uuid=$(blkid -s UUID -o value "${LUKS_MAPPER}" 2>/dev/null || echo "")
     _boot_uuid=$(blkid -s UUID -o value "${BOOT_PART}" 2>/dev/null || echo "")
     _esp_uuid=$(blkid -s UUID -o value "${ESP_PART}" 2>/dev/null || echo "")
+    _recovery_uuid=$(blkid -s UUID -o value "${RECOVERY_PART}" 2>/dev/null || echo "")
+    _rollback_uuid=$(blkid -s UUID -o value "${ROLLBACK_PART}" 2>/dev/null || echo "")
     _luks_uuid=$(blkid -s UUID -o value "${LUKS_PART}" 2>/dev/null || echo "")
 
-    [ -n "${_root_uuid}" ] && [ -n "${_luks_uuid}" ] || die "UUID read failed" 1
+    [ -n "${_root_uuid}" ] && [ -n "${_luks_uuid}" ] && [ -n "${_recovery_uuid}" ] && [ -n "${_rollback_uuid}" ] \
+        || die "UUID read failed" 1
 
     # /etc/fstab
     cat > "${TARGET_MOUNT}/etc/fstab" <<FSTAB
@@ -259,6 +287,8 @@ do_configure() {
 UUID=${_root_uuid}    /         ext4    rw,noatime,discard,errors=remount-ro  0 1
 UUID=${_boot_uuid}    /boot     ext4    defaults,noatime                      0 2
 UUID=${_esp_uuid}     /boot/efi vfat    defaults,noatime,umask=0077           0 2
+UUID=${_recovery_uuid} /recovery ext4    defaults,noatime,nodev,nosuid         0 2
+UUID=${_rollback_uuid} /var/lib/aios/rollback ext4 defaults,noatime,nodev,nosuid 0 2
 tmpfs                 /tmp      tmpfs   defaults,noexec,nosuid,nodev,size=2G  0 0
 FSTAB
     chmod 644 "${TARGET_MOUNT}/etc/fstab"
@@ -287,6 +317,45 @@ HOME_URL="https://ai-os.net"
 EOF
     chmod 644 "${TARGET_MOUNT}/etc/os-release"
 
+    mkdir -p "${TARGET_MOUNT}/etc/aios" "${TARGET_MOUNT}/recovery" "${TARGET_MOUNT}/var/lib/aios/rollback"
+    cat > "${TARGET_MOUNT}/etc/aios/install-layout.json" <<EOF
+{
+  "schema": "aios.install_layout.v1",
+  "build_id": "${AIOS_BUILD_ID}",
+  "target_disk": "${TARGET_DISK}",
+  "partitions": {
+    "esp": "${ESP_PART}",
+    "boot": "${BOOT_PART}",
+    "recovery": "${RECOVERY_PART}",
+    "rollback": "${ROLLBACK_PART}",
+    "hash": "${ROOT_HASH_PART}",
+    "luks_root": "${LUKS_PART}"
+  },
+  "mounts": {
+    "recovery": "/recovery",
+    "rollback": "/var/lib/aios/rollback"
+  }
+}
+EOF
+    chmod 644 "${TARGET_MOUNT}/etc/aios/install-layout.json"
+
+    cat > "${TARGET_MOUNT}/recovery/README" <<EOF
+AI-OS.NET recovery partition
+Build: ${AIOS_BUILD_ID}
+Root LUKS UUID: ${_luks_uuid}
+EOF
+    chmod 600 "${TARGET_MOUNT}/recovery/README"
+
+    cat > "${TARGET_MOUNT}/var/lib/aios/rollback/current.json" <<EOF
+{
+  "schema": "aios.rollback_state.v1",
+  "active_deployment": "${AIOS_BUILD_ID}",
+  "previous_deployment": null,
+  "health": "pending-first-boot"
+}
+EOF
+    chmod 600 "${TARGET_MOUNT}/var/lib/aios/rollback/current.json"
+
     msg "System configuration written."
 }
 
@@ -301,6 +370,17 @@ do_bootloader() {
     local _luks_uuid
     _luks_uuid=$(blkid -s UUID -o value "${LUKS_PART}" 2>/dev/null || echo "")
 
+    local _root_mode="rw"
+    local _verity_params=""
+    if [ -f "${TARGET_MOUNT}/etc/aios/verity/roothash.sig" ]; then
+        local _roothash
+        _roothash=$(head -n1 "${TARGET_MOUNT}/etc/aios/verity/roothash.sig" | tr -d '[:space:]')
+        if [ -n "${_roothash}" ]; then
+            _root_mode="ro"
+            _verity_params=" verity dm_verity.roothash=${_roothash}"
+        fi
+    fi
+
     local _entries_dir="${TARGET_MOUNT}/boot/efi/loader/entries"
     mkdir -p "${_entries_dir}"
 
@@ -308,7 +388,7 @@ do_bootloader() {
 title   AI-OS.NET ${AIOS_VERSION} (CI)
 linux   /vmlinuz-aios
 initrd  /initramfs-aios.img
-options root=/dev/mapper/aios-cryptroot rd.luks.uuid=${_luks_uuid} rw quiet loglevel=3 selinux=1 enforcing
+options root=/dev/mapper/aios-cryptroot rd.luks.uuid=${_luks_uuid} ${_root_mode} quiet loglevel=3 selinux=1 ${SELINUX_MODE}${_verity_params}
 LOADER
     chmod 644 "${_entries_dir}/aios.conf"
 
@@ -375,8 +455,36 @@ do_verity() {
         warn "veritysetup not found — dm-verity skipped."
         return 0
     fi
-    info "dm-verity setup: not configured for CI bare-metal (no hash partition)."
-    info "Use full aios-installer.sh for verity-enabled installs."
+    mkdir -p "${TARGET_MOUNT}/etc/aios/verity"
+    local _roothash_file="${TARGET_MOUNT}/etc/aios/verity/roothash.sig"
+    local _roothash
+
+    if veritysetup format "${LUKS_MAPPER}" "${ROOT_HASH_DEV}" \
+        --root-hash-file="${_roothash_file}" 2>/dev/null; then
+        _roothash=$(head -n1 "${_roothash_file}" | tr -d '[:space:]')
+    else
+        warn "dm-verity hash generation skipped."
+        return 0
+    fi
+
+    if [ -z "${_roothash}" ]; then
+        warn "dm-verity root hash empty — skipped."
+        return 0
+    fi
+
+    chmod 400 "${_roothash_file}"
+    cat > "${TARGET_MOUNT}/etc/aios/verity/rootfs-policy.json" <<EOF
+{
+  "schema": "aios.dm_verity_policy.v1",
+  "revision": 12,
+  "root_hash": "/etc/aios/verity/roothash.sig",
+  "hash_partition": "${ROOT_HASH_PART}",
+  "cmdline_parameter": "dm_verity.roothash",
+  "fail_on_corruption": true
+}
+EOF
+    chmod 644 "${TARGET_MOUNT}/etc/aios/verity/rootfs-policy.json"
+    msg "dm-verity root hash stored at ${_roothash_file}."
     return 0
 }
 
@@ -389,13 +497,23 @@ do_selinux() {
     fi
 
     mkdir -p "${TARGET_MOUNT}/etc/selinux"
+    case "${SELINUX_MODE}" in
+        enforcing|permissive|disabled) ;;
+        *) warn "Invalid AIOS_SELINUX_MODE=${SELINUX_MODE}; using permissive."; SELINUX_MODE="permissive" ;;
+    esac
+    if [ "${SELINUX_MODE}" = "enforcing" ] \
+       && { [ ! -f "${TARGET_MOUNT}/etc/selinux/aios/policy/policy.33" ] \
+            || grep -q 'Placeholder' "${TARGET_MOUNT}/etc/selinux/aios/policy/policy.33" 2>/dev/null; }; then
+        warn "SELinux enforcing requested but only placeholder/no policy is present; using permissive."
+        SELINUX_MODE="permissive"
+    fi
     cat > "${TARGET_MOUNT}/etc/selinux/config" <<EOF
-SELINUX=enforcing
+SELINUX=${SELINUX_MODE}
 SELINUXTYPE=aios
 EOF
     chmod 644 "${TARGET_MOUNT}/etc/selinux/config"
     touch "${TARGET_MOUNT}/.autorelabel"
-    msg "SELinux configured (enforcing); autorelabel set."
+    msg "SELinux configured (${SELINUX_MODE}); autorelabel set."
 }
 
 # ── First-boot ────────────────────────────────────────────────────────────────
@@ -429,6 +547,8 @@ do_finalize() {
 
     umount "${TARGET_MOUNT}/boot/efi" 2>/dev/null || true
     umount "${TARGET_MOUNT}/boot"     2>/dev/null || true
+    umount "${TARGET_MOUNT}/recovery" 2>/dev/null || true
+    umount "${TARGET_MOUNT}/var/lib/aios/rollback" 2>/dev/null || true
     umount "${TARGET_MOUNT}"           2>/dev/null || true
     SETUP_MOUNTED=0
 
@@ -450,11 +570,11 @@ main() {
     do_encryption
     do_deploy
     do_configure
-    do_verity
-    do_bootloader
     do_tpm2_seal
     do_selinux
     do_first_boot
+    do_verity
+    do_bootloader
     do_finalize
 }
 

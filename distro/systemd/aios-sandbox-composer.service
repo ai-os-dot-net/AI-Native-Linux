@@ -6,8 +6,8 @@ Requires=aios-evidence-log.service
 After=aios-evidence-log.service
 
 [Service]
-Type=notify
-ExecStart=/usr/lib/aios/aios-sandbox-composer --config /etc/aios/config.toml --profile-dir /var/lib/aios/sandbox
+Type=simple
+ExecStart=/usr/lib/aios/aios-system run-service aios-sandbox-composer --config /etc/aios/config.toml
 Restart=always
 RestartSec=3
 LimitNOFILE=65536

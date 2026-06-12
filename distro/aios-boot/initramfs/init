@@ -1,4 +1,6 @@
 #!/bin/busybox ash
+# shellcheck shell=sh
+# shellcheck disable=SC3043,SC1091
 #
 # AI-OS.NET Initramfs Init — Revision 4
 #
@@ -23,7 +25,7 @@ err()   { printf '\033[1;31m[AIOS-INIT]\033[0m %s\n' "$*" >&2; }
 
 # ── Kernel command line parsing ──────────────────────────────────────────────
 
-KCL="$(cat /proc/cmdline 2>/dev/null || echo '')"
+KCL=""
 
 cmdline_bool() {
     # Return 0 if flag present on kernel command line, 1 otherwise
@@ -37,7 +39,7 @@ cmdline_value() {
     # Return value of key=val from kernel command line
     for _a in $KCL; do
         case "$_a" in
-            "${1}="*) printf '%s' "${_a#${1}=}" ; return 0 ;;
+            "${1}="*) printf '%s' "${_a#"${1}"=}" ; return 0 ;;
         esac
     done
     return 1
@@ -61,6 +63,7 @@ rescue_shell() {
 
 msg "Mounting virtual filesystems..."
 
+mkdir -p /proc /sys /dev /run /tmp
 mount -t proc  proc  /proc  -o nosuid,noexec,nodev || rescue_shell "mount /proc failed"
 mount -t sysfs sys   /sys   -o nosuid,noexec,nodev || rescue_shell "mount /sys failed"
 mount -t devtmpfs dev /dev -o nosuid,noexec || rescue_shell "mount /dev failed"
@@ -79,6 +82,9 @@ ln -sf /proc/self/fd/2 /dev/stderr 2>/dev/null || true
 
 msg "Virtual filesystems mounted."
 
+KCL="$(cat /proc/cmdline 2>/dev/null || echo '')"
+msg "Kernel command line loaded."
+
 # ── Source pre-init configuration ────────────────────────────────────────────
 
 if [ -r /etc/aios/preinit ]; then
@@ -90,6 +96,8 @@ else
     : "${AIOS_TPM_SEALED_KEY:=/etc/aios/sealed-key.blob}"
     : "${AIOS_SELINUX_POLICY:=/etc/selinux/aios/policy/policy.33}"
     : "${AIOS_VERITY_HASH:=/etc/aios/verity/roothash.sig}"
+    : "${AIOS_IMA_POLICY:=/etc/ima/ima-policy}"
+    : "${AIOS_EVM_POLICY:=/etc/evm/evm-policy}"
     : "${AIOS_LUKS_DEVICE:=/dev/disk/by-partlabel/AIOS_LUKS}"
     : "${AIOS_LUKS_NAME:=aios-cryptroot}"
     : "${AIOS_INIT_TIMEOUT:=30}"
@@ -115,6 +123,110 @@ wait_for_device() {
         sleep 1
     done
     return 1
+}
+
+is_live_root() {
+    case "${AIOS_ROOT}" in
+        live:*|CDLABEL=*|LABEL=*)
+            return 0
+            ;;
+    esac
+    cmdline_bool rd.live.image && return 0
+    return 1
+}
+
+live_label() {
+    case "${AIOS_ROOT}" in
+        live:CDLABEL=*) printf '%s' "${AIOS_ROOT#live:CDLABEL=}" ;;
+        live:LABEL=*)   printf '%s' "${AIOS_ROOT#live:LABEL=}" ;;
+        CDLABEL=*)      printf '%s' "${AIOS_ROOT#CDLABEL=}" ;;
+        LABEL=*)        printf '%s' "${AIOS_ROOT#LABEL=}" ;;
+        *)              printf 'AIOS_REV12' ;;
+    esac
+}
+
+try_mount_live_medium() {
+    local _dev="$1"
+    mkdir -p /run/initramfs/live-media
+    umount /run/initramfs/live-media 2>/dev/null || true
+
+    if mount -o ro "${_dev}" /run/initramfs/live-media 2>/dev/null \
+       || mount -t iso9660 -o ro "${_dev}" /run/initramfs/live-media 2>/dev/null; then
+        if [ -f /run/initramfs/live-media/live/aios.squashfs ]; then
+            return 0
+        fi
+        umount /run/initramfs/live-media 2>/dev/null || true
+    fi
+
+    return 1
+}
+
+find_live_medium() {
+    local _label
+    local _i=0
+    _label="$(live_label)"
+
+    while [ "$_i" -lt "${AIOS_INIT_TIMEOUT}" ]; do
+        for _dev in \
+            "/dev/disk/by-label/${_label}" \
+            /dev/cdrom /dev/sr0 /dev/sr1 \
+            /dev/sd[a-z] /dev/sd[a-z][0-9] \
+            /dev/vd[a-z] /dev/vd[a-z][0-9] \
+            /dev/nvme[0-9]n[0-9] /dev/nvme[0-9]n[0-9]p[0-9]; do
+            [ -e "${_dev}" ] || continue
+            if try_mount_live_medium "${_dev}"; then
+                printf '%s' "${_dev}"
+                return 0
+            fi
+        done
+        _i=$(( _i + 1 ))
+        sleep 1
+    done
+
+    return 1
+}
+
+load_live_media_modules() {
+    local _module
+
+    for _module in \
+        loop isofs cdrom sr_mod ata_piix ahci sd_mod sg \
+        virtio virtio_pci virtio_blk virtio_scsi; do
+        modprobe "${_module}" 2>/dev/null || true
+    done
+}
+
+mount_live_root() {
+    local _medium=""
+    local _squashfs="/run/initramfs/live-media/live/aios.squashfs"
+
+    msg "Live root requested; searching for AIOS live media..."
+    load_live_media_modules
+    _medium="$(find_live_medium)" || rescue_shell "AIOS live media with live/aios.squashfs not found"
+    msg "Live media mounted from ${_medium}"
+
+    modprobe squashfs 2>/dev/null || true
+    modprobe overlay 2>/dev/null || true
+
+    mkdir -p /run/initramfs/squashfs /run/initramfs/overlay /newroot
+    msg "Mounting live squashfs: ${_squashfs}"
+    mount -t squashfs -o ro,loop "${_squashfs}" /run/initramfs/squashfs \
+        || rescue_shell "Mount of live squashfs failed"
+
+    mount -t tmpfs tmpfs /run/initramfs/overlay \
+        || rescue_shell "Mount of live overlay tmpfs failed"
+    mkdir -p /run/initramfs/overlay/upper /run/initramfs/overlay/work
+
+    msg "Creating writable tmpfs overlay for live root..."
+    if mount -t overlay overlay \
+        -o lowerdir=/run/initramfs/squashfs,upperdir=/run/initramfs/overlay/upper,workdir=/run/initramfs/overlay/work \
+        /newroot; then
+        msg "Live overlay mounted at /newroot."
+    else
+        warn "Overlay mount failed; falling back to read-only live root."
+        mount -o bind /run/initramfs/squashfs /newroot \
+            || rescue_shell "Read-only live root bind mount failed"
+    fi
 }
 
 # ── Step 2: Load SELinux policy ──────────────────────────────────────────────
@@ -149,14 +261,36 @@ else
     warn "SELinux policy not found at ${AIOS_SELINUX_POLICY} or load_policy missing — skipping."
 fi
 
+# ── Step 2b: Load IMA/EVM policy skeletons when kernel support exists ─────────
+
+msg "Checking IMA/EVM policy..."
+
+if [ -f "${AIOS_IMA_POLICY}" ]; then
+    if [ -w /sys/kernel/security/ima/policy ]; then
+        msg "Loading IMA policy: ${AIOS_IMA_POLICY}"
+        cat "${AIOS_IMA_POLICY}" > /sys/kernel/security/ima/policy \
+            || warn "IMA policy load failed, continuing"
+    else
+        warn "IMA policy staged but /sys/kernel/security/ima/policy is not writable."
+    fi
+else
+    warn "IMA policy not found at ${AIOS_IMA_POLICY}."
+fi
+
+if [ -f "${AIOS_EVM_POLICY}" ]; then
+    msg "EVM policy staged: ${AIOS_EVM_POLICY}"
+else
+    warn "EVM policy not found at ${AIOS_EVM_POLICY}."
+fi
+
 # ── Step 3: TPM2 unseal LUKS key ─────────────────────────────────────────────
 
 LUKS_KEYFILE=""
 if [ -b "${AIOS_LUKS_DEVICE}" ] && [ -f "${AIOS_TPM_SEALED_KEY}" ]; then
-    if [ -x /usr/bin/tpm2_unseal ] || [ -x /bin/tpm2_unseal ]; then
+    if command -v tpm2_unseal >/dev/null 2>&1; then
         msg "TPM2: Unsealing LUKS key from ${AIOS_TPM_SEALED_KEY}..."
         LUKS_KEYFILE="/run/aios-luks-key"
-        TPM2TOOLS=$(command -v tpm2_unseal 2>/dev/null || echo /usr/bin/tpm2_unseal)
+        TPM2TOOLS=$(command -v tpm2_unseal)
 
         if "${TPM2TOOLS}" -c 0x81000000 -p pcr:sha256:0,1,2,3,4,5,6,7 \
             -o "${LUKS_KEYFILE}" 2>/dev/null; then
@@ -228,24 +362,33 @@ case "${ROOT_DEVICE}" in
         if cmdline_bool verity; then
             verity_required=1
         fi
+        if cmdline_value dm_verity.roothash >/dev/null 2>&1; then
+            verity_required=1
+        fi
         ;;
 esac
 
 if [ "$verity_required" -eq 1 ]; then
-    if [ -x /sbin/veritysetup ] && [ -f "${AIOS_VERITY_HASH}" ]; then
-        msg "dm-verity: Verifying root hash from ${AIOS_VERITY_HASH}..."
+    if [ -x /sbin/veritysetup ]; then
+        msg "dm-verity: Verifying root hash..."
 
         ROOTHASH=""
-        if [ -r "${AIOS_VERITY_HASH}" ]; then
+        if cmdline_value dm_verity.roothash >/dev/null 2>&1; then
+            ROOTHASH="$(cmdline_value dm_verity.roothash | tr -d '[:space:]')"
+            msg "dm-verity: root hash provided by dm_verity.roothash"
+        elif [ -r "${AIOS_VERITY_HASH}" ]; then
             ROOTHASH=$(head -n1 "${AIOS_VERITY_HASH}" | tr -d '[:space:]')
+            msg "dm-verity: root hash loaded from ${AIOS_VERITY_HASH}"
         fi
 
         if [ -z "${ROOTHASH}" ]; then
-            warn "dm-verity: root hash empty or unreadable — skipping verification."
+            rescue_shell "dm-verity required but root hash is missing"
         else
             # Determine data device (partition before or after hash device)
             VERITY_DATA_DEV=""
-            if [ -b "/dev/disk/by-partlabel/AIOS_DATA" ]; then
+            if [ -b "${ROOT_DEVICE}" ] && [ "${ROOT_DEVICE}" != "/dev/mapper/aios-root" ]; then
+                VERITY_DATA_DEV="${ROOT_DEVICE}"
+            elif [ -b "/dev/disk/by-partlabel/AIOS_DATA" ]; then
                 VERITY_DATA_DEV="/dev/disk/by-partlabel/AIOS_DATA"
             elif [ -b "/dev/sda3" ]; then
                 VERITY_DATA_DEV="/dev/sda3"
@@ -253,15 +396,18 @@ if [ "$verity_required" -eq 1 ]; then
             VERITY_HASH_DEV=""
             if [ -b "/dev/disk/by-partlabel/AIOS_HASH" ]; then
                 VERITY_HASH_DEV="/dev/disk/by-partlabel/AIOS_HASH"
-            elif [ -b "/dev/sda4" ]; then
-                VERITY_HASH_DEV="/dev/sda4"
+            elif [ -b "/dev/sda5" ]; then
+                VERITY_HASH_DEV="/dev/sda5"
+            elif [ -b "/dev/vda5" ]; then
+                VERITY_HASH_DEV="/dev/vda5"
+            elif [ -b "/dev/nvme0n1p5" ]; then
+                VERITY_HASH_DEV="/dev/nvme0n1p5"
             fi
 
             if [ -b "${VERITY_DATA_DEV}" ] && [ -b "${VERITY_HASH_DEV}" ]; then
                 msg "dm-verity: data=${VERITY_DATA_DEV} hash=${VERITY_HASH_DEV}"
                 if veritysetup open "${VERITY_DATA_DEV}" aios-root \
-                    "${VERITY_HASH_DEV}" "${ROOTHASH}" \
-                    --ignore-corruption 2>/dev/null; then
+                    "${VERITY_HASH_DEV}" "${ROOTHASH}" 2>/dev/null; then
                     msg "dm-verity: root verified and mapped to /dev/mapper/aios-root."
                     ROOT_DEVICE="/dev/mapper/aios-root"
                 else
@@ -270,67 +416,74 @@ if [ "$verity_required" -eq 1 ]; then
                     rescue_shell "dm-verity verification failed"
                 fi
             else
-                msg "dm-verity: assuming verity device already set up by an earlier stage."
-                ROOT_DEVICE="${AIOS_ROOT}"
+                rescue_shell "dm-verity required but data/hash device is missing"
             fi
         fi
     else
-        msg "dm-verity: veritysetup or hash file not found — assuming device already mapped."
-        ROOT_DEVICE="${AIOS_ROOT}"
+        rescue_shell "dm-verity required but veritysetup is missing"
     fi
 fi
 
-# ── Wait for the final root device to appear ─────────────────────────────────
+# ── Wait for and mount the final root ────────────────────────────────────────
 
-msg "Waiting for root device ${ROOT_DEVICE}..."
-if ! wait_for_device "${ROOT_DEVICE}"; then
-    rescue_shell "Root device ${ROOT_DEVICE} did not appear within ${AIOS_INIT_TIMEOUT}s"
-fi
-msg "Root device found: ${ROOT_DEVICE}"
-
-# ── Step 5: Determine root filesystem type and mount ─────────────────────────
-
-ROOT_FSTYPE=""
-if cmdline_value rootfstype >/dev/null 2>&1; then
-    ROOT_FSTYPE="$(cmdline_value rootfstype)"
-fi
-if [ -z "${ROOT_FSTYPE}" ] && [ -x /sbin/blkid ]; then
-    ROOT_FSTYPE=$(blkid -o value -s TYPE "${ROOT_DEVICE}" 2>/dev/null || echo "")
-fi
-if [ -z "${ROOT_FSTYPE}" ]; then
-    ROOT_FSTYPE="ext4"
-    warn "Could not detect filesystem type, defaulting to ${ROOT_FSTYPE}"
-fi
-
-ROOT_MOUNT_OPTS=""
-if cmdline_bool ro; then
-    ROOT_MOUNT_OPTS="ro"
+if is_live_root; then
+    mount_live_root
+    ROOT_DEVICE="live:$(live_label)"
 else
-    ROOT_MOUNT_OPTS="rw"
-fi
-if cmdline_value rootflags >/dev/null 2>&1; then
-    ROOT_MOUNT_OPTS="${ROOT_MOUNT_OPTS},$(cmdline_value rootflags)"
-fi
+    msg "Waiting for root device ${ROOT_DEVICE}..."
+    if ! wait_for_device "${ROOT_DEVICE}"; then
+        rescue_shell "Root device ${ROOT_DEVICE} did not appear within ${AIOS_INIT_TIMEOUT}s"
+    fi
+    msg "Root device found: ${ROOT_DEVICE}"
 
-mkdir -p /newroot
-msg "Mounting ${ROOT_DEVICE} (${ROOT_FSTYPE}, ${ROOT_MOUNT_OPTS}) on /newroot..."
-mount -t "${ROOT_FSTYPE}" -o "${ROOT_MOUNT_OPTS}" "${ROOT_DEVICE}" /newroot \
-    || rescue_shell "Mount of ${ROOT_DEVICE} as ${ROOT_FSTYPE} failed"
+    # ── Step 5: Determine root filesystem type and mount ─────────────────────
 
-msg "Root filesystem mounted at /newroot."
+    ROOT_FSTYPE=""
+    if cmdline_value rootfstype >/dev/null 2>&1; then
+        ROOT_FSTYPE="$(cmdline_value rootfstype)"
+    fi
+    if [ -z "${ROOT_FSTYPE}" ] && command -v blkid >/dev/null 2>&1; then
+        ROOT_FSTYPE=$(blkid -o value -s TYPE "${ROOT_DEVICE}" 2>/dev/null || echo "")
+    fi
+    if [ -z "${ROOT_FSTYPE}" ]; then
+        ROOT_FSTYPE="ext4"
+        warn "Could not detect filesystem type, defaulting to ${ROOT_FSTYPE}"
+    fi
+
+    ROOT_MOUNT_OPTS=""
+    if cmdline_bool ro; then
+        ROOT_MOUNT_OPTS="ro"
+    else
+        ROOT_MOUNT_OPTS="rw"
+    fi
+    if cmdline_value rootflags >/dev/null 2>&1; then
+        ROOT_MOUNT_OPTS="${ROOT_MOUNT_OPTS},$(cmdline_value rootflags)"
+    fi
+
+    mkdir -p /newroot
+    msg "Mounting ${ROOT_DEVICE} (${ROOT_FSTYPE}, ${ROOT_MOUNT_OPTS}) on /newroot..."
+    mount -t "${ROOT_FSTYPE}" -o "${ROOT_MOUNT_OPTS}" "${ROOT_DEVICE}" /newroot \
+        || rescue_shell "Mount of ${ROOT_DEVICE} as ${ROOT_FSTYPE} failed"
+
+    msg "Root filesystem mounted at /newroot."
+fi
 
 # ── Verify newroot integrity ─────────────────────────────────────────────────
 
+REAL_INIT="/sbin/init"
 if [ ! -x /newroot/sbin/init ] && [ ! -L /newroot/sbin/init ]; then
     err "No init found at /newroot/sbin/init"
     warn "Checking common locations..."
     for _init in /newroot/lib/systemd/systemd /newroot/usr/lib/systemd/systemd /newroot/bin/init /newroot/usr/bin/init; do
         if [ -x "$_init" ]; then
             msg "Found init at ${_init}"
+            REAL_INIT="${_init#/newroot}"
             break
         fi
     done
-    rescue_shell "Missing /sbin/init on new root"
+    if [ "${REAL_INIT}" = "/sbin/init" ]; then
+        rescue_shell "Missing init on new root"
+    fi
 fi
 
 # ── Step 6: Move virtual filesystems and switch_root ─────────────────────────
@@ -349,13 +502,14 @@ if [ -e /proc/keys ]; then
 fi
 
 msg "=== Switching to real root ==="
-msg "Real init: /newroot/sbin/init"
+msg "Real init: /newroot${REAL_INIT}"
 msg "Root device: ${ROOT_DEVICE}"
 
 # Pass environment to new root
 if [ -r /etc/aios/preinit ]; then
     export AIOS_ROOT AIOS_BOOT AIOS_TPM_SEALED_KEY AIOS_SELINUX_POLICY \
-           AIOS_VERITY_HASH AIOS_LUKS_DEVICE AIOS_LUKS_NAME AIOS_INIT_TIMEOUT
+           AIOS_VERITY_HASH AIOS_IMA_POLICY AIOS_EVM_POLICY \
+           AIOS_LUKS_DEVICE AIOS_LUKS_NAME AIOS_INIT_TIMEOUT
 fi
 
-exec switch_root /newroot /sbin/init || rescue_shell "switch_root failed"
+exec switch_root /newroot "${REAL_INIT}" || rescue_shell "switch_root failed"

@@ -6,7 +6,7 @@ Wants=aios-capability-runtime.service
 
 [Service]
 Type=simple
-ExecStart=/usr/lib/aios/aios-marketplace --auto-sync --config /etc/aios/config.toml
+ExecStart=/usr/lib/aios/aios-system run-service aios-marketplace --config /etc/aios/config.toml
 Restart=on-failure
 RestartSec=10s
 LimitNOFILE=65536

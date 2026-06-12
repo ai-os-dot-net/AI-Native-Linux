@@ -5,8 +5,8 @@ After=network.target aios-capability-runtime.service aios-policy-kernel.service
 Requires=aios-capability-runtime.service aios-policy-kernel.service
 
 [Service]
-Type=notify
-ExecStart=/usr/lib/aios/aios-sgr-daemon --config /etc/aios/config.toml --graph-dir /var/lib/aios/sgr
+Type=simple
+ExecStart=/usr/lib/aios/aios-system run-service aios-sgr-daemon --config /etc/aios/config.toml
 Restart=always
 RestartSec=5
 LimitNOFILE=65536

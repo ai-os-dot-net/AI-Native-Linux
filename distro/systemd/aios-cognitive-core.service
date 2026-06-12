@@ -5,8 +5,8 @@ After=network.target aios-capability-runtime.service
 Wants=aios-capability-runtime.service
 
 [Service]
-Type=notify
-ExecStart=/usr/lib/aios/aios-cognitive-core --config /etc/aios/config.toml --model-dir /var/lib/aios/models
+Type=simple
+ExecStart=/usr/lib/aios/aios-system run-service aios-cognitive-core --config /etc/aios/config.toml
 Restart=always
 RestartSec=5
 LimitNOFILE=65536

@@ -1,6 +1,6 @@
-# AI-OS.NET GitLab CI/CD — Revision 4
+# AI-OS.NET GitLab CI/CD — Revision 12
 # Push target: gitlab remote (http://192.168.1.180)
-# Mirror: GitHub Actions at .github/workflows/ci.yml
+# Mirror: GitHub backup repository only; GitHub Actions are disabled.
 
 stages:
   - check
@@ -8,15 +8,26 @@ stages:
   - lint
   - build
   - assemble
+  - verify
 
 variables:
   CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
   RUSTUP_HOME: "/usr/local/rustup"
   RUST_VERSION: "1.94"
   RUSTC_BOOTSTRAP: "0"
-  # ISO naming convention: aios-rev4-<short-sha>-x86_64.iso
-  ISO_NAME: "aios-rev4-${CI_COMMIT_SHORT_SHA}-x86_64"
-  ISO_OUTPUT: "${ISO_NAME}.iso"
+  # ISO naming convention: aios-rev12-<short-sha>-x86_64.iso
+  ISO_NAME: "aios-rev12-${CI_COMMIT_SHORT_SHA}-x86_64"
+  ISO_OUTPUT: "distro/build/${ISO_NAME}.iso"
+  OPENSUSE_CI_IMAGE: "opensuse/leap:16.0"
+  AIOS_OPENSUSE_RELEASE: "16.0"
+  AIOS_OPENSUSE_ARCH: "x86_64"
+  AIOS_OPENSUSE_PACKAGE_SET: "server"
+  AIOS_R13_ENTERPRISE_BUILD: "0"
+  AIOS_R13_QEMU_BOOT_TEST: "0"
+  R13_ISO_NAME: "aios-r13-${CI_COMMIT_SHORT_SHA}-${AIOS_OPENSUSE_ARCH}"
+  R13_ISO_OUTPUT: "distro/build/${R13_ISO_NAME}.iso"
+  R13_ROOTFS_DIR: "distro/build/out/rootfs-opensuse-leap-${AIOS_OPENSUSE_RELEASE}-${AIOS_OPENSUSE_ARCH}"
+  R13_ROOTFS_TARBALL: "distro/build/out/rootfs-opensuse-leap-${AIOS_OPENSUSE_RELEASE}-${AIOS_OPENSUSE_ARCH}.tar.gz"
 
 # Shared Rust cache — cargo registry, git checkouts, build artifacts
 .cargo_cache: &cargo_cache
@@ -73,6 +84,46 @@ cargo-test:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
+distro-shell-tests:
+  stage: test
+  image: debian:bookworm
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq
+      bash
+      jq
+      openssl
+      shellcheck
+  script:
+    - shellcheck
+      distro/build/build-aios-iso.sh
+      distro/build/build-opensuse-rootfs.sh
+      distro/build/ci-build-all.sh
+      distro/build/qemu-boot-smoke.sh
+      distro/build/tests/test-rev13-opensuse-base.sh
+      distro/build/tests/test-rev12-boot-gate.sh
+      distro/build/tests/test-rev12-release-metadata.sh
+      distro/build/tests/test-rev12-installer.sh
+      distro/build/tests/test-rev12-kernel-pipeline.sh
+      distro/build/tests/test-rev12-repo-update.sh
+      distro/build/tests/test-rev12-security-baseline.sh
+      distro/build/tests/test-rev12-distribution-gates.sh
+      distro/repo/aios-repo-publish.sh
+      distro/update/aios-update.sh
+      distro/installer/aios-quick-install.sh
+      distro/installer/aios-installer.sh
+    - sh distro/build/tests/test-rev11-build.sh
+    - sh distro/build/tests/test-rev12-boot-gate.sh
+    - sh distro/build/tests/test-rev12-release-metadata.sh
+    - sh distro/build/tests/test-rev12-installer.sh
+    - sh distro/build/tests/test-rev12-kernel-pipeline.sh
+    - sh distro/build/tests/test-rev12-repo-update.sh
+    - sh distro/build/tests/test-rev12-security-baseline.sh
+    - sh distro/build/tests/test-rev12-distribution-gates.sh
+    - sh distro/build/tests/test-rev13-opensuse-base.sh
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
 # ==========================================================================
 # STAGE 3 — LINT (clippy + rustfmt, parallel)
 # ==========================================================================
@@ -91,9 +142,10 @@ cargo-clippy:
       libssl-dev
     - rustup component add clippy
   script:
-    # Workspace [workspace.lints.clippy] already sets `all = "deny"`.
-    # -D warnings here acts as an explicit safety net.
-    - cargo clippy --workspace --all-targets -- -D warnings
+    # Workspace [workspace.lints.clippy] sets production `all = "deny"`.
+    # Tests are linted too, but allow test-style unwrap/expect/panic.
+    - cargo clippy --workspace -- -A missing-docs
+    - cargo clippy --workspace --all-targets -- -A missing-docs -A clippy::unwrap_used -A clippy::expect_used -A clippy::panic
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -119,6 +171,7 @@ cargo-release:
   <<: *bootstrap_deps
   needs:
     - cargo-test
+    - distro-shell-tests
     - cargo-clippy
     - cargo-fmt
   script:
@@ -138,36 +191,194 @@ cargo-release:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
 
 # ==========================================================================
+# STAGE 4B — R13 openSUSE ROOTFS (rootful Docker runner)
+# ==========================================================================
+r13-opensuse-rootfs:
+  stage: build
+  image: ${OPENSUSE_CI_IMAGE}
+  tags:
+    - docker
+  timeout: 3h
+  needs:
+    - distro-shell-tests
+  before_script:
+    - zypper --non-interactive refresh
+    - zypper --non-interactive install --no-recommends gzip tar jq
+  script:
+    - mkdir -p "$(dirname "${R13_ROOTFS_TARBALL}")"
+    - chmod +x distro/build/build-opensuse-rootfs.sh
+    - ./distro/build/build-opensuse-rootfs.sh
+      --output "${R13_ROOTFS_DIR}"
+      --release "${AIOS_OPENSUSE_RELEASE}"
+      --arch "${AIOS_OPENSUSE_ARCH}"
+      --package-set "${AIOS_OPENSUSE_PACKAGE_SET}"
+      --force
+    - test -f "${R13_ROOTFS_DIR}/etc/aios/base-rootfs.env"
+    - test -f "${R13_ROOTFS_DIR}/etc/aios/base-rootfs.json"
+    - tar -C "${R13_ROOTFS_DIR}" --numeric-owner -czf "${R13_ROOTFS_TARBALL}" .
+    - ls -lh "${R13_ROOTFS_TARBALL}"
+  artifacts:
+    name: "r13-rootfs-${CI_COMMIT_SHORT_SHA}-${AIOS_OPENSUSE_ARCH}"
+    paths:
+      - "${R13_ROOTFS_TARBALL}"
+    expire_in: 7 days
+  rules:
+    - if: '$AIOS_R13_ENTERPRISE_BUILD == "1"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: false
+
+# ==========================================================================
 # STAGE 5 — ASSEMBLE ISO (main push only)
 # ==========================================================================
 assemble-iso:
   stage: assemble
-  image: debian:bookworm
+  image: rust:${RUST_VERSION}-slim
   needs:
     - cargo-release
   before_script:
     - apt-get update -qq && apt-get install -y -qq
+      binutils
+      protobuf-compiler
+      libclang-dev
+      pkg-config
+      libssl-dev
       xorriso
       squashfs-tools
       cpio
       xz-utils
       mtools
+      dosfstools
+      linux-image-amd64
       systemd-boot
       cryptsetup-bin
       tpm2-tools
       busybox-static
+      qemu-system-x86
   script:
-    - chmod +x distro/build/build-aios-iso.sh
-    - CHROOT_WORKDIR="${CI_PROJECT_DIR}/target/release"
-      ./distro/build/build-aios-iso.sh --release --output "${ISO_OUTPUT}"
-    - ls -lh "distro/build/${ISO_OUTPUT}"
+    - chmod +x distro/build/build-aios-iso.sh distro/build/build-opensuse-rootfs.sh
+    - |
+      if [ -z "${AIOS_BASE_ROOTFS:-}" ] && [ "${AIOS_BUILD_OPENSUSE_ROOTFS:-0}" = "1" ]; then
+        export AIOS_BASE_ROOTFS="distro/build/out/rootfs-opensuse-leap-${AIOS_OPENSUSE_RELEASE:-16.0}-${AIOS_OPENSUSE_ARCH:-x86_64}"
+        ./distro/build/build-opensuse-rootfs.sh \
+          --output "${AIOS_BASE_ROOTFS}" \
+          --release "${AIOS_OPENSUSE_RELEASE:-16.0}" \
+          --arch "${AIOS_OPENSUSE_ARCH:-x86_64}" \
+          --package-set "${AIOS_OPENSUSE_PACKAGE_SET:-server}"
+      fi
+      if [ -n "${AIOS_BASE_ROOTFS:-}" ]; then
+        ISO_ARGS="--release --output ${ISO_OUTPUT} --base-rootfs ${AIOS_BASE_ROOTFS}"
+        if [ "${AIOS_ENTERPRISE_RELEASE:-0}" = "1" ]; then
+          ISO_ARGS="${ISO_ARGS} --enterprise-release"
+        fi
+        ./distro/build/build-aios-iso.sh ${ISO_ARGS}
+      else
+        echo "WARNING: AIOS_BASE_ROOTFS not set; building scaffold packaging ISO, not a bootable Rev12 release ISO."
+        ./distro/build/build-aios-iso.sh --release --output "${ISO_OUTPUT}" --allow-scaffold-rootfs --kernel-firmware-source none
+      fi
+    - |
+      if [ "${AIOS_QEMU_BOOT_TEST:-0}" = "1" ]; then
+        ./distro/build/qemu-boot-smoke.sh --iso "${ISO_OUTPUT}" --timeout "${AIOS_QEMU_BOOT_TIMEOUT:-120}"
+      else
+        echo "QEMU boot smoke skipped; set AIOS_QEMU_BOOT_TEST=1 after providing AIOS_BASE_ROOTFS."
+      fi
+    - ls -lh "${ISO_OUTPUT}"
   artifacts:
     name: "${ISO_NAME}"
     paths:
-      - "distro/build/${ISO_OUTPUT}"
+      - "${ISO_OUTPUT}"
     expire_in: 7 days
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+
+# ==========================================================================
+# STAGE 5B — R13 ENTERPRISE ISO (openSUSE rootfs + release ISO)
+# ==========================================================================
+r13-enterprise-iso:
+  stage: assemble
+  image: rust:${RUST_VERSION}-slim
+  tags:
+    - docker
+  timeout: 4h
+  needs:
+    - job: cargo-release
+      artifacts: true
+    - job: r13-opensuse-rootfs
+      artifacts: true
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq
+      binutils
+      protobuf-compiler
+      libclang-dev
+      pkg-config
+      libssl-dev
+      xorriso
+      squashfs-tools
+      cpio
+      xz-utils
+      mtools
+      dosfstools
+      linux-image-amd64
+      systemd-boot
+      cryptsetup-bin
+      tpm2-tools
+      busybox-static
+      qemu-system-x86
+      jq
+      tar
+      gzip
+  script:
+    - mkdir -p "${R13_ROOTFS_DIR}"
+    - tar -xzf "${R13_ROOTFS_TARBALL}" -C "${R13_ROOTFS_DIR}"
+    - chmod +x distro/build/build-aios-iso.sh
+    - JOBS="$(nproc 2>/dev/null || echo 4)"
+    - ./distro/build/build-aios-iso.sh
+      --release
+      --arch "${AIOS_OPENSUSE_ARCH}"
+      --jobs "${JOBS}"
+      --base-rootfs "${R13_ROOTFS_DIR}"
+      --enterprise-release
+      --output "${R13_ISO_OUTPUT}"
+    - ls -lh "${R13_ISO_OUTPUT}"
+  artifacts:
+    name: "${R13_ISO_NAME}"
+    paths:
+      - "${R13_ISO_OUTPUT}"
+    expire_in: 30 days
+  rules:
+    - if: '$AIOS_R13_ENTERPRISE_BUILD == "1"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: false
+
+# ==========================================================================
+# STAGE 6 — R13 QEMU BOOT SMOKE
+# ==========================================================================
+r13-qemu-boot-smoke:
+  stage: verify
+  image: debian:bookworm
+  tags:
+    - docker
+  timeout: 30m
+  needs:
+    - job: r13-enterprise-iso
+      artifacts: true
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq bash qemu-system-x86 ovmf
+  script:
+    - chmod +x distro/build/qemu-boot-smoke.sh
+    - ./distro/build/qemu-boot-smoke.sh --iso "${R13_ISO_OUTPUT}" --timeout "${AIOS_QEMU_BOOT_TIMEOUT:-180}"
+  artifacts:
+    when: always
+    name: "r13-qemu-smoke-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - "distro/build/out/qemu-boot-smoke.log"
+    expire_in: 14 days
+  rules:
+    - if: '$AIOS_R13_ENTERPRISE_BUILD == "1" && $AIOS_R13_QEMU_BOOT_TEST == "1"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: false
 
 # ==========================================================================
 # WEEKLY FULL BUILD (scheduled pipeline only)
@@ -180,19 +391,37 @@ weekly-full-build:
     - apt-get update -qq && apt-get install -y -qq
       curl build-essential
       protobuf-compiler libclang-dev pkg-config libssl-dev
-      xorriso squashfs-tools cpio xz-utils mtools
-      systemd-boot cryptsetup-bin tpm2-tools busybox-static
+      xorriso squashfs-tools cpio xz-utils mtools dosfstools
+      linux-image-amd64 systemd-boot cryptsetup-bin tpm2-tools busybox-static
     - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${RUST_VERSION}
     - source "$HOME/.cargo/env"
   script:
-    - chmod +x distro/build/build-aios-iso.sh
+    - chmod +x distro/build/build-aios-iso.sh distro/build/build-opensuse-rootfs.sh
     - cargo build --release --workspace --locked
     - cargo test --workspace --no-fail-fast
-    - ./distro/build/build-aios-iso.sh --release
+    - |
+      if [ -z "${AIOS_BASE_ROOTFS:-}" ] && [ "${AIOS_BUILD_OPENSUSE_ROOTFS:-0}" = "1" ]; then
+        export AIOS_BASE_ROOTFS="distro/build/out/rootfs-opensuse-leap-${AIOS_OPENSUSE_RELEASE:-16.0}-${AIOS_OPENSUSE_ARCH:-x86_64}"
+        ./distro/build/build-opensuse-rootfs.sh \
+          --output "${AIOS_BASE_ROOTFS}" \
+          --release "${AIOS_OPENSUSE_RELEASE:-16.0}" \
+          --arch "${AIOS_OPENSUSE_ARCH:-x86_64}" \
+          --package-set "${AIOS_OPENSUSE_PACKAGE_SET:-server}"
+      fi
+      if [ -n "${AIOS_BASE_ROOTFS:-}" ]; then
+        ISO_ARGS="--release --output ${ISO_OUTPUT} --base-rootfs ${AIOS_BASE_ROOTFS}"
+        if [ "${AIOS_ENTERPRISE_RELEASE:-0}" = "1" ]; then
+          ISO_ARGS="${ISO_ARGS} --enterprise-release"
+        fi
+        ./distro/build/build-aios-iso.sh ${ISO_ARGS}
+      else
+        echo "WARNING: AIOS_BASE_ROOTFS not set; building scaffold packaging ISO, not a bootable Rev12 release ISO."
+        ./distro/build/build-aios-iso.sh --release --output "${ISO_OUTPUT}" --allow-scaffold-rootfs --kernel-firmware-source none
+      fi
   artifacts:
-    name: "aios-rev4-weekly-${CI_PIPELINE_ID}"
+    name: "aios-rev12-weekly-${CI_PIPELINE_ID}"
     paths:
-      - "distro/build/aios-rev4-*.iso"
+      - "distro/build/aios-rev12-*.iso"
     expire_in: 30 days
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'

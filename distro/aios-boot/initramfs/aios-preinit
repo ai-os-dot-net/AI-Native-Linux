@@ -18,6 +18,10 @@ AIOS_SELINUX_POLICY=/etc/selinux/aios/policy/policy.33
 # dm-verity root hash signature (for veritysetup)
 AIOS_VERITY_HASH=/etc/aios/verity/roothash.sig
 
+# IMA/EVM early integrity policy skeletons
+AIOS_IMA_POLICY=/etc/ima/ima-policy
+AIOS_EVM_POLICY=/etc/evm/evm-policy
+
 # LUKS device (if root is inside LUKS, unsealed by TPM)
 AIOS_LUKS_DEVICE=/dev/disk/by-partlabel/AIOS_LUKS
 AIOS_LUKS_NAME=aios-cryptroot

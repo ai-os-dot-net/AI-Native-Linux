@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # =============================================================================
-# AI-OS.NET ISO Builder — Revision 11
+# AI-OS.NET ISO Builder — Revision 12
 # =============================================================================
 # Builds a bootable AIOS live/install ISO from the 34-crate Rust workspace.
 #
@@ -22,21 +22,21 @@ set -euo pipefail
 #
 # Usage:
 #   ./build-aios-iso.sh [--release|--debug] [--output PATH] [--arch x86_64|aarch64]
-#   ./build-aios-iso.sh --release --output /tmp/aios.iso
+#   ./build-aios-iso.sh --release --base-rootfs /srv/aios/base-rootfs --output /tmp/aios.iso
 #
 # Output:
-#   aios-rev11-YYYYMMDD-x86_64.iso — bootable ISO image
+#   aios-rev12-YYYYMMDD-x86_64.iso — bootable ISO image
 # =============================================================================
 
 # ── Project paths ────────────────────────────────────────────────────────────
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="${REPO_ROOT}/distro/build/out"
+BUILD_DIR="${AIOS_BUILD_WORKDIR:-${REPO_ROOT}/distro/build/out}"
 ROOTFS_DIR="${BUILD_DIR}/rootfs"
 INITRAMFS_DIR="${BUILD_DIR}/initramfs"
 INITRAMFS_OUT="${BUILD_DIR}/initramfs.cpio.xz"
 ISO_DIR="${BUILD_DIR}/iso"
+# shellcheck disable=SC2034
 EFI_IMG="${BUILD_DIR}/efiboot.img"
 
 DATE_STAMP="$(date +%Y%m%d)"
@@ -45,13 +45,48 @@ DATE_STAMP="$(date +%Y%m%d)"
 
 ARCH="x86_64"
 PROFILE="release"
-OUTPUT="${REPO_ROOT}/distro/build/aios-rev11-${DATE_STAMP}-${ARCH}.iso"
+CARGO_PROFILE="release"
+TARGET_PROFILE_DIR="release"
+OUTPUT="${REPO_ROOT}/distro/build/aios-rev12-${DATE_STAMP}-${ARCH}.iso"
+OUTPUT_EXPLICIT=false
 AIOS_VERSION="${AIOS_VERSION:-0.1.0}"
 AIOS_BUILD_ID="${AIOS_BUILD_ID:-${DATE_STAMP}}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
+BASE_ROOTFS="${AIOS_BASE_ROOTFS:-}"
+ALLOW_SCAFFOLD_ROOTFS="${AIOS_ALLOW_SCAFFOLD_ROOTFS:-0}"
+AIOS_SECURITY_PROFILE="${AIOS_SECURITY_PROFILE:-SECURE_DEFAULT}"
+AIOS_SELINUX_MODE="${AIOS_SELINUX_MODE:-permissive}"
+AIOS_SELINUX_POLICY_SOURCE="${AIOS_SELINUX_POLICY_SOURCE:-}"
+AIOS_REQUIRE_BOOT_SIGNATURES="${AIOS_REQUIRE_BOOT_SIGNATURES:-0}"
+AIOS_SIGNATURE_SOURCE_DIR="${AIOS_SIGNATURE_SOURCE_DIR:-}"
+AIOS_ENTERPRISE_RELEASE="${AIOS_ENTERPRISE_RELEASE:-0}"
+AIOS_BASE_FAMILY="${AIOS_BASE_FAMILY:-scaffold}"
+AIOS_BASE_VARIANT="${AIOS_BASE_VARIANT:-none}"
+AIOS_BASE_VERSION="${AIOS_BASE_VERSION:-none}"
+AIOS_BASE_SERIES="${AIOS_BASE_SERIES:-none}"
+AIOS_BASE_ARCH="${AIOS_BASE_ARCH:-}"
+AIOS_BASE_SUPPORT_MONTHS="${AIOS_BASE_SUPPORT_MONTHS:-0}"
+AIOS_BASE_EOL_DATE="${AIOS_BASE_EOL_DATE:-none}"
+AIOS_BASE_KERNEL_POLICY="${AIOS_BASE_KERNEL_POLICY:-host-kernel}"
+AIOS_BASE_PACKAGE_POLICY="${AIOS_BASE_PACKAGE_POLICY:-aios-scaffold}"
+AIOS_BASE_REPO_OSS="${AIOS_BASE_REPO_OSS:-none}"
+AIOS_BASE_REPO_UPDATE="${AIOS_BASE_REPO_UPDATE:-none}"
+AIOS_BASE_BUILDER="${AIOS_BASE_BUILDER:-none}"
 
 # Kernel source: path to prebuilt kernel or "host" to copy from /boot
 KERNEL_SOURCE="${KERNEL_SOURCE:-host}"
+KERNEL_VERSION="${KERNEL_VERSION:-}"
+KERNEL_MODULES_SOURCE="${KERNEL_MODULES_SOURCE:-auto}"
+KERNEL_FIRMWARE_SOURCE="${KERNEL_FIRMWARE_SOURCE:-auto}"
+
+STAGED_KERNEL_VERSION=""
+STAGED_KERNEL_SOURCE_PATH=""
+STAGED_MODULE_SOURCE_PATH=""
+STAGED_MODULE_MODE="missing"
+STAGED_MODULE_FILE_COUNT=0
+STAGED_FIRMWARE_SOURCE_PATH=""
+STAGED_FIRMWARE_MODE="missing"
+STAGED_FIRMWARE_FILE_COUNT=0
 
 # ── Color output ─────────────────────────────────────────────────────────────
 
@@ -69,26 +104,108 @@ err()   { printf "${BOLD}${RED}✗${RESET} %s\n" "$*" >&2; }
 ok()    { printf "    ${GREEN}✓${RESET} %s\n" "$*"; }
 die()   { err "$*"; exit 1; }
 
+json_escape() {
+    printf '%s' "$1" \
+        | sed \
+            -e 's/\\/\\\\/g' \
+            -e 's/"/\\"/g' \
+            -e 's/	/\\t/g'
+}
+
+file_sha256() {
+    sha256sum "$1" | awk '{print $1}'
+}
+
+file_size_bytes() {
+    wc -c < "$1" | tr -d '[:space:]'
+}
+
+append_manifest_artifact() {
+    local manifest="$1"
+    local rel_path="$2"
+    local abs_path="${ISO_DIR}/${rel_path}"
+    local comma="${3:-,}"
+
+    if [ ! -f "${abs_path}" ]; then
+        die "Release artifact missing during manifest generation: ${rel_path}"
+    fi
+
+    cat >> "${manifest}" <<EOF
+    {
+      "path": "$(json_escape "${rel_path}")",
+      "sha256": "$(file_sha256 "${abs_path}")",
+      "size_bytes": $(file_size_bytes "${abs_path}")
+    }${comma}
+EOF
+}
+
+count_tree_files() {
+    if [ -d "$1" ]; then
+        find "$1" -type f 2>/dev/null | wc -l | tr -d '[:space:]'
+    else
+        printf '0'
+    fi
+}
+
+infer_kernel_version_from_path() {
+    local kernel_path="$1"
+    local dir_name
+    local base_name
+
+    if [ -n "${KERNEL_VERSION}" ]; then
+        printf '%s\n' "${KERNEL_VERSION}"
+        return 0
+    fi
+
+    dir_name="$(dirname "${kernel_path}")"
+    base_name="$(basename "${kernel_path}")"
+
+    case "${dir_name}" in
+        */modules/*)
+            basename "${dir_name}"
+            return 0
+            ;;
+    esac
+
+    case "${base_name}" in
+        vmlinuz-*) printf '%s\n' "${base_name#vmlinuz-}"; return 0 ;;
+        kernel-*)  printf '%s\n' "${base_name#kernel-}"; return 0 ;;
+    esac
+
+    uname -r 2>/dev/null || printf 'unknown'
+}
+
 banner() {
-    printf "\n${BOLD}${BLUE}"
+    printf '\n%s%s' "${BOLD}" "${BLUE}"
     printf "╔══════════════════════════════════════════════════════╗\n"
-    printf "║   AI-OS.NET ISO Builder — Revision 11                ║\n"
+    printf "║   AI-OS.NET ISO Builder — Revision 12                ║\n"
     printf "║   Version: %-10s  Profile: %-8s          ║\n" "${AIOS_VERSION}" "${PROFILE}"
     printf "║   Arch:    %-10s  Jobs:    %-8s          ║\n" "${ARCH}" "${JOBS}"
     printf "║   Output:  %-40s ║\n" "$(basename "${OUTPUT}")"
-    printf "╚══════════════════════════════════════════════════════╝${RESET}\n\n"
+    printf '╚══════════════════════════════════════════════════════╝%s\n\n' "${RESET}"
 }
 
 # ── Argument parsing ─────────────────────────────────────────────────────────
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --release)         PROFILE="release"; shift ;;
-        --debug)           PROFILE="debug";   shift ;;
-        --output)          OUTPUT="$2";       shift 2 ;;
+        --release)         PROFILE="release"; CARGO_PROFILE="release"; TARGET_PROFILE_DIR="release"; shift ;;
+        --debug)           PROFILE="debug"; CARGO_PROFILE="dev"; TARGET_PROFILE_DIR="debug"; shift ;;
+        --output)          OUTPUT="$2"; OUTPUT_EXPLICIT=true; shift 2 ;;
         --arch)            ARCH="$2";         shift 2 ;;
         --jobs|-j)         JOBS="$2";         shift 2 ;;
         --kernel-source)   KERNEL_SOURCE="$2"; shift 2 ;;
+        --kernel-version)  KERNEL_VERSION="$2"; shift 2 ;;
+        --kernel-modules-source) KERNEL_MODULES_SOURCE="$2"; shift 2 ;;
+        --kernel-firmware-source) KERNEL_FIRMWARE_SOURCE="$2"; shift 2 ;;
+        --security-profile) AIOS_SECURITY_PROFILE="$2"; shift 2 ;;
+        --selinux-mode) AIOS_SELINUX_MODE="$2"; shift 2 ;;
+        --selinux-policy-source) AIOS_SELINUX_POLICY_SOURCE="$2"; shift 2 ;;
+        --require-boot-signatures) AIOS_REQUIRE_BOOT_SIGNATURES=1; shift ;;
+        --signature-source-dir) AIOS_SIGNATURE_SOURCE_DIR="$2"; shift 2 ;;
+        --enterprise-release) AIOS_ENTERPRISE_RELEASE=1; shift ;;
+        --base-rootfs)     BASE_ROOTFS="$2";  shift 2 ;;
+        --allow-scaffold-rootfs) ALLOW_SCAFFOLD_ROOTFS=1; shift ;;
         --version)         AIOS_VERSION="$2"; shift 2 ;;
         --build-id)        AIOS_BUILD_ID="$2"; shift 2 ;;
         --help|-h)
@@ -100,6 +217,24 @@ while [ $# -gt 0 ]; do
             printf "  --arch ARCH          Target architecture (x86_64|aarch64)\n"
             printf "  --jobs N, -j N       Number of parallel build jobs\n"
             printf "  --kernel-source SRC  Kernel source (host|PATH)\n"
+            printf "  --kernel-version VER Kernel version for module matching\n"
+            printf "  --kernel-modules-source SRC\n"
+            printf "                       Module tree source (auto|none|PATH)\n"
+            printf "  --kernel-firmware-source SRC\n"
+            printf "                       Firmware source (auto|none|PATH)\n"
+            printf "  --security-profile PROFILE\n"
+            printf "                       Rev.12 security profile name (default: SECURE_DEFAULT)\n"
+            printf "  --selinux-mode MODE SELinux mode (permissive|enforcing|disabled)\n"
+            printf "  --selinux-policy-source PATH\n"
+            printf "                       Binary SELinux policy. Required for enforcing builds.\n"
+            printf "  --require-boot-signatures\n"
+            printf "                       Fail if boot-chain detached signatures are missing\n"
+            printf "  --signature-source-dir PATH\n"
+            printf "                       Directory with detached signatures to stage in /aios/signatures\n"
+            printf "  --enterprise-release Require R13 enterprise base metadata and supported arch\n"
+            printf "  --base-rootfs PATH   Prepared Linux rootfs with systemd/init\n"
+            printf "  --allow-scaffold-rootfs\n"
+            printf "                       Build an AIOS-only scaffold rootfs (not bootable)\n"
             printf "  --version VERSION    AIOS version string\n"
             printf "  --build-id ID        Build identifier\n"
             exit 0
@@ -108,11 +243,73 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+if ! ${OUTPUT_EXPLICIT}; then
+    OUTPUT="${REPO_ROOT}/distro/build/aios-rev12-${DATE_STAMP}-${ARCH}.iso"
+fi
+
+case "${AIOS_SELINUX_MODE}" in
+    enforcing|permissive|disabled) ;;
+    *) die "Invalid --selinux-mode: ${AIOS_SELINUX_MODE}" ;;
+esac
+
+case "${AIOS_REQUIRE_BOOT_SIGNATURES}" in
+    0|1) ;;
+    *) die "AIOS_REQUIRE_BOOT_SIGNATURES must be 0 or 1" ;;
+esac
+
+if [ "${AIOS_SELINUX_MODE}" = "enforcing" ] && [ -z "${AIOS_SELINUX_POLICY_SOURCE}" ]; then
+    die "SELinux enforcing requires --selinux-policy-source with a binary policy."
+fi
+
+if [ -n "${AIOS_SELINUX_POLICY_SOURCE}" ] && [ ! -f "${AIOS_SELINUX_POLICY_SOURCE}" ]; then
+    die "SELinux policy source not found: ${AIOS_SELINUX_POLICY_SOURCE}"
+fi
+
+if [ -n "${AIOS_SIGNATURE_SOURCE_DIR}" ] && [ ! -d "${AIOS_SIGNATURE_SOURCE_DIR}" ]; then
+    die "Signature source directory not found: ${AIOS_SIGNATURE_SOURCE_DIR}"
+fi
+
+if [ -n "${BASE_ROOTFS}" ] && [ -f "${BASE_ROOTFS}/etc/aios/base-rootfs.env" ]; then
+    # shellcheck disable=SC1091
+    . "${BASE_ROOTFS}/etc/aios/base-rootfs.env"
+fi
+
+[ -n "${AIOS_BASE_ARCH}" ] || AIOS_BASE_ARCH="${ARCH}"
+
+case "${AIOS_ENTERPRISE_RELEASE}" in
+    0|1) ;;
+    *) die "AIOS_ENTERPRISE_RELEASE must be 0 or 1" ;;
+esac
+
+case "${AIOS_BASE_SUPPORT_MONTHS}" in
+    ''|*[!0-9]*) die "AIOS_BASE_SUPPORT_MONTHS must be numeric: ${AIOS_BASE_SUPPORT_MONTHS}" ;;
+esac
+
+if [ "${AIOS_ENTERPRISE_RELEASE}" = "1" ]; then
+    [ -n "${BASE_ROOTFS}" ] || die "Enterprise release requires --base-rootfs from R13.1 builder."
+    [ "${ALLOW_SCAFFOLD_ROOTFS}" != "1" ] || die "Enterprise release cannot use scaffold rootfs."
+    [ "${AIOS_BASE_FAMILY}" = "opensuse" ] || die "Enterprise release requires openSUSE base metadata."
+    [ "${AIOS_BASE_ARCH}" = "${ARCH}" ] || die "Enterprise rootfs arch mismatch: rootfs=${AIOS_BASE_ARCH}, iso=${ARCH}"
+    [ "${AIOS_BASE_SUPPORT_MONTHS}" -gt 0 ] || die "Enterprise release requires a positive support window."
+    [ "${AIOS_BASE_EOL_DATE}" != "none" ] || die "Enterprise release requires an EOL date."
+    case "${ARCH}" in
+        x86_64|aarch64) ;;
+        *) die "Enterprise release architecture not supported: ${ARCH}" ;;
+    esac
+fi
+
+SELINUX_ENFORCING_TOML=false
+[ "${AIOS_SELINUX_MODE}" = "enforcing" ] && SELINUX_ENFORCING_TOML=true
+BOOT_SIGNATURES_REQUIRED_TOML=false
+[ "${AIOS_REQUIRE_BOOT_SIGNATURES}" = "1" ] && BOOT_SIGNATURES_REQUIRED_TOML=true
+ENTERPRISE_RELEASE_JSON=false
+[ "${AIOS_ENTERPRISE_RELEASE}" = "1" ] && ENTERPRISE_RELEASE_JSON=true
+
 # If arch is aarch64, switch cross-compilation profile path lookup
 if [ "${ARCH}" = "aarch64" ]; then
-    TARGET_DIR="${REPO_ROOT}/target/aarch64-unknown-linux-gnu/${PROFILE}"
+    TARGET_DIR="${REPO_ROOT}/target/aarch64-unknown-linux-gnu/${TARGET_PROFILE_DIR}"
 else
-    TARGET_DIR="${REPO_ROOT}/target/${PROFILE}"
+    TARGET_DIR="${REPO_ROOT}/target/${TARGET_PROFILE_DIR}"
 fi
 
 # ── Pre-flight checks ────────────────────────────────────────────────────────
@@ -141,7 +338,7 @@ check_cmd dd             "coreutils"
 
 if [ -n "${MISSING}" ]; then
     err "Missing required tools:"
-    printf "${MISSING}"
+    printf '%s' "${MISSING}"
     die "Install missing dependencies and retry."
 fi
 
@@ -155,13 +352,10 @@ check_opt() {
 }
 
 HAS_BUSYBOX=false
-HAS_SYSTEMD_BOOT=false
-HAS_CRYPTSETUP=false
-HAS_TPM2TOOLS=false
-HAS_VERITYSETUP=false
-HAS_LOADPOLICY=false
 
-check_opt busybox       "busybox-static (initramfs busybox)" && HAS_BUSYBOX=true || {
+if check_opt busybox "busybox-static (initramfs busybox)"; then
+    HAS_BUSYBOX=true
+else
     # openSUSE names it busybox-static
     if command -v busybox-static >/dev/null 2>&1; then
         HAS_BUSYBOX=true
@@ -170,17 +364,34 @@ check_opt busybox       "busybox-static (initramfs busybox)" && HAS_BUSYBOX=true
     else
         HAS_BUSYBOX=false
     fi
-}
+fi
 
 # Use the correct busybox binary name
 BUSYBOX_CMD="${BUSYBOX_CMD:-busybox}"
-check_opt bootctl       "systemd-boot (EFI boot manager)"     && HAS_SYSTEMD_BOOT=true || true
-check_opt cryptsetup    "cryptsetup (LUKS in initramfs)"      && HAS_CRYPTSETUP=true || true
-check_opt tpm2_unseal   "tpm2-tools (TPM2 unseal)"            && HAS_TPM2TOOLS=true || true
-check_opt veritysetup   "veritysetup (dm-verity)"             && HAS_VERITYSETUP=true || true
-check_opt load_policy   "policycoreutils (SELinux load_policy)" && HAS_LOADPOLICY=true || true
+check_opt bootctl "systemd-boot (EFI boot manager)" || true
+check_opt cryptsetup "cryptsetup (LUKS in initramfs)" || true
+check_opt tpm2_unseal "tpm2-tools (TPM2 unseal)" || true
+check_opt veritysetup "veritysetup (dm-verity)" || true
+check_opt load_policy "policycoreutils (SELinux load_policy)" || true
 
 ok "Dependency check complete."
+
+if [ -n "${BASE_ROOTFS}" ]; then
+    if [ ! -d "${BASE_ROOTFS}" ]; then
+        die "Base rootfs does not exist: ${BASE_ROOTFS}"
+    fi
+    if [ ! -x "${BASE_ROOTFS}/sbin/init" ] \
+       && [ ! -x "${BASE_ROOTFS}/usr/lib/systemd/systemd" ] \
+       && [ ! -x "${BASE_ROOTFS}/lib/systemd/systemd" ]; then
+        die "Base rootfs must contain /sbin/init or systemd: ${BASE_ROOTFS}"
+    fi
+    ok "Base rootfs validated: ${BASE_ROOTFS}"
+elif [ "${ALLOW_SCAFFOLD_ROOTFS}" = "1" ]; then
+    warn "Building scaffold AIOS rootfs without a base Linux userspace."
+    warn "The resulting ISO is for packaging tests only and is not bootable."
+else
+    die "Bootable ISO requires --base-rootfs PATH (or set AIOS_ALLOW_SCAFFOLD_ROOTFS=1 for non-bootable packaging tests)."
+fi
 
 # ── Step 1: Compile workspace ────────────────────────────────────────────────
 
@@ -195,9 +406,22 @@ if [ "${ARCH}" = "aarch64" ]; then
         info "Installing aarch64 cross-compilation target..."
         rustup target add aarch64-unknown-linux-gnu
     fi
-    cargo build --profile "${PROFILE}" --workspace --target aarch64-unknown-linux-gnu --jobs "${JOBS}"
+    cargo build --profile "${CARGO_PROFILE}" --workspace --target aarch64-unknown-linux-gnu --jobs "${JOBS}"
 else
-    cargo build --profile "${PROFILE}" --workspace --jobs "${JOBS}"
+    cargo build --profile "${CARGO_PROFILE}" --workspace --jobs "${JOBS}"
+fi
+
+FIRST_BOOT_TARGET_DIR="${REPO_ROOT}/distro/first-boot/target/${TARGET_PROFILE_DIR}"
+if [ "${ARCH}" = "aarch64" ]; then
+    cargo build --profile "${CARGO_PROFILE}" \
+        --manifest-path "${REPO_ROOT}/distro/first-boot/Cargo.toml" \
+        --target aarch64-unknown-linux-gnu \
+        --jobs "${JOBS}"
+    FIRST_BOOT_TARGET_DIR="${REPO_ROOT}/distro/first-boot/target/aarch64-unknown-linux-gnu/${TARGET_PROFILE_DIR}"
+else
+    cargo build --profile "${CARGO_PROFILE}" \
+        --manifest-path "${REPO_ROOT}/distro/first-boot/Cargo.toml" \
+        --jobs "${JOBS}"
 fi
 
 BUILD_DURATION=$(( $(date +%s) - START_TS ))
@@ -238,6 +462,14 @@ if [ ${#BINARIES_FOUND[@]} -eq 0 ]; then
     done < <(find "${TARGET_DIR}" -maxdepth 1 -type f -executable 2>/dev/null || true)
 fi
 
+FIRST_BOOT_BIN="${FIRST_BOOT_TARGET_DIR}/aios-first-boot"
+if [ -f "${FIRST_BOOT_BIN}" ]; then
+    BINARIES_FOUND+=("aios-first-boot|${FIRST_BOOT_BIN}")
+    info "Found binary: aios-first-boot (${FIRST_BOOT_BIN})"
+else
+    die "aios-first-boot binary not found at ${FIRST_BOOT_BIN}"
+fi
+
 if [ ${#BINARIES_FOUND[@]} -eq 0 ]; then
     die "No binaries found in ${TARGET_DIR}. Build may have failed."
 fi
@@ -253,9 +485,17 @@ step "Step 2: Creating rootfs directory tree"
 rm -rf "${ROOTFS_DIR}" "${INITRAMFS_DIR}" "${ISO_DIR}"
 mkdir -p "${ROOTFS_DIR}"
 
+if [ -n "${BASE_ROOTFS}" ]; then
+    info "Copying base Linux rootfs from ${BASE_ROOTFS}"
+    cp -a "${BASE_ROOTFS}/." "${ROOTFS_DIR}/"
+fi
+
 mkdir -p "${ROOTFS_DIR}"/usr/{bin,lib/aios,lib/systemd/boot/efi,share/aios/{config,selinux,licenses}}
-mkdir -p "${ROOTFS_DIR}"/etc/{aios/{config.d,verity,policy.d,selinux.d,evidence.d,backup.d,hardening},selinux/aios/policy,systemd/system,ssl/certs}
-mkdir -p "${ROOTFS_DIR}"/var/{lib/aios/{evidence,policy,capsules,backup,state,fleet,autonomous,marketplace,container,terminal},log/aios,cache/aios,tmp}
+mkdir -p "${ROOTFS_DIR}"/etc/{aios/{config.d,security.d,verity,policy.d,selinux.d,evidence.d,backup.d,hardening,update.d,integrity.d},selinux/aios/policy,systemd/system,ssl/certs,ima,evm}
+mkdir -p "${ROOTFS_DIR}"/var/{lib/aios/{evidence,policy,capsules,backup,state,fleet,autonomous,marketplace,container,terminal,update},log/aios,cache/aios,tmp}
+for _state_dir in fs vault network recovery sgr sandbox hardware hardening containers models models/ollama models/vllm; do
+    mkdir -p "${ROOTFS_DIR}/var/lib/aios/${_state_dir}"
+done
 mkdir -p "${ROOTFS_DIR}"/run/aios
 mkdir -p "${ROOTFS_DIR}"/boot/{loader/entries,EFI/BOOT}
 mkdir -p "${ROOTFS_DIR}"/tmp
@@ -269,18 +509,77 @@ mkdir -p "${ROOTFS_DIR}"/home/aios
 mkdir -p "${ROOTFS_DIR}"/root
 mkdir -p "${ROOTFS_DIR}"/srv
 
-# Essential symlinks
-ln -sf usr/bin  "${ROOTFS_DIR}/bin"
-ln -sf usr/lib  "${ROOTFS_DIR}/lib"
-ln -sf usr/lib  "${ROOTFS_DIR}/lib64"
-ln -sf bin      "${ROOTFS_DIR}/usr/sbin"
-ln -sf ../run   "${ROOTFS_DIR}/var/run"
-ln -sf ../lock  "${ROOTFS_DIR}/var/lock"
+# Essential symlinks for scaffold roots. Preserve a base rootfs layout when it
+# already provides real directories or symlinks.
+ensure_symlink() {
+    local target="$1"
+    local link_path="$2"
+    if [ -L "${link_path}" ]; then
+        ln -sfn "${target}" "${link_path}"
+    elif [ -e "${link_path}" ]; then
+        info "Preserving existing path: ${link_path#"${ROOTFS_DIR}"/}"
+    else
+        ln -s "${target}" "${link_path}"
+    fi
+}
 
-# Create /sbin -> /usr/bin symlink for init compatibility
-ln -sf usr/bin "${ROOTFS_DIR}/sbin"
+ensure_symlink usr/bin  "${ROOTFS_DIR}/bin"
+ensure_symlink usr/lib  "${ROOTFS_DIR}/lib"
+ensure_symlink usr/lib  "${ROOTFS_DIR}/lib64"
+ensure_symlink bin      "${ROOTFS_DIR}/usr/sbin"
+ensure_symlink ../run   "${ROOTFS_DIR}/var/run"
+ensure_symlink ../lock  "${ROOTFS_DIR}/var/lock"
+ensure_symlink usr/bin  "${ROOTFS_DIR}/sbin"
+
+ensure_init_entrypoint() {
+    if [ -x "${ROOTFS_DIR}/sbin/init" ] || [ -L "${ROOTFS_DIR}/sbin/init" ]; then
+        return 0
+    fi
+
+    local systemd_path=""
+    for candidate in /usr/lib/systemd/systemd /lib/systemd/systemd; do
+        if [ -x "${ROOTFS_DIR}${candidate}" ]; then
+            systemd_path="${candidate}"
+            break
+        fi
+    done
+
+    if [ -n "${systemd_path}" ]; then
+        if [ -L "${ROOTFS_DIR}/sbin" ]; then
+            mkdir -p "${ROOTFS_DIR}/usr/bin"
+            ln -sfn "${systemd_path}" "${ROOTFS_DIR}/usr/bin/init"
+        else
+            mkdir -p "${ROOTFS_DIR}/sbin"
+            ln -sfn "${systemd_path}" "${ROOTFS_DIR}/sbin/init"
+        fi
+        info "Created /sbin/init entrypoint for ${systemd_path}"
+    elif [ "${ALLOW_SCAFFOLD_ROOTFS}" = "1" ]; then
+        warn "Scaffold rootfs has no /sbin/init; ISO will not boot."
+    else
+        die "Rootfs has no /sbin/init and no systemd binary."
+    fi
+}
+
+ensure_init_entrypoint
 
 ok "Rootfs directory tree created."
+
+rootfs_has_command() {
+    local command_name="$1"
+    local candidate
+
+    for candidate in \
+        "/usr/bin/${command_name}" \
+        "/bin/${command_name}" \
+        "/usr/sbin/${command_name}" \
+        "/sbin/${command_name}"; do
+        if [ -x "${ROOTFS_DIR}${candidate}" ]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
 
 # ── Step 3: Strip and install AIOS binaries ──────────────────────────────────
 
@@ -328,9 +627,70 @@ fi
 
 ok "Binaries installed and stripped."
 
-# ── Step 4: Install systemd units ────────────────────────────────────────────
+# ── Step 4: Install live installer tools ─────────────────────────────────────
 
-step "Step 4: Installing systemd units"
+step "Step 4: Installing live installer tools"
+
+INSTALLER_SRC="${REPO_ROOT}/distro/installer"
+INSTALLER_DST="${ROOTFS_DIR}/usr/lib/aios/install"
+mkdir -p "${INSTALLER_DST}"
+
+for installer in aios-installer.sh aios-quick-install.sh; do
+    if [ -f "${INSTALLER_SRC}/${installer}" ]; then
+        cp "${INSTALLER_SRC}/${installer}" "${INSTALLER_DST}/${installer}"
+        chmod 755 "${INSTALLER_DST}/${installer}"
+        ln -sf "../lib/aios/install/${installer}" "${AIOS_BIN_DIR}/${installer%.sh}"
+        info "Installer staged: /usr/lib/aios/install/${installer}"
+    else
+        die "Required installer script missing: ${INSTALLER_SRC}/${installer}"
+    fi
+done
+
+ok "Live installer tools installed."
+
+# ── Step 4b: Install update client ───────────────────────────────────────────
+
+step "Step 4b: Installing signed update client"
+
+UPDATE_SRC="${REPO_ROOT}/distro/update"
+UPDATE_DST="${ROOTFS_DIR}/usr/lib/aios/update"
+mkdir -p "${UPDATE_DST}" "${ROOTFS_DIR}/etc/aios/update.d"
+
+if [ -f "${UPDATE_SRC}/aios-update.sh" ]; then
+    cp "${UPDATE_SRC}/aios-update.sh" "${UPDATE_DST}/aios-update.sh"
+    chmod 755 "${UPDATE_DST}/aios-update.sh"
+    ln -sf "../lib/aios/update/aios-update.sh" "${AIOS_BIN_DIR}/aios-update"
+    info "Update client staged: /usr/lib/aios/update/aios-update.sh"
+else
+    die "Required update client missing: ${UPDATE_SRC}/aios-update.sh"
+fi
+
+cat > "${ROOTFS_DIR}/etc/aios/update.d/update.toml" <<'EOF'
+# AI-OS.NET Rev.12 update client configuration
+[updates]
+channel = "release"
+state_dir = "/var/lib/aios/update"
+rollback_dir = "/var/lib/aios/rollback"
+trusted_key = "/etc/aios/update.d/trusted-release-key.pem"
+require_signature = true
+EOF
+chmod 644 "${ROOTFS_DIR}/etc/aios/update.d/update.toml"
+
+for update_dep in bash jq openssl sha256sum; do
+    if rootfs_has_command "${update_dep}"; then
+        info "Update dependency present in rootfs: ${update_dep}"
+    elif [ -n "${BASE_ROOTFS}" ]; then
+        die "Base rootfs missing update dependency: ${update_dep}"
+    else
+        warn "Scaffold rootfs missing update dependency: ${update_dep}"
+    fi
+done
+
+ok "Signed update client installed."
+
+# ── Step 5: Install systemd units ────────────────────────────────────────────
+
+step "Step 5: Installing systemd units"
 
 SYSTEMD_SRC="${REPO_ROOT}/distro/systemd"
 SYSTEMD_DST="${ROOTFS_DIR}/etc/systemd/system"
@@ -348,28 +708,43 @@ if [ -d "${SYSTEMD_SRC}" ]; then
             info "Installed systemd unit: ${svc_name}"
         fi
     done
+    for target in "${SYSTEMD_SRC}"/*.target; do
+        if [ -f "${target}" ]; then
+            target_name="$(basename "${target}")"
+            cp "${target}" "${SYSTEMD_DST}/${target_name}"
+            chmod 644 "${SYSTEMD_DST}/${target_name}"
+            info "Installed systemd target: ${target_name}"
+        fi
+    done
 fi
-
-# Create aios.target for ordering
-cat > "${SYSTEMD_DST}/aios.target" <<'EOF'
-[Unit]
-Description=AI-OS.NET Core Services
-Documentation=https://ai-os.net/docs
-Requires=aios-policy-kernel.service aios-evidence-log.service aios-capability-runtime.service
-After=network.target
-
-[Install]
-WantedBy=multi-user.target
-EOF
 
 # Create symlinks to enable services
 mkdir -p "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants"
-for svc in aios-policy-kernel.service aios-evidence-log.service aios-capability-runtime.service aios-fleet.service aios-container.service aios-terminal.service aios-hardening.service aios-autonomous.service; do
-    if [ -f "${SYSTEMD_DST}/${svc}" ]; then
-        ln -sf "../${svc}" "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/${svc}"
-        info "Enabled: ${svc}"
-    fi
+svc="aios.target"
+if [ -f "${SYSTEMD_DST}/${svc}" ]; then
+    ln -sf "../${svc}" "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/${svc}"
+    info "Enabled: ${svc}"
+fi
+
+UNIT_EXEC_MISSING=false
+for unit_file in "${SYSTEMD_DST}"/*.service; do
+    [ -f "${unit_file}" ] || continue
+    unit_name="$(basename "${unit_file}")"
+    while IFS= read -r exec_path; do
+        case "${exec_path}" in
+            /usr/lib/aios/*|/usr/bin/aios*)
+                if [ ! -e "${ROOTFS_DIR}${exec_path}" ]; then
+                    warn "${unit_name}: ExecStart binary missing from rootfs: ${exec_path}"
+                    UNIT_EXEC_MISSING=true
+                fi
+                ;;
+        esac
+    done < <(sed -n 's#^ExecStart=-*##p' "${unit_file}" | awk '{print $1}')
 done
+
+if ${UNIT_EXEC_MISSING}; then
+    die "One or more AIOS systemd units reference missing staged binaries."
+fi
 
 # systemd-networkd default wired config
 cat > "${SYSTEMD_NETWORK_DST}/20-wired.network" <<'EOF'
@@ -388,6 +763,7 @@ RouteMetric=10
 EOF
 
 # systemd-resolved stub config
+rm -f "${SYSTEMD_RESOLVED_DST}/resolv.conf"
 cat > "${SYSTEMD_RESOLVED_DST}/resolv.conf" <<'EOF'
 nameserver 127.0.0.53
 options edns0 trust-ad
@@ -395,13 +771,13 @@ EOF
 
 ok "Systemd units installed."
 
-# ── Step 5: Install configuration files ──────────────────────────────────────
+# ── Step 6: Install configuration files ──────────────────────────────────────
 
-step "Step 5: Installing configuration files"
+step "Step 6: Installing configuration files"
 
 # Default AIOS config
 cat > "${ROOTFS_DIR}/etc/aios/config.toml" <<EOF
-# AI-OS.NET Configuration — Revision 11
+# AI-OS.NET Configuration — Revision 12
 # Generated by build-aios-iso.sh ${DATE_STAMP}
 
 [system]
@@ -421,9 +797,15 @@ backup_dir = "/var/lib/aios/backup"
 dns_servers = ["127.0.0.53"]
 
 [security]
-selinux_enforcing = false
+profile = "$(json_escape "${AIOS_SECURITY_PROFILE}")"
+selinux_mode = "$(json_escape "${AIOS_SELINUX_MODE}")"
+selinux_enforcing = ${SELINUX_ENFORCING_TOML}
 measured_boot = true
 fips_mode = false
+ima_policy = "/etc/ima/ima-policy"
+evm_policy = "/etc/evm/evm-policy"
+dm_verity_policy = "/etc/aios/verity/rootfs-policy.json"
+require_signed_boot_chain = ${BOOT_SIGNATURES_REQUIRED_TOML}
 
 [evidence]
 log_format = "jsonl"
@@ -463,8 +845,15 @@ allow_ai_modes = false
 auto_sync = true
 sync_interval_hours = 24
 
+[updates]
+channel = "release"
+state_dir = "/var/lib/aios/update"
+rollback_dir = "/var/lib/aios/rollback"
+trusted_key = "/etc/aios/update.d/trusted-release-key.pem"
+require_signature = true
+
 [hardening]
-profile = "SECURE_DEFAULT"
+profile = "$(json_escape "${AIOS_SECURITY_PROFILE}")"
 scan_on_boot = true
 
 [logging]
@@ -488,7 +877,7 @@ EOF
 # OS release
 cat > "${ROOTFS_DIR}/etc/os-release" <<EOF
 NAME="AI-OS.NET"
-VERSION="${AIOS_VERSION} (Revision 11)"
+VERSION="${AIOS_VERSION} (Revision 12)"
 ID=aios
 ID_LIKE=linux
 PRETTY_NAME="AI-OS.NET ${AIOS_VERSION}"
@@ -541,35 +930,145 @@ EOF
 
 ok "Configuration files installed."
 
-# ── Step 6: Install SELinux policy placeholder ───────────────────────────────
+# ── Step 7: Install security and integrity baseline ──────────────────────────
 
-step "Step 6: Installing SELinux policy"
+step "Step 7: Installing security and integrity baseline"
 
 SELINUX_POLICY_DIR="${ROOTFS_DIR}/etc/selinux/aios/policy"
 mkdir -p "${SELINUX_POLICY_DIR}"
+SELINUX_POLICY_STATUS="placeholder"
 
 # SELinux config
-cat > "${ROOTFS_DIR}/etc/selinux/config" <<'EOF'
+cat > "${ROOTFS_DIR}/etc/selinux/config" <<EOF
 # AI-OS.NET SELinux configuration
-SELINUX=permissive
+SELINUX=${AIOS_SELINUX_MODE}
 SELINUXTYPE=aios
 EOF
 
-# Placeholder policy file (real policy is built by aios-selinux crate)
-# The initramfs init script expects policy.33 at minimum
-cat > "${SELINUX_POLICY_DIR}/policy.33" <<'EOF'
+if [ -n "${AIOS_SELINUX_POLICY_SOURCE}" ]; then
+    cp "${AIOS_SELINUX_POLICY_SOURCE}" "${SELINUX_POLICY_DIR}/policy.33"
+    chmod 600 "${SELINUX_POLICY_DIR}/policy.33"
+    SELINUX_POLICY_STATUS="provided-binary"
+else
+    # Placeholder policy file (real policy is built by aios-selinux crate).
+    # The initramfs init script expects policy.33 at minimum.
+    cat > "${SELINUX_POLICY_DIR}/policy.33" <<'EOF'
 # AI-OS.NET SELinux Policy — Placeholder
 # This is a minimal binary policy stub.
 # Replace with the output of checkpolicy + semodule_package for production.
 EOF
+    chmod 644 "${SELINUX_POLICY_DIR}/policy.33"
+fi
 
-info "SELinux config installed (policy is a placeholder — build with aios-selinux crate for production)."
+cat > "${ROOTFS_DIR}/etc/ima/ima-policy" <<'EOF'
+# AI-OS.NET Rev.12 IMA policy skeleton.
+# Stage-only baseline. Enterprise enforcement requires signed xattrs and keys.
+measure func=BPRM_CHECK
+measure func=FILE_MMAP mask=MAY_EXEC
+measure func=MODULE_CHECK
+measure func=KEXEC_KERNEL_CHECK
+appraise func=MODULE_CHECK appraise_type=imasig
+EOF
+chmod 644 "${ROOTFS_DIR}/etc/ima/ima-policy"
+cp "${ROOTFS_DIR}/etc/ima/ima-policy" "${ROOTFS_DIR}/etc/aios/integrity.d/ima-policy"
 
-ok "SELinux policy installed."
+cat > "${ROOTFS_DIR}/etc/evm/evm-policy" <<'EOF'
+# AI-OS.NET Rev.12 EVM policy skeleton.
+# Stage-only baseline. Enterprise enforcement requires EVM keys and labeled xattrs.
+EVM_MODE=stage
+EVM_XATTRS=security.selinux,security.ima
+EOF
+chmod 644 "${ROOTFS_DIR}/etc/evm/evm-policy"
+cp "${ROOTFS_DIR}/etc/evm/evm-policy" "${ROOTFS_DIR}/etc/aios/integrity.d/evm-policy"
 
-# ── Step 7: Prepare grub.cfg (boot menu for GRUB2 via grub2-mkrescue) ─────────
+cat > "${ROOTFS_DIR}/etc/aios/verity/rootfs-policy.json" <<EOF
+{
+  "schema": "aios.dm_verity_policy.v1",
+  "revision": 12,
+  "root_hash": "/etc/aios/verity/roothash.sig",
+  "cmdline_parameter": "dm_verity.roothash",
+  "fail_on_missing_hash_when_required": true,
+  "fail_on_corruption": true,
+  "hash_device_labels": ["AIOS_HASH"],
+  "data_device_candidates": ["/dev/mapper/aios-cryptroot", "/dev/disk/by-partlabel/AIOS_DATA"]
+}
+EOF
+chmod 644 "${ROOTFS_DIR}/etc/aios/verity/rootfs-policy.json"
 
-step "Step 7: Creating GRUB2 boot configuration"
+cat > "${ROOTFS_DIR}/etc/aios/security-profile.toml" <<EOF
+# AI-OS.NET Rev.12 security profile
+
+[profile]
+name = "$(json_escape "${AIOS_SECURITY_PROFILE}")"
+revision = 12
+
+[selinux]
+mode = "$(json_escape "${AIOS_SELINUX_MODE}")"
+policy = "/etc/selinux/aios/policy/policy.33"
+policy_status = "$(json_escape "${SELINUX_POLICY_STATUS}")"
+enforcing_ready = ${SELINUX_ENFORCING_TOML}
+
+[ima]
+policy = "/etc/ima/ima-policy"
+mode = "stage"
+
+[evm]
+policy = "/etc/evm/evm-policy"
+mode = "stage"
+
+[dm_verity]
+policy = "/etc/aios/verity/rootfs-policy.json"
+root_hash = "/etc/aios/verity/roothash.sig"
+fail_on_corruption = true
+
+[boot_chain]
+metadata = "/etc/aios/boot-chain.json"
+require_signatures = ${BOOT_SIGNATURES_REQUIRED_TOML}
+EOF
+chmod 644 "${ROOTFS_DIR}/etc/aios/security-profile.toml"
+
+cat > "${ROOTFS_DIR}/etc/aios/boot-chain.json" <<EOF
+{
+  "schema": "aios.rootfs_boot_chain.v1",
+  "revision": 12,
+  "required": ${BOOT_SIGNATURES_REQUIRED_TOML},
+  "artifacts": [
+    "boot/grub/grub.cfg",
+    "live/vmlinuz",
+    "live/initrd.img",
+    "live/aios.squashfs",
+    "aios/manifest.json",
+    "aios/security.json",
+    "aios/boot-chain.json"
+  ]
+}
+EOF
+chmod 644 "${ROOTFS_DIR}/etc/aios/boot-chain.json"
+
+cat > "${ROOTFS_DIR}/etc/aios/evidence.d/security-baseline.json" <<EOF
+{
+  "schema": "aios.security_baseline_evidence.v1",
+  "revision": 12,
+  "profile": "$(json_escape "${AIOS_SECURITY_PROFILE}")",
+  "selinux_mode": "$(json_escape "${AIOS_SELINUX_MODE}")",
+  "selinux_policy_status": "$(json_escape "${SELINUX_POLICY_STATUS}")",
+  "ima_policy": "/etc/ima/ima-policy",
+  "evm_policy": "/etc/evm/evm-policy",
+  "dm_verity_policy": "/etc/aios/verity/rootfs-policy.json",
+  "boot_chain_signatures_required": ${BOOT_SIGNATURES_REQUIRED_TOML}
+}
+EOF
+chmod 644 "${ROOTFS_DIR}/etc/aios/evidence.d/security-baseline.json"
+
+info "SELinux config installed (${AIOS_SELINUX_MODE}; policy status: ${SELINUX_POLICY_STATUS})."
+info "IMA/EVM policy skeleton staged."
+info "dm-verity and boot-chain policy staged."
+
+ok "Security and integrity baseline installed."
+
+# ── Step 8: Prepare grub.cfg (boot menu for GRUB2 via grub2-mkrescue) ─────────
+
+step "Step 8: Creating GRUB2 boot configuration"
 
 mkdir -p "${ROOTFS_DIR}/boot/grub"
 
@@ -583,18 +1082,18 @@ cat > "${ROOTFS_DIR}/boot/grub/grub.cfg" <<'GRUBCFG'
 set timeout=5
 set default=0
 
-menuentry "AI-OS.NET Rev.11 Live" {
-    linux /live/vmlinuz root=live:CDLABEL=AIOS_REV11 rd.live.image rd.live.overlay=tmpfs quiet loglevel=3 aios.fleet.mode=standalone aios.autonomous.level=advisory
+menuentry "AI-OS.NET Rev.12 Live" {
+    linux /live/vmlinuz root=live:CDLABEL=AIOS_REV12 rd.live.image rd.live.overlay=tmpfs quiet loglevel=3 console=tty0 console=ttyS0,115200n8 aios.fleet.mode=standalone aios.autonomous.level=advisory
     initrd /live/initrd.img
 }
 
-menuentry "AI-OS.NET Rev.11 Live (debug)" {
-    linux /live/vmlinuz root=live:CDLABEL=AIOS_REV11 rd.live.image rd.live.overlay=tmpfs loglevel=7 aios.fleet.mode=standalone aios.autonomous.level=advisory
+menuentry "AI-OS.NET Rev.12 Live (debug)" {
+    linux /live/vmlinuz root=live:CDLABEL=AIOS_REV12 rd.live.image rd.live.overlay=tmpfs loglevel=7 console=tty0 console=ttyS0,115200n8 aios.fleet.mode=standalone aios.autonomous.level=advisory
     initrd /live/initrd.img
 }
 
-menuentry "AI-OS.NET Rev.11 Recovery Shell" {
-    linux /live/vmlinuz root=live:CDLABEL=AIOS_REV11 rd.live.image rescue systemd.unit=rescue.target
+menuentry "AI-OS.NET Rev.12 Recovery Shell" {
+    linux /live/vmlinuz root=live:CDLABEL=AIOS_REV12 rd.live.image rescue systemd.unit=rescue.target console=tty0 console=ttyS0,115200n8
     initrd /live/initrd.img
 }
 GRUBCFG
@@ -625,7 +1124,10 @@ install_kernel() {
 
     cp "${vmlinuz}" "${KERNEL_DST}/vmlinuz"
     chmod 644 "${KERNEL_DST}/vmlinuz"
+    STAGED_KERNEL_SOURCE_PATH="${vmlinuz}"
+    STAGED_KERNEL_VERSION="$(infer_kernel_version_from_path "${vmlinuz}")"
     info "Kernel installed: $(basename "${vmlinuz}") -> live/vmlinuz"
+    info "Kernel version inferred: ${STAGED_KERNEL_VERSION}"
 
     if [ -f "${initrd}" ]; then
         cp "${initrd}" "${KERNEL_DST}/initrd.img"
@@ -703,6 +1205,132 @@ fi
 
 ok "Kernel installation complete."
 
+# ── Step 8b: Stage kernel modules and firmware ───────────────────────────────
+
+step "Step 8b: Staging kernel modules and firmware"
+
+stage_kernel_modules() {
+    local modules_dst
+    local modules_src=""
+    local candidate
+
+    [ -f "${ISO_DIR}/live/vmlinuz" ] || die "Kernel image missing before module staging."
+    [ -n "${STAGED_KERNEL_VERSION}" ] && [ "${STAGED_KERNEL_VERSION}" != "unknown" ] \
+        || die "Kernel version is unknown; set --kernel-version to stage matching modules."
+
+    modules_dst="${ROOTFS_DIR}/usr/lib/modules/${STAGED_KERNEL_VERSION}"
+    mkdir -p "$(dirname "${modules_dst}")"
+
+    case "${KERNEL_MODULES_SOURCE}" in
+        none)
+            mkdir -p "${modules_dst}"
+            cat > "${modules_dst}/AIOS_MODULES_EMPTY" <<EOF
+AI-OS.NET module tree explicitly marked empty for kernel ${STAGED_KERNEL_VERSION}.
+This is allowed only when the target kernel is built without external modules.
+EOF
+            STAGED_MODULE_MODE="explicit-empty"
+            STAGED_MODULE_SOURCE_PATH="none"
+            ;;
+        auto|host)
+            if [ -f "${modules_dst}/modules.dep" ]; then
+                STAGED_MODULE_MODE="base-rootfs"
+                STAGED_MODULE_SOURCE_PATH="${modules_dst}"
+            else
+                for candidate in \
+                    "/usr/lib/modules/${STAGED_KERNEL_VERSION}" \
+                    "/lib/modules/${STAGED_KERNEL_VERSION}"; do
+                    if [ -d "${candidate}" ] && [ -f "${candidate}/modules.dep" ]; then
+                        modules_src="${candidate}"
+                        break
+                    fi
+                done
+                [ -n "${modules_src}" ] || die "No module tree found for kernel ${STAGED_KERNEL_VERSION}; set --kernel-modules-source."
+                rm -rf "${modules_dst}"
+                mkdir -p "${modules_dst}"
+                cp -a "${modules_src}/." "${modules_dst}/"
+                STAGED_MODULE_MODE="copied"
+                STAGED_MODULE_SOURCE_PATH="${modules_src}"
+            fi
+            ;;
+        *)
+            if [ -d "${KERNEL_MODULES_SOURCE}/${STAGED_KERNEL_VERSION}" ]; then
+                modules_src="${KERNEL_MODULES_SOURCE}/${STAGED_KERNEL_VERSION}"
+            elif [ -d "${KERNEL_MODULES_SOURCE}" ]; then
+                modules_src="${KERNEL_MODULES_SOURCE}"
+            else
+                die "Kernel module source not found: ${KERNEL_MODULES_SOURCE}"
+            fi
+            [ -f "${modules_src}/modules.dep" ] || die "Kernel module source lacks modules.dep: ${modules_src}"
+            rm -rf "${modules_dst}"
+            mkdir -p "${modules_dst}"
+            cp -a "${modules_src}/." "${modules_dst}/"
+            STAGED_MODULE_MODE="copied"
+            STAGED_MODULE_SOURCE_PATH="${modules_src}"
+            ;;
+    esac
+
+    if [ ! -f "${modules_dst}/modules.dep" ] && [ ! -f "${modules_dst}/AIOS_MODULES_EMPTY" ]; then
+        die "Staged module tree is invalid: ${modules_dst}"
+    fi
+
+    STAGED_MODULE_FILE_COUNT="$(count_tree_files "${modules_dst}")"
+    info "Kernel modules: ${STAGED_MODULE_MODE} (${STAGED_MODULE_FILE_COUNT} files)"
+}
+
+stage_kernel_firmware() {
+    local firmware_dst="${ROOTFS_DIR}/usr/lib/firmware"
+    local firmware_src=""
+    local candidate
+
+    mkdir -p "${firmware_dst}"
+
+    case "${KERNEL_FIRMWARE_SOURCE}" in
+        none)
+            cat > "${firmware_dst}/AIOS_FIRMWARE_EMPTY" <<'EOF'
+AI-OS.NET firmware tree explicitly marked empty for this target profile.
+EOF
+            STAGED_FIRMWARE_MODE="explicit-empty"
+            STAGED_FIRMWARE_SOURCE_PATH="none"
+            ;;
+        auto|host)
+            if [ "$(count_tree_files "${firmware_dst}")" != "0" ]; then
+                STAGED_FIRMWARE_MODE="base-rootfs"
+                STAGED_FIRMWARE_SOURCE_PATH="${firmware_dst}"
+            else
+                for candidate in /usr/lib/firmware /lib/firmware; do
+                    if [ -d "${candidate}" ] && [ "$(count_tree_files "${candidate}")" != "0" ]; then
+                        firmware_src="${candidate}"
+                        break
+                    fi
+                done
+                [ -n "${firmware_src}" ] || die "No firmware tree found; set --kernel-firmware-source none only for explicit empty profiles."
+                cp -a "${firmware_src}/." "${firmware_dst}/"
+                STAGED_FIRMWARE_MODE="copied"
+                STAGED_FIRMWARE_SOURCE_PATH="${firmware_src}"
+            fi
+            ;;
+        *)
+            [ -d "${KERNEL_FIRMWARE_SOURCE}" ] || die "Firmware source not found: ${KERNEL_FIRMWARE_SOURCE}"
+            [ "$(count_tree_files "${KERNEL_FIRMWARE_SOURCE}")" != "0" ] || die "Firmware source is empty: ${KERNEL_FIRMWARE_SOURCE}"
+            cp -a "${KERNEL_FIRMWARE_SOURCE}/." "${firmware_dst}/"
+            STAGED_FIRMWARE_MODE="copied"
+            STAGED_FIRMWARE_SOURCE_PATH="${KERNEL_FIRMWARE_SOURCE}"
+            ;;
+    esac
+
+    if [ "$(count_tree_files "${firmware_dst}")" = "0" ] && [ ! -f "${firmware_dst}/AIOS_FIRMWARE_EMPTY" ]; then
+        die "Firmware tree missing from rootfs."
+    fi
+
+    STAGED_FIRMWARE_FILE_COUNT="$(count_tree_files "${firmware_dst}")"
+    info "Firmware tree: ${STAGED_FIRMWARE_MODE} (${STAGED_FIRMWARE_FILE_COUNT} files)"
+}
+
+stage_kernel_modules
+stage_kernel_firmware
+
+ok "Kernel modules and firmware staged."
+
 # ── Step 9: Build initramfs ──────────────────────────────────────────────────
 
 step "Step 9: Building initramfs"
@@ -728,7 +1356,8 @@ if ${HAS_BUSYBOX}; then
         for applet in sh ls cat cp mv rm mkdir mount umount switch_root \
                       grep sed head printf sleep test echo true false \
                       dd mknod ln chmod chown sync reboot poweroff \
-                      blkid find xargs cut tr wc which; do
+                      blkid find xargs cut tr wc which mountpoint losetup \
+                      modprobe; do
             ln -sf busybox "${INITRAMFS_DIR}/bin/${applet}" 2>/dev/null || true
         done
 
@@ -736,6 +1365,10 @@ if ${HAS_BUSYBOX}; then
         mkdir -p "${INITRAMFS_DIR}/sbin"
         ln -sf ../bin/busybox "${INITRAMFS_DIR}/sbin/init" 2>/dev/null || true
         ln -sf /bin/busybox  "${INITRAMFS_DIR}/bin/sh" 2>/dev/null || true
+        if [ -f "${INITRAMFS_DIR}/rescue.sh" ]; then
+            cp "${INITRAMFS_DIR}/rescue.sh" "${INITRAMFS_DIR}/bin/rescue.sh"
+            chmod 755 "${INITRAMFS_DIR}/bin/rescue.sh"
+        fi
         info "Busybox installed in initramfs with common applets."
     else
         warn "Busybox binary not available — initramfs shell will not function."
@@ -755,16 +1388,27 @@ for tool in cryptsetup tpm2_unseal veritysetup load_policy; do
     fi
 done
 
-# Install kernel modules (if available)
-if [ -d "/lib/modules" ]; then
-    mkdir -p "${INITRAMFS_DIR}/lib"
-    cp -r /lib/modules "${INITRAMFS_DIR}/lib/modules" 2>/dev/null || \
-        warn "Could not copy kernel modules (may be fine for live ISO)."
+# Install only the staged module tree that matches the staged kernel.
+if [ -n "${STAGED_KERNEL_VERSION}" ] \
+   && [ -d "${ROOTFS_DIR}/usr/lib/modules/${STAGED_KERNEL_VERSION}" ]; then
+    mkdir -p "${INITRAMFS_DIR}/lib/modules"
+    cp -a "${ROOTFS_DIR}/usr/lib/modules/${STAGED_KERNEL_VERSION}" \
+        "${INITRAMFS_DIR}/lib/modules/${STAGED_KERNEL_VERSION}" 2>/dev/null || \
+        warn "Could not copy staged kernel modules into initramfs."
 fi
 
 # Copy preinit config to initramfs
 mkdir -p "${INITRAMFS_DIR}/etc/aios"
 cp "${REPO_ROOT}/distro/aios-boot/initramfs/aios-preinit" "${INITRAMFS_DIR}/etc/aios/preinit"
+mkdir -p "${INITRAMFS_DIR}/etc/ima" "${INITRAMFS_DIR}/etc/evm" \
+    "${INITRAMFS_DIR}/etc/aios/integrity.d" "${INITRAMFS_DIR}/etc/selinux/aios/policy"
+cp "${ROOTFS_DIR}/etc/selinux/config" "${INITRAMFS_DIR}/etc/selinux/config"
+cp "${ROOTFS_DIR}/etc/selinux/aios/policy/policy.33" \
+    "${INITRAMFS_DIR}/etc/selinux/aios/policy/policy.33"
+cp "${ROOTFS_DIR}/etc/ima/ima-policy" "${INITRAMFS_DIR}/etc/ima/ima-policy"
+cp "${ROOTFS_DIR}/etc/evm/evm-policy" "${INITRAMFS_DIR}/etc/evm/evm-policy"
+cp "${ROOTFS_DIR}/etc/aios/integrity.d/ima-policy" "${INITRAMFS_DIR}/etc/aios/integrity.d/ima-policy"
+cp "${ROOTFS_DIR}/etc/aios/integrity.d/evm-policy" "${INITRAMFS_DIR}/etc/aios/integrity.d/evm-policy"
 
 # Build the initramfs cpio archive
 ( cd "${INITRAMFS_DIR}" && find . -print0 | \
@@ -809,9 +1453,366 @@ mksquashfs "${ROOTFS_DIR}" "${ISO_DIR}/live/aios.squashfs" \
 SQUASHFS_SIZE=$(du -h "${ISO_DIR}/live/aios.squashfs" | cut -f1)
 ok "Squashfs root created: live/aios.squashfs (${SQUASHFS_SIZE})"
 
-# ── Step 11: Prepare ISO staging and assemble with grub2-mkrescue ─────────────
+# grub2-mkrescue and the Rev.12 manifest both consume the ISO-staged GRUB cfg.
+mkdir -p "${ISO_DIR}/boot/grub"
+cp "${ROOTFS_DIR}/boot/grub/grub.cfg" "${ISO_DIR}/boot/grub/grub.cfg"
 
-step "Step 11: Assembling bootable ISO with grub2-mkrescue"
+# ── Step 11: Generate Rev.12 release metadata ────────────────────────────────
+
+step "Step 11: Generating Rev.12 release metadata"
+
+AIOS_ISO_META_DIR="${ISO_DIR}/aios"
+AIOS_SIGNATURE_DIR="${AIOS_ISO_META_DIR}/signatures"
+mkdir -p "${AIOS_SIGNATURE_DIR}"
+
+BUILD_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+GIT_REVISION="$(git -C "${REPO_ROOT}" rev-parse --verify HEAD 2>/dev/null || printf 'unknown')"
+GIT_DIRTY=false
+if git -C "${REPO_ROOT}" diff --quiet --ignore-submodules -- 2>/dev/null; then
+    GIT_DIRTY=false
+else
+    GIT_DIRTY=true
+fi
+
+if [ -n "${AIOS_SIGNATURE_SOURCE_DIR}" ]; then
+    cp -a "${AIOS_SIGNATURE_SOURCE_DIR}/." "${AIOS_SIGNATURE_DIR}/"
+    info "Detached signatures staged from ${AIOS_SIGNATURE_SOURCE_DIR}"
+fi
+
+require_boot_signature() {
+    local sig_name="$1"
+
+    if [ "${AIOS_REQUIRE_BOOT_SIGNATURES}" = "1" ] \
+       && [ ! -f "${AIOS_SIGNATURE_DIR}/${sig_name}" ]; then
+        die "Boot-chain signature required but missing: aios/signatures/${sig_name}"
+    fi
+}
+
+cat > "${AIOS_ISO_META_DIR}/base.json" <<EOF
+{
+  "schema": "aios.base_rootfs.v1",
+  "revision": 13,
+  "base_family": "$(json_escape "${AIOS_BASE_FAMILY}")",
+  "variant": "$(json_escape "${AIOS_BASE_VARIANT}")",
+  "version": "$(json_escape "${AIOS_BASE_VERSION}")",
+  "series": "$(json_escape "${AIOS_BASE_SERIES}")",
+  "architecture": "$(json_escape "${AIOS_BASE_ARCH}")",
+  "support_window_months": ${AIOS_BASE_SUPPORT_MONTHS},
+  "eol_date": "$(json_escape "${AIOS_BASE_EOL_DATE}")",
+  "kernel_policy": "$(json_escape "${AIOS_BASE_KERNEL_POLICY}")",
+  "package_policy": "$(json_escape "${AIOS_BASE_PACKAGE_POLICY}")",
+  "repositories": {
+    "oss": "$(json_escape "${AIOS_BASE_REPO_OSS}")",
+    "update": "$(json_escape "${AIOS_BASE_REPO_UPDATE}")"
+  },
+  "builder": "$(json_escape "${AIOS_BASE_BUILDER}")",
+  "enterprise_release": ${ENTERPRISE_RELEASE_JSON}
+}
+EOF
+
+cat > "${AIOS_ISO_META_DIR}/kernel.json" <<EOF
+{
+  "schema": "aios.kernel_pipeline.v1",
+  "revision": 12,
+  "kernel": {
+    "version": "$(json_escape "${STAGED_KERNEL_VERSION}")",
+    "source": "$(json_escape "${KERNEL_SOURCE}")",
+    "staged_source_path": "$(json_escape "${STAGED_KERNEL_SOURCE_PATH}")",
+    "image": "live/vmlinuz"
+  },
+  "modules": {
+    "source": "$(json_escape "${KERNEL_MODULES_SOURCE}")",
+    "staged_source_path": "$(json_escape "${STAGED_MODULE_SOURCE_PATH}")",
+    "mode": "$(json_escape "${STAGED_MODULE_MODE}")",
+    "rootfs_path": "/usr/lib/modules/$(json_escape "${STAGED_KERNEL_VERSION}")",
+    "file_count": ${STAGED_MODULE_FILE_COUNT}
+  },
+  "firmware": {
+    "source": "$(json_escape "${KERNEL_FIRMWARE_SOURCE}")",
+    "staged_source_path": "$(json_escape "${STAGED_FIRMWARE_SOURCE_PATH}")",
+    "mode": "$(json_escape "${STAGED_FIRMWARE_MODE}")",
+    "rootfs_path": "/usr/lib/firmware",
+    "file_count": ${STAGED_FIRMWARE_FILE_COUNT}
+  },
+  "signing_hooks": {
+    "kernel": "live/vmlinuz.sig",
+    "initramfs": "live/initrd.img.sig",
+    "rootfs": "live/aios.squashfs.sig",
+    "bootloader": "boot-grub-grub.cfg.sig",
+    "modules": "usr-lib-modules-$(json_escape "${STAGED_KERNEL_VERSION}").sig",
+    "firmware": "usr-lib-firmware.sig"
+  }
+}
+EOF
+
+cat > "${AIOS_ISO_META_DIR}/security.json" <<EOF
+{
+  "schema": "aios.security_baseline.v1",
+  "revision": 12,
+  "profile": "$(json_escape "${AIOS_SECURITY_PROFILE}")",
+  "selinux": {
+    "configured_mode": "$(json_escape "${AIOS_SELINUX_MODE}")",
+    "policy_path": "/etc/selinux/aios/policy/policy.33",
+    "policy_status": "$(json_escape "${SELINUX_POLICY_STATUS}")",
+    "enforcing_ready": ${SELINUX_ENFORCING_TOML}
+  },
+  "ima": {
+    "policy_path": "/etc/ima/ima-policy",
+    "rootfs_copy": "/etc/aios/integrity.d/ima-policy",
+    "mode": "stage"
+  },
+  "evm": {
+    "policy_path": "/etc/evm/evm-policy",
+    "rootfs_copy": "/etc/aios/integrity.d/evm-policy",
+    "mode": "stage"
+  },
+  "dm_verity": {
+    "policy_path": "/etc/aios/verity/rootfs-policy.json",
+    "root_hash_path": "/etc/aios/verity/roothash.sig",
+    "cmdline_parameter": "dm_verity.roothash",
+    "fail_on_corruption": true
+  },
+  "evidence": {
+    "path": "/etc/aios/evidence.d/security-baseline.json"
+  }
+}
+EOF
+
+cat > "${AIOS_ISO_META_DIR}/boot-chain.json" <<EOF
+{
+  "schema": "aios.boot_chain_signing.v1",
+  "revision": 12,
+  "required": ${BOOT_SIGNATURES_REQUIRED_TOML},
+  "signature_source_dir": "$(json_escape "${AIOS_SIGNATURE_SOURCE_DIR:-none}")",
+  "artifacts": {
+    "bootloader": "boot/grub/grub.cfg",
+    "kernel": "live/vmlinuz",
+    "initramfs": "live/initrd.img",
+    "rootfs": "live/aios.squashfs",
+    "manifest": "aios/manifest.json",
+    "sbom": "aios/sbom.cdx.json",
+    "provenance": "aios/provenance.json",
+    "security": "aios/security.json"
+  },
+  "signature_hooks": {
+    "bootloader": "aios/signatures/boot-grub-grub.cfg.sig",
+    "kernel": "aios/signatures/live-vmlinuz.sig",
+    "initramfs": "aios/signatures/live-initrd.img.sig",
+    "rootfs": "aios/signatures/live-aios.squashfs.sig",
+    "manifest": "aios/signatures/manifest.json.sig",
+    "sbom": "aios/signatures/sbom.cdx.json.sig",
+    "provenance": "aios/signatures/provenance.json.sig",
+    "security": "aios/signatures/security.json.sig",
+    "checksums": "aios/signatures/SHA256SUMS.sig"
+  }
+}
+EOF
+
+cat > "${AIOS_ISO_META_DIR}/sbom.cdx.json" <<EOF
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:aios-${AIOS_BUILD_ID}",
+  "version": 1,
+  "metadata": {
+    "timestamp": "${BUILD_TIMESTAMP}",
+    "component": {
+      "type": "operating-system",
+      "name": "AI-OS.NET",
+      "version": "$(json_escape "${AIOS_VERSION}")",
+      "properties": [
+        { "name": "aios.revision", "value": "12" },
+        { "name": "aios.build_id", "value": "$(json_escape "${AIOS_BUILD_ID}")" },
+        { "name": "aios.architecture", "value": "$(json_escape "${ARCH}")" }
+      ]
+    }
+  },
+  "components": [
+    {
+      "type": "file",
+      "name": "live/aios.squashfs",
+      "hashes": [
+        { "alg": "SHA-256", "content": "$(file_sha256 "${ISO_DIR}/live/aios.squashfs")" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "live/vmlinuz",
+      "hashes": [
+        { "alg": "SHA-256", "content": "$(file_sha256 "${ISO_DIR}/live/vmlinuz")" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "live/initrd.img",
+      "hashes": [
+        { "alg": "SHA-256", "content": "$(file_sha256 "${ISO_DIR}/live/initrd.img")" }
+      ]
+    },
+    {
+      "type": "operating-system",
+      "name": "linux-kernel",
+      "version": "$(json_escape "${STAGED_KERNEL_VERSION}")",
+      "properties": [
+        { "name": "aios.kernel.modules.mode", "value": "$(json_escape "${STAGED_MODULE_MODE}")" },
+        { "name": "aios.kernel.modules.file_count", "value": "${STAGED_MODULE_FILE_COUNT}" },
+        { "name": "aios.kernel.firmware.mode", "value": "$(json_escape "${STAGED_FIRMWARE_MODE}")" },
+        { "name": "aios.kernel.firmware.file_count", "value": "${STAGED_FIRMWARE_FILE_COUNT}" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "aios/kernel.json",
+      "hashes": [
+        { "alg": "SHA-256", "content": "$(file_sha256 "${AIOS_ISO_META_DIR}/kernel.json")" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "aios/base.json",
+      "hashes": [
+        { "alg": "SHA-256", "content": "$(file_sha256 "${AIOS_ISO_META_DIR}/base.json")" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "aios/security.json",
+      "hashes": [
+        { "alg": "SHA-256", "content": "$(file_sha256 "${AIOS_ISO_META_DIR}/security.json")" }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "aios/boot-chain.json",
+      "hashes": [
+        { "alg": "SHA-256", "content": "$(file_sha256 "${AIOS_ISO_META_DIR}/boot-chain.json")" }
+      ]
+    }
+  ]
+}
+EOF
+
+cat > "${AIOS_ISO_META_DIR}/provenance.json" <<EOF
+{
+  "schema": "aios.provenance.v1",
+  "revision": 12,
+  "build_id": "$(json_escape "${AIOS_BUILD_ID}")",
+  "version": "$(json_escape "${AIOS_VERSION}")",
+  "architecture": "$(json_escape "${ARCH}")",
+  "profile": "$(json_escape "${PROFILE}")",
+  "timestamp": "${BUILD_TIMESTAMP}",
+  "source": {
+    "repository": "$(json_escape "${REPO_ROOT}")",
+    "git_revision": "$(json_escape "${GIT_REVISION}")",
+    "dirty": ${GIT_DIRTY}
+  },
+  "builder": {
+    "hostname": "$(json_escape "$(hostname 2>/dev/null || printf unknown)")",
+    "kernel": "$(json_escape "$(uname -sr 2>/dev/null || printf unknown)")",
+    "rustc": "$(json_escape "$(rustc --version 2>/dev/null || printf unknown)")",
+    "cargo": "$(json_escape "$(cargo --version 2>/dev/null || printf unknown)")",
+    "mksquashfs": "$(json_escape "$(mksquashfs -version 2>&1 | head -1 || printf unknown)")"
+  },
+  "kernel_pipeline": {
+    "kernel_version": "$(json_escape "${STAGED_KERNEL_VERSION}")",
+    "kernel_source": "$(json_escape "${KERNEL_SOURCE}")",
+    "module_mode": "$(json_escape "${STAGED_MODULE_MODE}")",
+    "module_source": "$(json_escape "${STAGED_MODULE_SOURCE_PATH}")",
+    "firmware_mode": "$(json_escape "${STAGED_FIRMWARE_MODE}")",
+    "firmware_source": "$(json_escape "${STAGED_FIRMWARE_SOURCE_PATH}")"
+  },
+  "base_rootfs": {
+    "family": "$(json_escape "${AIOS_BASE_FAMILY}")",
+    "variant": "$(json_escape "${AIOS_BASE_VARIANT}")",
+    "version": "$(json_escape "${AIOS_BASE_VERSION}")",
+    "series": "$(json_escape "${AIOS_BASE_SERIES}")",
+    "architecture": "$(json_escape "${AIOS_BASE_ARCH}")",
+    "support_window_months": ${AIOS_BASE_SUPPORT_MONTHS},
+    "eol_date": "$(json_escape "${AIOS_BASE_EOL_DATE}")",
+    "kernel_policy": "$(json_escape "${AIOS_BASE_KERNEL_POLICY}")",
+    "package_policy": "$(json_escape "${AIOS_BASE_PACKAGE_POLICY}")",
+    "enterprise_release": ${ENTERPRISE_RELEASE_JSON}
+  },
+  "security_baseline": {
+    "profile": "$(json_escape "${AIOS_SECURITY_PROFILE}")",
+    "selinux_mode": "$(json_escape "${AIOS_SELINUX_MODE}")",
+    "selinux_policy_status": "$(json_escape "${SELINUX_POLICY_STATUS}")",
+    "boot_chain_signatures_required": ${BOOT_SIGNATURES_REQUIRED_TOML}
+  }
+}
+EOF
+
+cat > "${AIOS_SIGNATURE_DIR}/README" <<'EOF'
+AI-OS.NET Rev.12 release signature directory.
+
+Production release signing must place detached signatures for manifest.json,
+sbom.cdx.json, provenance.json, security.json, boot-chain.json, SHA256SUMS,
+bootloader config, kernel, initramfs, and rootfs payload metadata here before
+promotion.
+EOF
+
+MANIFEST_JSON="${AIOS_ISO_META_DIR}/manifest.json"
+cat > "${MANIFEST_JSON}" <<EOF
+{
+  "schema": "aios.release_manifest.v1",
+  "revision": 12,
+  "build_id": "$(json_escape "${AIOS_BUILD_ID}")",
+  "version": "$(json_escape "${AIOS_VERSION}")",
+  "architecture": "$(json_escape "${ARCH}")",
+  "profile": "$(json_escape "${PROFILE}")",
+  "created_at": "${BUILD_TIMESTAMP}",
+  "volume_id": "AIOS_REV12",
+  "artifacts": [
+EOF
+append_manifest_artifact "${MANIFEST_JSON}" "live/vmlinuz"
+append_manifest_artifact "${MANIFEST_JSON}" "live/initrd.img"
+append_manifest_artifact "${MANIFEST_JSON}" "live/aios.squashfs"
+append_manifest_artifact "${MANIFEST_JSON}" "boot/grub/grub.cfg"
+append_manifest_artifact "${MANIFEST_JSON}" "aios/base.json"
+append_manifest_artifact "${MANIFEST_JSON}" "aios/kernel.json"
+append_manifest_artifact "${MANIFEST_JSON}" "aios/security.json"
+append_manifest_artifact "${MANIFEST_JSON}" "aios/boot-chain.json"
+append_manifest_artifact "${MANIFEST_JSON}" "aios/sbom.cdx.json"
+append_manifest_artifact "${MANIFEST_JSON}" "aios/provenance.json"
+append_manifest_artifact "${MANIFEST_JSON}" "aios/signatures/README" ""
+cat >> "${MANIFEST_JSON}" <<'EOF'
+  ]
+}
+EOF
+
+(
+    cd "${ISO_DIR}"
+    sha256sum \
+        live/vmlinuz \
+        live/initrd.img \
+        live/aios.squashfs \
+        boot/grub/grub.cfg \
+        aios/manifest.json \
+        aios/base.json \
+        aios/kernel.json \
+        aios/security.json \
+        aios/boot-chain.json \
+        aios/sbom.cdx.json \
+        aios/provenance.json \
+        aios/signatures/README \
+        > aios/SHA256SUMS
+)
+
+require_boot_signature "boot-grub-grub.cfg.sig"
+require_boot_signature "live-vmlinuz.sig"
+require_boot_signature "live-initrd.img.sig"
+require_boot_signature "live-aios.squashfs.sig"
+require_boot_signature "manifest.json.sig"
+require_boot_signature "sbom.cdx.json.sig"
+require_boot_signature "provenance.json.sig"
+require_boot_signature "security.json.sig"
+require_boot_signature "SHA256SUMS.sig"
+
+ok "Rev.13 release metadata generated: /aios/base.json plus Rev.12 manifest/security/boot-chain/SBOM/provenance/SHA256SUMS"
+
+# ── Step 12: Prepare ISO staging and assemble with grub2-mkrescue ─────────────
+
+step "Step 12: Assembling bootable ISO with grub2-mkrescue"
 
 mkdir -p "$(dirname "${OUTPUT}")"
 
@@ -823,10 +1824,6 @@ mkdir -p "$(dirname "${OUTPUT}")"
 # Copy kernel and initramfs into ISO staging
 # (These were placed in ISO_DIR by Step 8 already)
 
-# Install rootfs grub.cfg into ISO staging for grub2-mkrescue to find
-mkdir -p "${ISO_DIR}/boot/grub"
-cp "${ROOTFS_DIR}/boot/grub/grub.cfg" "${ISO_DIR}/boot/grub/grub.cfg"
-
 # Copy rootfs content that should be on the ISO filesystem (not just squashfs)
 # grub2-mkrescue includes everything in ISO_DIR
 
@@ -834,6 +1831,7 @@ if ${HAS_GRUB2}; then
     # grub2-mkrescue creates a UEFI-bootable + BIOS-bootable ISO
     "${GRUB2_MKRESCUE}" \
         -o "${OUTPUT}" \
+        -volid "AIOS_REV12" \
         "${ISO_DIR}" 2>&1 | tail -3
     ISO_RC=$?
 else
@@ -841,7 +1839,7 @@ else
     warn "grub2-mkrescue not found — falling back to manual xorriso (EFI may not boot)"
     xorriso -as mkisofs \
         -iso-level 3 -full-iso9660-filenames \
-        -volid "AIOS_REV11" \
+        -volid "AIOS_REV12" \
         -eltorito-alt-boot -e EFI/efiboot.img -no-emul-boot \
         -isohybrid-gpt-basdat \
         -output "${OUTPUT}" \
@@ -882,9 +1880,24 @@ check_iso_item() {
 check_iso_item "Squashfs root"              "${ISO_DIR}/live/aios.squashfs"
 check_iso_item "Kernel image"               "${ISO_DIR}/live/vmlinuz"
 check_iso_item "GRUB config"                "${ISO_DIR}/boot/grub/grub.cfg"
+check_iso_item "Rev.13 base metadata"       "${ISO_DIR}/aios/base.json"
+check_iso_item "Rev.12 kernel metadata"     "${ISO_DIR}/aios/kernel.json"
+check_iso_item "Rev.12 security metadata"   "${ISO_DIR}/aios/security.json"
+check_iso_item "Rev.12 boot chain metadata" "${ISO_DIR}/aios/boot-chain.json"
+check_iso_item "Rev.12 manifest"            "${ISO_DIR}/aios/manifest.json"
+check_iso_item "Rev.12 SBOM"                "${ISO_DIR}/aios/sbom.cdx.json"
+check_iso_item "Rev.12 provenance"          "${ISO_DIR}/aios/provenance.json"
+check_iso_item "Rev.12 SHA256SUMS"          "${ISO_DIR}/aios/SHA256SUMS"
+check_iso_item "Rev.12 signatures dir"      "${ISO_DIR}/aios/signatures"
 check_iso_item "Systemd config"             "${ROOTFS_DIR}/etc/systemd/system/aios.target"
 check_iso_item "AIOS config"                "${ROOTFS_DIR}/etc/aios/config.toml"
+check_iso_item "AIOS security profile"      "${ROOTFS_DIR}/etc/aios/security-profile.toml"
+check_iso_item "IMA policy"                 "${ROOTFS_DIR}/etc/ima/ima-policy"
+check_iso_item "EVM policy"                 "${ROOTFS_DIR}/etc/evm/evm-policy"
+check_iso_item "dm-verity rootfs policy"    "${ROOTFS_DIR}/etc/aios/verity/rootfs-policy.json"
 check_iso_item "OS release"                 "${ROOTFS_DIR}/etc/os-release"
+check_iso_item "Kernel module tree"         "${ROOTFS_DIR}/usr/lib/modules/${STAGED_KERNEL_VERSION}"
+check_iso_item "Kernel firmware tree"       "${ROOTFS_DIR}/usr/lib/firmware"
 
 # Verify at least one binary exists in rootfs lib dir
 if ls "${AIOS_LIB_DIR}"/* >/dev/null 2>&1 || ls "${AIOS_BIN_DIR}"/aios >/dev/null 2>&1; then
@@ -894,10 +1907,14 @@ else
 fi
 
 # Verify squashfs integrity
-if mksquashfs -check "${ISO_DIR}/live/aios.squashfs" >/dev/null 2>&1; then
-    ok "Squashfs integrity verified"
+if command -v unsquashfs >/dev/null 2>&1; then
+    if unsquashfs -s "${ISO_DIR}/live/aios.squashfs" >/dev/null 2>&1; then
+        ok "Squashfs integrity verified"
+    else
+        warn "Could not verify squashfs integrity (unsquashfs -s failed)"
+    fi
 else
-    warn "Could not verify squashfs integrity (mksquashfs -check failed)"
+    warn "unsquashfs not found — skipping squashfs integrity verification"
 fi
 
 if [ -f "${OUTPUT}" ]; then
@@ -909,8 +1926,8 @@ fi
 
 # ── Build summary ────────────────────────────────────────────────────────────
 
-printf "\n${BOLD}${BLUE}════════════════════════════════════════════════════════${RESET}\n"
-printf "${BOLD}${GREEN}  BUILD COMPLETE${RESET}\n\n"
+printf '\n%s%s════════════════════════════════════════════════════════%s\n' "${BOLD}" "${BLUE}" "${RESET}"
+printf '%s%s  BUILD COMPLETE%s\n\n' "${BOLD}" "${GREEN}" "${RESET}"
 printf "  Output:     ${BOLD}%s${RESET}\n" "${OUTPUT}"
 printf "  ISO size:   %s\n" "${ISO_SIZE}"
 printf "  Squashfs:   %s\n" "${SQUASHFS_SIZE}"
@@ -918,12 +1935,12 @@ printf "  Initramfs:  %s\n" "${INITRAMFS_SIZE}"
 printf "  Profile:    %s\n" "${PROFILE}"
 printf "  Archive:    %s\n" "${ARCH}"
 printf "  Binaries:   %d\n" "${#BINARIES_FOUND[@]}"
-printf "\n${BOLD}${BLUE}════════════════════════════════════════════════════════${RESET}\n"
+printf '\n%s%s════════════════════════════════════════════════════════%s\n' "${BOLD}" "${BLUE}" "${RESET}"
 
 if ${VERIFY_OK}; then
-    printf "${BOLD}${GREEN}  STATUS: ALL CHECKS PASSED${RESET}\n"
+    printf '%s%s  STATUS: ALL CHECKS PASSED%s\n' "${BOLD}" "${GREEN}" "${RESET}"
     exit 0
 else
-    printf "${BOLD}${YELLOW}  STATUS: COMPLETED WITH WARNINGS${RESET}\n"
+    printf '%s%s  STATUS: COMPLETED WITH WARNINGS%s\n' "${BOLD}" "${YELLOW}" "${RESET}"
     exit 0
 fi

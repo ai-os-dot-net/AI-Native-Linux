@@ -1,4 +1,6 @@
 #!/bin/busybox ash
+# shellcheck shell=sh
+# shellcheck disable=SC2025
 #
 # AI-OS.NET Initramfs Rescue Shell
 # Dropped when the init script encounters an unrecoverable error.
@@ -98,12 +100,72 @@ echo "=== Mounted filesystems ==="
 mount 2>/dev/null || cat /proc/mounts 2>/dev/null || echo "  mount table unavailable"
 echo ""
 
+# ── Repair helpers ───────────────────────────────────────────────────────────
+
+cat > /bin/aios-repair-security-policy <<'EOF'
+#!/bin/sh
+set -eu
+
+NEWROOT="${1:-/newroot}"
+
+if [ ! -d "${NEWROOT}" ]; then
+    echo "newroot not found: ${NEWROOT}" >&2
+    exit 1
+fi
+
+mount -o remount,rw "${NEWROOT}" 2>/dev/null || true
+mkdir -p \
+    "${NEWROOT}/etc/selinux/aios/policy" \
+    "${NEWROOT}/etc/ima" \
+    "${NEWROOT}/etc/evm" \
+    "${NEWROOT}/etc/aios/integrity.d"
+
+if [ -f /etc/selinux/config ]; then
+    mkdir -p "${NEWROOT}/etc/selinux"
+    cp /etc/selinux/config "${NEWROOT}/etc/selinux/config"
+fi
+if [ -f /etc/ima/ima-policy ]; then
+    cp /etc/ima/ima-policy "${NEWROOT}/etc/ima/ima-policy"
+    cp /etc/ima/ima-policy "${NEWROOT}/etc/aios/integrity.d/ima-policy"
+fi
+if [ -f /etc/evm/evm-policy ]; then
+    cp /etc/evm/evm-policy "${NEWROOT}/etc/evm/evm-policy"
+    cp /etc/evm/evm-policy "${NEWROOT}/etc/aios/integrity.d/evm-policy"
+fi
+
+touch "${NEWROOT}/.autorelabel"
+echo "security policy baseline repaired under ${NEWROOT}"
+EOF
+chmod 755 /bin/aios-repair-security-policy
+
+cat > /bin/aios-repair-rollback-state <<'EOF'
+#!/bin/sh
+set -eu
+
+NEWROOT="${1:-/newroot}"
+ROLLBACK_DIR="${NEWROOT}/var/lib/aios/rollback"
+
+mkdir -p "${ROLLBACK_DIR}"
+if [ -f "${ROLLBACK_DIR}/previous.json" ]; then
+    cp "${ROLLBACK_DIR}/previous.json" "${ROLLBACK_DIR}/current.json"
+else
+    cat > "${ROLLBACK_DIR}/current.json" <<STATE
+{"schema":"aios.rollback_state.v1","active_deployment":"recovery","previous_deployment":null,"health":"manual-repair"}
+STATE
+fi
+
+echo "rollback state repaired under ${ROLLBACK_DIR}"
+EOF
+chmod 755 /bin/aios-repair-rollback-state
+
 # ── Filesystem repair hint ───────────────────────────────────────────────────
 
 echo "────────────────────────────────────────────────────────────"
 echo "To attempt repair:"
 echo "  fsck -y <root_device>"
 echo "  mount -o remount,rw /newroot"
+echo "  aios-repair-security-policy /newroot"
+echo "  aios-repair-rollback-state /newroot"
 echo ""
 echo "To continue boot manually after fix:"
 echo "  exec switch_root /newroot /sbin/init"

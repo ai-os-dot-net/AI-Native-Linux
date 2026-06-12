@@ -32,7 +32,7 @@
 
 use std::fmt::Write as FmtWrite;
 use std::fs;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -195,9 +195,14 @@ fn now_secs() -> u64 {
 }
 
 fn random_hex(len: usize) -> String {
+    let mut bytes = vec![0_u8; len];
     let mut s = String::with_capacity(len * 2);
-    if let Ok(data) = fs::read("/dev/urandom") {
-        for byte in data.iter().take(len) {
+
+    if fs::File::open("/dev/urandom")
+        .and_then(|mut file| file.read_exact(&mut bytes))
+        .is_ok()
+    {
+        for byte in bytes {
             let _ = write!(s, "{byte:02x}");
         }
     } else {
@@ -1072,7 +1077,187 @@ fn phase_9_evidence(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
     Ok(())
 }
 
-/// Phase 10: Complete — write marker, remove flag, clean up.
+/// Phase 10: Initialize local fleet membership in standalone mode.
+fn phase_10_fleet_membership(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
+    println!("\n--- Phase 10: Fleet Membership ---\n");
+
+    fs::create_dir_all(FLEET_DIR)?;
+    let membership = serde_json::json!({
+        "host_id": ctx.host_id,
+        "mode": "standalone",
+        "cluster_name": "aios-default",
+        "joined_at": now_rfc3339(),
+        "operator": ctx.operator_canonical,
+    });
+    write_file_mode(
+        &format!("{FLEET_DIR}/membership.json"),
+        &serde_json::to_string_pretty(&membership)?,
+        0o644,
+    )?;
+    log_stage("fleet/membership", "OK", "Standalone fleet membership initialized");
+
+    record_evidence(
+        ctx,
+        RecordType::FirstBootStageCompleted,
+        serde_json::json!({
+            "fleet_mode": "standalone",
+            "cluster_name": "aios-default",
+        }),
+    )?;
+
+    Ok(())
+}
+
+/// Phase 11: Initialize autonomous governance defaults.
+fn phase_11_autonomous_governance(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
+    println!("\n--- Phase 11: Autonomous Governance ---\n");
+
+    fs::create_dir_all(AUTONOMOUS_DIR)?;
+    let constitution = serde_json::json!({
+        "host_id": ctx.host_id,
+        "autonomy_level": "advisory",
+        "orchestrator_mode": "monitor",
+        "requires_human_approval": true,
+        "created_at": now_rfc3339(),
+    });
+    write_file_mode(
+        &format!("{AUTONOMOUS_DIR}/constitution.json"),
+        &serde_json::to_string_pretty(&constitution)?,
+        0o644,
+    )?;
+    log_stage("autonomous/governance", "OK", "Advisory governance initialized");
+
+    record_evidence(
+        ctx,
+        RecordType::FirstBootStageCompleted,
+        serde_json::json!({
+            "autonomy_level": "advisory",
+            "orchestrator_mode": "monitor",
+        }),
+    )?;
+
+    Ok(())
+}
+
+/// Phase 12: Initialize the local marketplace index.
+fn phase_12_marketplace(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
+    println!("\n--- Phase 12: Marketplace ---\n");
+
+    fs::create_dir_all(MARKETPLACE_DIR)?;
+    let index = serde_json::json!({
+        "host_id": ctx.host_id,
+        "schema_version": 1,
+        "auto_sync": false,
+        "packages": [],
+        "updated_at": now_rfc3339(),
+    });
+    write_file_mode(
+        &format!("{MARKETPLACE_DIR}/index.json"),
+        &serde_json::to_string_pretty(&index)?,
+        0o644,
+    )?;
+    log_stage("marketplace/index", "OK", "Empty marketplace index initialized");
+
+    record_evidence(
+        ctx,
+        RecordType::FirstBootStageCompleted,
+        serde_json::json!({
+            "schema_version": 1,
+            "package_count": 0,
+        }),
+    )?;
+
+    Ok(())
+}
+
+/// Phase 13: Detect and record the container runtime.
+fn phase_13_container_runtime(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
+    println!("\n--- Phase 13: Container Runtime ---\n");
+
+    fs::create_dir_all(CONTAINER_DIR)?;
+    let runtime = if cmd_ok("podman", &["--version"]) {
+        "podman-rootless"
+    } else if cmd_ok("docker", &["--version"]) {
+        "docker"
+    } else {
+        "unavailable"
+    };
+    let config = serde_json::json!({
+        "host_id": ctx.host_id,
+        "default_engine": runtime,
+        "docker_socket_exposed": false,
+        "created_at": now_rfc3339(),
+    });
+    write_file_mode(
+        &format!("{CONTAINER_DIR}/config.json"),
+        &serde_json::to_string_pretty(&config)?,
+        0o644,
+    )?;
+    log_stage("container/runtime", "OK", &format!("Runtime recorded: {runtime}"));
+
+    record_evidence(
+        ctx,
+        RecordType::FirstBootStageCompleted,
+        serde_json::json!({
+            "default_engine": runtime,
+            "docker_socket_exposed": false,
+        }),
+    )?;
+
+    Ok(())
+}
+
+/// Phase 14: Write readiness state after verifying required runtime artifacts.
+fn phase_14_readiness(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
+    println!("\n--- Phase 14: System Readiness ---\n");
+
+    let required = [
+        "/usr/lib/aios/aios-system",
+        "/usr/lib/aios/aios-first-boot",
+        "/etc/systemd/system/aios.target",
+        "/etc/aios/config.toml",
+    ];
+    let missing: Vec<&str> = required
+        .iter()
+        .copied()
+        .filter(|path| !file_exists(path))
+        .collect();
+    let ready = missing.is_empty();
+
+    fs::create_dir_all(AIOS_VAR)?;
+    let readiness = serde_json::json!({
+        "host_id": ctx.host_id,
+        "ready": ready,
+        "missing": missing,
+        "checked_at": now_rfc3339(),
+    });
+    write_file_mode(
+        &format!("{AIOS_VAR}/readiness.json"),
+        &serde_json::to_string_pretty(&readiness)?,
+        0o644,
+    )?;
+
+    if !ready {
+        return Err(FirstBootError::Config(
+            "system readiness check failed; required runtime artifacts are missing".to_string(),
+        ));
+    }
+
+    log_stage("system/readiness", "OK", "Required runtime artifacts present");
+
+    record_evidence(
+        ctx,
+        RecordType::FirstBootStageCompleted,
+        serde_json::json!({
+            "ready": true,
+            "checked_artifacts": required.len(),
+        }),
+    )?;
+
+    Ok(())
+}
+
+/// Final phase: write marker, remove flag, clean up.
 fn phase_10_complete(ctx: &FirstBootContext) -> Result<(), FirstBootError> {
     println!("\n============================================");
     println!("  AI-OS.NET First Boot Complete!");
@@ -1171,16 +1356,11 @@ fn run_phases(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBootErro
     phase_7_5_recovery_shards(ctx)?;
     phase_8_mobile_pairing(ctx)?;
     phase_9_evidence(ctx)?;
-    // TODO(Rev.11): Phase 10 — Initialize Fleet Membership
-    //   create /var/lib/aios/fleet/membership.json with standalone state
-    // TODO(Rev.11): Phase 11 — Initialize Autonomous Governance
-    //   create /etc/aios/autonomous/constitution.json with advisory/monitor defaults
-    // TODO(Rev.11): Phase 12 — Initialize Marketplace
-    //   create /var/lib/aios/marketplace/index.json with empty state
-    // TODO(Rev.11): Phase 13 — Initialize Container Runtime
-    //   detect podman/docker, create /var/lib/aios/container/config.json
-    // TODO(Rev.11): Phase 14 — System Readiness Check
-    //   verify 34-crate binaries present in /usr/lib/aios/ and /usr/bin/
+    phase_10_fleet_membership(ctx)?;
+    phase_11_autonomous_governance(ctx)?;
+    phase_12_marketplace(ctx)?;
+    phase_13_container_runtime(ctx)?;
+    phase_14_readiness(ctx)?;
     phase_10_complete(ctx)?;
     Ok(())
 }

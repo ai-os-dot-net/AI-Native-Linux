@@ -1,7 +1,7 @@
 [Unit]
 Description=AI-OS.NET Services
 Documentation=https://ai-os.net/
-Wants=aios-policy-kernel.service aios-evidence-log.service aios-capability-runtime.service aios-sandbox-composer.service aios-vault-broker.service aios-recovery-watchdog.service aios-network-daemon.service aios-ollama.service aios-vllm.service aios-fleet.service aios-container.service aios-terminal.service aios-hardening.service aios-autonomous.service aios-marketplace.service
+Wants=aios-policy-kernel.service aios-evidence-log.service aios-capability-runtime.service aios-fs-daemon.service aios-sandbox-composer.service aios-vault-broker.service aios-recovery-watchdog.service aios-sgr-daemon.service aios-cognitive-core.service aios-network-daemon.service aios-hardware-daemon.service aios-fleet.service aios-container.service aios-terminal.service aios-hardening.service aios-autonomous.service aios-marketplace.service aios-first-boot.service
 After=network.target
 
 [Install]

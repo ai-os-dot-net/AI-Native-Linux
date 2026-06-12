@@ -5,7 +5,7 @@ After=multi-user.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/lib/aios/aios-hardening --profile SECURE_DEFAULT --scan-on-boot --config /etc/aios/config.toml
+ExecStart=/usr/lib/aios/aios-system run-service aios-hardening --config /etc/aios/config.toml --once
 RemainAfterExit=yes
 LimitNOFILE=65536
 PrivateTmp=yes

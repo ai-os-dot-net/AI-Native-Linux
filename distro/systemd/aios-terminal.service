@@ -4,8 +4,8 @@ Documentation=https://ai-os.net/docs/terminal
 After=aios-cognitive-core.service
 
 [Service]
-Type=notify
-ExecStart=/usr/lib/aios/aios-terminal --default-mode lx --config /etc/aios/config.toml
+Type=simple
+ExecStart=/usr/lib/aios/aios-system run-service aios-terminal --config /etc/aios/config.toml
 Restart=always
 RestartSec=5
 LimitNOFILE=65536

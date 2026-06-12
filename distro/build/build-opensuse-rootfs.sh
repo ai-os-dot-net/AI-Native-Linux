@@ -1,0 +1,367 @@
+#!/bin/bash
+set -euo pipefail
+
+# AI-OS.NET R13.1 openSUSE base-rootfs builder.
+#
+# Builds a production Linux userspace rootfs for build-aios-iso.sh.
+# The default is openSUSE Leap 16.0, x86_64, with a 24-month support window.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+OUTPUT="${AIOS_OPENSUSE_ROOTFS:-}"
+RELEASE="${AIOS_OPENSUSE_RELEASE:-16.0}"
+SERIES="${AIOS_OPENSUSE_SERIES:-16.x}"
+ARCH="${AIOS_OPENSUSE_ARCH:-x86_64}"
+VARIANT="${AIOS_OPENSUSE_VARIANT:-leap}"
+SUPPORT_MONTHS="${AIOS_OPENSUSE_SUPPORT_MONTHS:-24}"
+EOL_DATE="${AIOS_OPENSUSE_EOL_DATE:-2027-10-31}"
+REPO_OSS="${AIOS_OPENSUSE_REPO_OSS:-}"
+REPO_UPDATE="${AIOS_OPENSUSE_REPO_UPDATE:-}"
+PACKAGE_SET="${AIOS_OPENSUSE_PACKAGE_SET:-server}"
+ZYPPER_SETTLE_SECONDS="${AIOS_ZYPPER_SETTLE_SECONDS:-5}"
+DRY_RUN=false
+FORCE=false
+RESUME=false
+
+BASE_PACKAGES=(
+    patterns-base-minimal_base
+    aaa_base
+    bash
+    coreutils
+    findutils
+    grep
+    sed
+    gawk
+    tar
+    gzip
+    xz
+    systemd
+    dbus-1
+    util-linux
+    iproute2
+    iputils
+    ca-certificates
+    openssl
+    jq
+    shadow
+    sudo
+    timezone
+    kernel-default
+    kernel-firmware-all
+    dracut
+    cryptsetup
+    tpm2.0-tools
+    device-mapper
+    lvm2
+    policycoreutils
+    restorecond
+    audit
+    grub2
+    grub2-x86_64-efi
+    shim
+    mokutil
+    openssh-server
+    wicked
+)
+
+DESKTOP_PACKAGES=(
+    patterns-kde-kde_plasma
+    sddm
+    konsole
+)
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [options]
+
+Options:
+  --output PATH          Rootfs output path
+  --release VERSION     openSUSE Leap version (default: ${RELEASE})
+  --arch ARCH           Target architecture: x86_64|aarch64 (default: ${ARCH})
+  --repo-oss URL        openSUSE OSS repository URL
+  --repo-update URL     openSUSE update repository URL
+  --package-set NAME    minimal|server|desktop (default: ${PACKAGE_SET})
+  --force               Replace an existing output directory
+  --resume              Continue an existing partial rootfs
+  --dry-run             Print zypper commands without modifying output
+  -h, --help            Show this help
+
+Output metadata:
+  /etc/aios/base-rootfs.env
+  /etc/aios/base-rootfs.json
+
+Real package installation must run as root or inside a rootful container.
+Set AIOS_ALLOW_ROOTLESS_ZYPPER=1 only for debugging zypper target behavior.
+EOF
+}
+
+die() {
+    printf 'ERROR: %s\n' "$*" >&2
+    exit 1
+}
+
+info() {
+    printf '[opensuse-rootfs] %s\n' "$*"
+}
+
+json_escape() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --output)      [ "$#" -ge 2 ] || die "--output requires PATH"; OUTPUT="$2"; shift 2 ;;
+        --release)     [ "$#" -ge 2 ] || die "--release requires VERSION"; RELEASE="$2"; shift 2 ;;
+        --arch)        [ "$#" -ge 2 ] || die "--arch requires ARCH"; ARCH="$2"; shift 2 ;;
+        --repo-oss)    [ "$#" -ge 2 ] || die "--repo-oss requires URL"; REPO_OSS="$2"; shift 2 ;;
+        --repo-update) [ "$#" -ge 2 ] || die "--repo-update requires URL"; REPO_UPDATE="$2"; shift 2 ;;
+        --package-set) [ "$#" -ge 2 ] || die "--package-set requires NAME"; PACKAGE_SET="$2"; shift 2 ;;
+        --force)       FORCE=true; shift ;;
+        --resume)      RESUME=true; shift ;;
+        --dry-run)     DRY_RUN=true; shift ;;
+        -h|--help)     usage; exit 0 ;;
+        *)             die "unknown argument: $1" ;;
+    esac
+done
+
+case "${ARCH}" in
+    x86_64|aarch64) ;;
+    *) die "unsupported R13.1 architecture: ${ARCH}" ;;
+esac
+
+case "${SUPPORT_MONTHS}" in
+    ''|*[!0-9]*) die "AIOS_OPENSUSE_SUPPORT_MONTHS must be numeric: ${SUPPORT_MONTHS}" ;;
+esac
+
+case "${ZYPPER_SETTLE_SECONDS}" in
+    ''|*[!0-9]*) die "AIOS_ZYPPER_SETTLE_SECONDS must be numeric: ${ZYPPER_SETTLE_SECONDS}" ;;
+esac
+
+[ -n "${EOL_DATE}" ] || die "AIOS_OPENSUSE_EOL_DATE must not be empty"
+
+[ -n "${OUTPUT}" ] \
+    || OUTPUT="${REPO_ROOT}/distro/build/out/rootfs-opensuse-leap-${RELEASE}-${ARCH}"
+[ -n "${REPO_OSS}" ] \
+    || REPO_OSS="https://download.opensuse.org/distribution/leap/${RELEASE}/repo/oss/"
+if [ -z "${REPO_UPDATE}" ]; then
+    case "${RELEASE}" in
+        16.*) REPO_UPDATE="${REPO_OSS}" ;;
+        *)    REPO_UPDATE="https://download.opensuse.org/update/leap/${RELEASE}/oss/" ;;
+    esac
+fi
+
+case "${PACKAGE_SET}" in
+    minimal|server) PACKAGES=("${BASE_PACKAGES[@]}") ;;
+    desktop)        PACKAGES=("${BASE_PACKAGES[@]}" "${DESKTOP_PACKAGES[@]}") ;;
+    *)              die "unsupported package set: ${PACKAGE_SET}" ;;
+esac
+
+if ! ${DRY_RUN} && ! command -v zypper >/dev/null 2>&1; then
+    die "zypper not found. Run this builder on openSUSE/SUSE or use a container with zypper."
+fi
+
+if ! ${DRY_RUN} \
+    && [ "$(id -u)" -ne 0 ] \
+    && [ "${AIOS_ALLOW_ROOTLESS_ZYPPER:-0}" != "1" ]; then
+    die "real openSUSE rootfs build requires root or a rootful container. Use --dry-run for validation, or set AIOS_ALLOW_ROOTLESS_ZYPPER=1 only for debugging."
+fi
+
+if ${FORCE} && ${RESUME}; then
+    die "--force and --resume are mutually exclusive"
+fi
+
+if [ -e "${OUTPUT}" ] && ! ${FORCE} && ! ${RESUME}; then
+    die "output already exists: ${OUTPUT} (use --force to replace or --resume to continue)"
+fi
+
+ZYPPER_BASE=(
+    zypper
+    --non-interactive
+    --gpg-auto-import-keys
+    --root "${OUTPUT}"
+)
+
+print_cmd() {
+    local arg
+    printf '+'
+    for arg in "$@"; do
+        printf ' %q' "${arg}"
+    done
+    printf '\n'
+}
+
+run_cmd() {
+    if ${DRY_RUN}; then
+        print_cmd "$@"
+    else
+        "$@"
+    fi
+}
+
+run_zypper() {
+    local attempt
+    local log_file
+    local rc
+
+    if ${DRY_RUN}; then
+        print_cmd "$@"
+        return 0
+    fi
+
+    attempt=1
+    while [ "${attempt}" -le 3 ]; do
+        log_file="$(mktemp "${TMPDIR:-/tmp}/aios-zypper.XXXXXX")"
+        if "$@" >"${log_file}" 2>&1; then
+            rc=0
+        else
+            rc=$?
+        fi
+
+        cat "${log_file}"
+        if [ "${rc}" -eq 0 ] && ! grep -q 'Target initialization failed' "${log_file}"; then
+            rm -f "${log_file}"
+            return 0
+        fi
+
+        if [ "${rc}" -ne 4 ] && ! grep -q 'Target initialization failed' "${log_file}"; then
+            rm -f "${log_file}"
+            return "${rc}"
+        fi
+
+        rm -f "${log_file}"
+        info "Retrying zypper command after target initialization failure (${attempt}/3)"
+        sync
+        sleep 2
+        attempt=$(( attempt + 1 ))
+    done
+
+    return 1
+}
+
+prepare_target_root() {
+    run_cmd mkdir -p \
+        "${OUTPUT}" \
+        "${OUTPUT}/usr/lib/rpm/gnupg/keys" \
+        "${OUTPUT}/var/lib/rpm" \
+        "${OUTPUT}/var/lib/zypp" \
+        "${OUTPUT}/var/cache/zypp" \
+        "${OUTPUT}/etc/zypp/repos.d"
+}
+
+add_repo() {
+    local repo_url="$1"
+    local repo_alias="$2"
+    local repo_file="${OUTPUT}/etc/zypp/repos.d/${repo_alias}.repo"
+
+    if [ -f "${repo_file}" ]; then
+        info "Repository already present: ${repo_alias}"
+        return 0
+    fi
+
+    run_zypper "${ZYPPER_BASE[@]}" ar -f "${repo_url}" "${repo_alias}"
+    if ${DRY_RUN} || [ -f "${repo_file}" ]; then
+        return 0
+    fi
+
+    info "Retrying repository add after missing repo file: ${repo_alias}"
+    run_zypper "${ZYPPER_BASE[@]}" ar -f "${repo_url}" "${repo_alias}"
+    [ -f "${repo_file}" ] || die "zypper did not create repository file: ${repo_file}"
+}
+
+write_metadata() {
+    local meta_dir="${OUTPUT}/etc/aios"
+    run_cmd mkdir -p "${meta_dir}"
+
+    if ${DRY_RUN}; then
+        info "would write ${meta_dir}/base-rootfs.env"
+        info "would write ${meta_dir}/base-rootfs.json"
+        return 0
+    fi
+
+    cat > "${meta_dir}/base-rootfs.env" <<EOF
+AIOS_BASE_FAMILY=opensuse
+AIOS_BASE_VARIANT=${VARIANT}
+AIOS_BASE_VERSION=${RELEASE}
+AIOS_BASE_SERIES=${SERIES}
+AIOS_BASE_ARCH=${ARCH}
+AIOS_BASE_SUPPORT_MONTHS=${SUPPORT_MONTHS}
+AIOS_BASE_EOL_DATE=${EOL_DATE}
+AIOS_BASE_KERNEL_POLICY=vendor-kernel
+AIOS_BASE_PACKAGE_POLICY=hybrid-rpm-aios
+AIOS_BASE_REPO_OSS=${REPO_OSS}
+AIOS_BASE_REPO_UPDATE=${REPO_UPDATE}
+AIOS_BASE_BUILDER=build-opensuse-rootfs.sh
+EOF
+    chmod 644 "${meta_dir}/base-rootfs.env"
+
+    cat > "${meta_dir}/base-rootfs.json" <<EOF
+{
+  "schema": "aios.base_rootfs.v1",
+  "revision": 13,
+  "base_family": "opensuse",
+  "variant": "$(json_escape "${VARIANT}")",
+  "version": "$(json_escape "${RELEASE}")",
+  "series": "$(json_escape "${SERIES}")",
+  "architecture": "$(json_escape "${ARCH}")",
+  "support_window_months": ${SUPPORT_MONTHS},
+  "eol_date": "$(json_escape "${EOL_DATE}")",
+  "kernel_policy": "vendor-kernel",
+  "package_policy": "hybrid-rpm-aios",
+  "repositories": {
+    "oss": "$(json_escape "${REPO_OSS}")",
+    "update": "$(json_escape "${REPO_UPDATE}")"
+  },
+  "builder": "build-opensuse-rootfs.sh"
+}
+EOF
+    chmod 644 "${meta_dir}/base-rootfs.json"
+}
+
+info "R13.1 base: openSUSE Leap ${RELEASE} (${ARCH}), support ${SUPPORT_MONTHS} months"
+info "Output: ${OUTPUT}"
+info "Package set: ${PACKAGE_SET}"
+
+if ! ${DRY_RUN}; then
+    if ${FORCE}; then
+        case "${OUTPUT}" in
+            "${REPO_ROOT}"/distro/build/out/*|/tmp/aios-*|/var/tmp/aios-*) rm -rf "${OUTPUT}" ;;
+            *) die "refusing to remove unsafe output path: ${OUTPUT}" ;;
+        esac
+    fi
+fi
+
+prepare_target_root
+if ! ${DRY_RUN} && [ "${ZYPPER_SETTLE_SECONDS}" -gt 0 ]; then
+    sync
+    sleep "${ZYPPER_SETTLE_SECONDS}"
+fi
+
+add_repo "${REPO_OSS}" "opensuse-${RELEASE}-oss"
+if [ "${REPO_UPDATE}" = "${REPO_OSS}" ]; then
+    info "Using repo-oss for updates; openSUSE Leap ${RELEASE} has no dedicated update repo"
+else
+    add_repo "${REPO_UPDATE}" "opensuse-${RELEASE}-update"
+fi
+run_zypper "${ZYPPER_BASE[@]}" refresh
+run_zypper "${ZYPPER_BASE[@]}" install --no-recommends -y "${PACKAGES[@]}"
+
+run_cmd mkdir -p "${OUTPUT}/proc" "${OUTPUT}/sys" "${OUTPUT}/dev" "${OUTPUT}/run" "${OUTPUT}/tmp"
+if ! ${DRY_RUN}; then
+    chmod 1777 "${OUTPUT}/tmp"
+    if [ ! -e "${OUTPUT}/sbin/init" ] && [ -x "${OUTPUT}/usr/lib/systemd/systemd" ]; then
+        mkdir -p "${OUTPUT}/sbin"
+        ln -s ../usr/lib/systemd/systemd "${OUTPUT}/sbin/init"
+    fi
+fi
+
+write_metadata
+
+if ! ${DRY_RUN}; then
+    [ -x "${OUTPUT}/sbin/init" ] || [ -L "${OUTPUT}/sbin/init" ] \
+        || die "rootfs does not contain /sbin/init"
+    [ -f "${OUTPUT}/etc/aios/base-rootfs.json" ] \
+        || die "base-rootfs metadata missing"
+fi
+
+info "openSUSE base rootfs ready: ${OUTPUT}"

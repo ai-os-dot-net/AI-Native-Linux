@@ -6,8 +6,8 @@ Requires=aios-policy-kernel.service aios-evidence-log.service
 After=aios-policy-kernel.service aios-evidence-log.service
 
 [Service]
-Type=notify
-ExecStart=/usr/lib/aios/aios-fs-daemon --config /etc/aios/config.toml --data-dir /var/lib/aios/fs
+Type=simple
+ExecStart=/usr/lib/aios/aios-system run-service aios-fs-daemon --config /etc/aios/config.toml
 Restart=always
 RestartSec=3
 LimitNOFILE=65536

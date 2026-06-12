@@ -5,8 +5,8 @@ After=aios-capability-runtime.service aios-evidence-log.service
 Requires=aios-capability-runtime.service
 
 [Service]
-Type=notify
-ExecStart=/usr/lib/aios/aios-hardware-daemon --config /etc/aios/config.toml --driver-dir /var/lib/aios/hardware
+Type=simple
+ExecStart=/usr/lib/aios/aios-system run-service aios-hardware-daemon --config /etc/aios/config.toml
 Restart=always
 RestartSec=5
 LimitNOFILE=65536

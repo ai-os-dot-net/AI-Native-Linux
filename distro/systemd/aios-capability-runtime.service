@@ -6,8 +6,8 @@ Requires=aios-policy-kernel.service aios-evidence-log.service
 Wants=aios-vault-broker.service
 
 [Service]
-Type=notify
-ExecStart=/usr/lib/aios/aios-capability-runtime --config /etc/aios/config.toml
+Type=simple
+ExecStart=/usr/lib/aios/aios-system run-service aios-capability-runtime --config /etc/aios/config.toml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=5

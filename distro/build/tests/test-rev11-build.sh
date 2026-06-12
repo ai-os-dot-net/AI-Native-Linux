@@ -6,7 +6,7 @@
 #   1. Build script exists and is executable
 #   2. Build script syntax is valid (bash -n)
 #   3. All expected output directories are referenced
-#   4. Version string is "Revision 11"
+#   4. Legacy Rev.11 files keep their Revision 11 markers; ISO builder is Rev.12
 #   5. All 6 new systemd unit files exist
 #   6. Rootfs layout has the new fleet/autonomous/marketplace/container/terminal dirs
 #   7. First-boot script references the new phases (11-15)
@@ -22,7 +22,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DISTRO_DIR="$(cd "${BUILD_DIR}/.." && pwd)"
-REPO_ROOT="$(cd "${DISTRO_DIR}/.." && pwd)"
 FAILED=0
 PASSED=0
 
@@ -78,8 +77,6 @@ done
 
 msg "Test 3: Expected output directories referenced in build script"
 
-BUILD_SCRIPT_CONTENT=$(cat "${BUILD_SCRIPT}")
-
 for _dir in \
     'BUILD_DIR' \
     'ROOTFS_DIR' \
@@ -88,19 +85,18 @@ for _dir in \
     'ISO_DIR' \
     'EFI_IMG'; do
 
-    if printf '%s' "${BUILD_SCRIPT_CONTENT}" | grep -q "${_dir}"; then
+    if grep -q "${_dir}" "${BUILD_SCRIPT}"; then
         pass "Directory variable referenced: ${_dir}"
     else
         fail "Directory variable missing: ${_dir}"
     fi
 done
 
-# ── Test 4: Version string is "Revision 11" ──────────────────────────────────
+# ── Test 4: Revision markers ─────────────────────────────────────────────────
 
-msg "Test 4: Version string is \"Revision 11\""
+msg "Test 4: Revision markers"
 
 for _file in \
-    "${BUILD_DIR}/build-aios-iso.sh" \
     "${DISTRO_DIR}/aios-boot/loader-entry.conf" \
     "${DISTRO_DIR}/first-boot/aios-first-boot.sh"; do
 
@@ -109,13 +105,19 @@ for _file in \
         continue
     fi
 
-    _rel="${_file#${DISTRO_DIR}/}"
+    _rel="${_file#"${DISTRO_DIR}"/}"
     if grep -q 'Revision 11' "${_file}"; then
         pass "Revision 11 found: ${_rel}"
     else
         fail "Revision 11 NOT found: ${_rel}"
     fi
 done
+
+if grep -q 'Revision 12' "${BUILD_SCRIPT}" 2>/dev/null; then
+    pass "Build script says Revision 12"
+else
+    fail "Build script does NOT say Revision 12"
+fi
 
 # ── Test 5: All 6 new systemd unit files exist ───────────────────────────────
 
@@ -167,6 +169,7 @@ fi
 msg "Test 7: First-boot script references phases 11-15"
 
 FIRST_BOOT_SH="${DISTRO_DIR}/first-boot/aios-first-boot.sh"
+FIRST_BOOT_RS="${DISTRO_DIR}/first-boot/aios-first-boot.rs"
 
 if [ ! -f "${FIRST_BOOT_SH}" ]; then
     fail "First-boot shell script not found"
@@ -185,12 +188,30 @@ fi
 # Also check first-boot variable declarations for new directories
 
 for _var in 'FLEET_DIR' 'AUTONOMOUS_DIR' 'MARKETPLACE_DIR' 'CONTAINER_DIR'; do
-    if grep -q "^${_var}=" "${FIRST_BOOT_SH}" 2>/dev/null; then
+    if grep -q "^${_var}=" "${FIRST_BOOT_SH}" 2>/dev/null \
+       || grep -q "const ${_var}:" "${FIRST_BOOT_RS}" 2>/dev/null; then
         pass "Variable declared: ${_var}"
     else
         fail "Variable NOT declared: ${_var}"
     fi
 done
+
+if [ ! -f "${FIRST_BOOT_RS}" ]; then
+    fail "Rust first-boot binary source not found"
+else
+    for _fn in \
+        'phase_10_fleet_membership' \
+        'phase_11_autonomous_governance' \
+        'phase_12_marketplace' \
+        'phase_13_container_runtime' \
+        'phase_14_readiness'; do
+        if grep -q "fn ${_fn}" "${FIRST_BOOT_RS}" 2>/dev/null; then
+            pass "Rust first-boot phase implemented: ${_fn}"
+        else
+            fail "Rust first-boot phase missing: ${_fn}"
+        fi
+    done
+fi
 
 # ── Test 8: Loader entry has Revision 11 in the title ────────────────────────
 
@@ -213,25 +234,65 @@ fi
 msg "Bonus: ISO output naming"
 
 if [ -f "${BUILD_SCRIPT}" ]; then
-    if grep -q 'aios-rev11' "${BUILD_SCRIPT}"; then
-        pass "ISO output filename uses aios-rev11"
+    if grep -q 'aios-rev12' "${BUILD_SCRIPT}"; then
+        pass "ISO output filename uses aios-rev12"
     else
-        fail "ISO output filename does NOT use aios-rev11"
+        fail "ISO output filename does NOT use aios-rev12"
     fi
 fi
 
 # ── Bonus: VOLID check ───────────────────────────────────────────────────────
 
 if [ -f "${BUILD_SCRIPT}" ]; then
-    if grep -q 'AIOS_REV11' "${BUILD_SCRIPT}" 2>/dev/null; then
-        pass "VOLID is set to AIOS_REV11"
+    if grep -q 'AIOS_REV12' "${BUILD_SCRIPT}" 2>/dev/null; then
+        pass "VOLID is set to AIOS_REV12"
     else
         if grep -q 'AIOS_REV4' "${BUILD_SCRIPT}" 2>/dev/null; then
-            fail "VOLID is still set to AIOS_REV4 (should be AIOS_REV11)"
+            fail "VOLID is still set to AIOS_REV4 (should be AIOS_REV12)"
         else
-            fail "VOLID not AIOS_REV11"
+            fail "VOLID not AIOS_REV12"
         fi
     fi
+fi
+
+# ── Test 9: Bootable ISO guards ──────────────────────────────────────────────
+
+msg "Test 9: Bootable ISO guards and live initramfs support"
+
+if grep -q -- '--base-rootfs' "${BUILD_SCRIPT}" 2>/dev/null \
+   && grep -q 'AIOS_ALLOW_SCAFFOLD_ROOTFS' "${BUILD_SCRIPT}" 2>/dev/null; then
+    pass "Build script requires explicit base rootfs or scaffold override"
+else
+    fail "Build script does not guard bootable ISO base rootfs"
+fi
+
+if grep -q 'cargo build --profile.*distro/first-boot/Cargo.toml' "${BUILD_SCRIPT}" 2>/dev/null \
+   || grep -q 'aios-first-boot' "${BUILD_SCRIPT}" 2>/dev/null; then
+    pass "Build script stages aios-first-boot binary"
+else
+    fail "Build script does not stage aios-first-boot binary"
+fi
+
+if grep -q 'run-service' "${DISTRO_DIR}/systemd/aios-policy-kernel.service" 2>/dev/null \
+   && grep -q 'run-service' "${DISTRO_DIR}/systemd/aios-evidence-log.service" 2>/dev/null; then
+    pass "Core systemd units use aios-system service runner"
+else
+    fail "Core systemd units still reference missing per-service binaries"
+fi
+
+if grep -q 'aios-ollama.service' "${DISTRO_DIR}/systemd/aios.target" 2>/dev/null \
+   || grep -q 'aios-vllm.service' "${DISTRO_DIR}/systemd/aios.target" 2>/dev/null; then
+    fail "aios.target pulls optional external inference services by default"
+else
+    pass "aios.target excludes optional external inference services"
+fi
+
+INITRAMFS_INIT="${DISTRO_DIR}/aios-boot/initramfs/init"
+if grep -q 'mount_live_root' "${INITRAMFS_INIT}" 2>/dev/null \
+   && grep -q 'live/aios.squashfs' "${INITRAMFS_INIT}" 2>/dev/null; then
+    pass "Initramfs supports live squashfs root"
+else
+    fail "Initramfs does not support live squashfs root"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
