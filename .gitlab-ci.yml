@@ -14,6 +14,7 @@ variables:
   CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
   RUSTUP_HOME: "/usr/local/rustup"
   RUST_VERSION: "1.94"
+  AIOS_RUST_CI_IMAGE: "aios-rust-ci:1.94"
   RUSTC_BOOTSTRAP: "0"
   DEBIAN_FRONTEND: "noninteractive"
   # ISO naming convention: aios-rev12-<short-sha>-x86_64.iso
@@ -43,13 +44,10 @@ variables:
 # Shared build-dependency bootstrap for Rust workspace jobs
 .bootstrap_deps: &bootstrap_deps
   before_script:
-    - apt-get update -qq && apt-get install -y -qq --no-install-recommends
-      g++
-      make
-      protobuf-compiler
-      libclang-dev
-      pkg-config
-      libssl-dev
+    - rustc --version
+    - cargo --version
+    - c++ --version
+    - protoc --version
     # The workspace uses protoc-bin-vendored, but libclang-dev is needed
     # for rocksdb-sys bindings (crates/aios-evidence, crates/aios-vault).
 
@@ -58,7 +56,7 @@ variables:
 # ==========================================================================
 cargo-check:
   stage: check
-  image: rust:${RUST_VERSION}-slim
+  image: ${AIOS_RUST_CI_IMAGE}
   <<: *cargo_cache
   <<: *bootstrap_deps
   script:
@@ -72,7 +70,7 @@ cargo-check:
 # ==========================================================================
 cargo-test:
   stage: test
-  image: rust:${RUST_VERSION}-slim
+  image: ${AIOS_RUST_CI_IMAGE}
   <<: *cargo_cache
   <<: *bootstrap_deps
   needs:
@@ -89,13 +87,9 @@ cargo-test:
 
 distro-shell-tests:
   stage: test
-  image: debian:bookworm
+  image: ${AIOS_RUST_CI_IMAGE}
   before_script:
-    - apt-get update -qq && apt-get install -y -qq
-      bash
-      jq
-      openssl
-      shellcheck
+    - shellcheck --version
   script:
     - shellcheck
       distro/build/build-aios-iso.sh
@@ -132,19 +126,12 @@ distro-shell-tests:
 # ==========================================================================
 cargo-clippy:
   stage: lint
-  image: rust:${RUST_VERSION}-slim
+  image: ${AIOS_RUST_CI_IMAGE}
   <<: *cargo_cache
   <<: *bootstrap_deps
   needs:
     - cargo-check
   before_script:
-    - apt-get update -qq && apt-get install -y -qq --no-install-recommends
-      g++
-      make
-      protobuf-compiler
-      libclang-dev
-      pkg-config
-      libssl-dev
     - rustup component add clippy
   script:
     # Workspace [workspace.lints.clippy] sets production `all = "deny"`.
@@ -157,7 +144,7 @@ cargo-clippy:
 
 cargo-fmt:
   stage: lint
-  image: rust:${RUST_VERSION}-slim
+  image: ${AIOS_RUST_CI_IMAGE}
   before_script:
     - rustup component add rustfmt
   script:
@@ -171,7 +158,7 @@ cargo-fmt:
 # ==========================================================================
 cargo-release:
   stage: build
-  image: rust:${RUST_VERSION}-slim
+  image: ${AIOS_RUST_CI_IMAGE}
   <<: *cargo_cache
   <<: *bootstrap_deps
   needs:
@@ -238,30 +225,11 @@ r13-opensuse-rootfs:
 # ==========================================================================
 assemble-iso:
   stage: assemble
-  image: rust:${RUST_VERSION}-slim
+  image: ${AIOS_RUST_CI_IMAGE}
   needs:
     - cargo-release
   before_script:
-    - apt-get update -qq && apt-get install -y -qq --no-install-recommends
-      g++
-      make
-      binutils
-      protobuf-compiler
-      libclang-dev
-      pkg-config
-      libssl-dev
-      xorriso
-      squashfs-tools
-      cpio
-      xz-utils
-      mtools
-      dosfstools
-      linux-image-amd64
-      systemd-boot
-      cryptsetup-bin
-      tpm2-tools
-      busybox-static
-      qemu-system-x86
+    - xorriso -version | head -1
   script:
     - chmod +x distro/build/build-aios-iso.sh distro/build/build-opensuse-rootfs.sh
     - |
@@ -303,7 +271,7 @@ assemble-iso:
 # ==========================================================================
 r13-enterprise-iso:
   stage: assemble
-  image: rust:${RUST_VERSION}-slim
+  image: ${AIOS_RUST_CI_IMAGE}
   tags:
     - docker
   timeout: 4h
@@ -313,29 +281,7 @@ r13-enterprise-iso:
     - job: r13-opensuse-rootfs
       artifacts: true
   before_script:
-    - apt-get update -qq && apt-get install -y -qq --no-install-recommends
-      g++
-      make
-      binutils
-      protobuf-compiler
-      libclang-dev
-      pkg-config
-      libssl-dev
-      xorriso
-      squashfs-tools
-      cpio
-      xz-utils
-      mtools
-      dosfstools
-      linux-image-amd64
-      systemd-boot
-      cryptsetup-bin
-      tpm2-tools
-      busybox-static
-      qemu-system-x86
-      jq
-      tar
-      gzip
+    - xorriso -version | head -1
   script:
     - mkdir -p "${R13_ROOTFS_DIR}"
     - tar -xzf "${R13_ROOTFS_TARBALL}" -C "${R13_ROOTFS_DIR}"
@@ -365,7 +311,7 @@ r13-enterprise-iso:
 # ==========================================================================
 r13-qemu-boot-smoke:
   stage: verify
-  image: debian:bookworm
+  image: ${AIOS_RUST_CI_IMAGE}
   tags:
     - docker
   timeout: 30m
@@ -373,7 +319,7 @@ r13-qemu-boot-smoke:
     - job: r13-enterprise-iso
       artifacts: true
   before_script:
-    - apt-get update -qq && apt-get install -y -qq bash qemu-system-x86 ovmf
+    - qemu-system-x86_64 --version
   script:
     - chmod +x distro/build/qemu-boot-smoke.sh
     - ./distro/build/qemu-boot-smoke.sh --iso "${R13_ISO_OUTPUT}" --timeout "${AIOS_QEMU_BOOT_TIMEOUT:-180}"
@@ -394,16 +340,11 @@ r13-qemu-boot-smoke:
 # ==========================================================================
 weekly-full-build:
   stage: assemble
-  image: debian:bookworm
+  image: ${AIOS_RUST_CI_IMAGE}
   needs: []
   before_script:
-    - apt-get update -qq && apt-get install -y -qq --no-install-recommends
-      curl g++ make
-      protobuf-compiler libclang-dev pkg-config libssl-dev
-      xorriso squashfs-tools cpio xz-utils mtools dosfstools
-      linux-image-amd64 systemd-boot cryptsetup-bin tpm2-tools busybox-static
-    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${RUST_VERSION}
-    - source "$HOME/.cargo/env"
+    - rustc --version
+    - xorriso -version | head -1
   script:
     - chmod +x distro/build/build-aios-iso.sh distro/build/build-opensuse-rootfs.sh
     - cargo build --release --workspace --locked
