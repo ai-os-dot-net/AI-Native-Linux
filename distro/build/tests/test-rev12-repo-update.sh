@@ -21,7 +21,7 @@ msg()  { printf '\033[1;34m[TEST]\033[0m %s\n' "$*"; }
 pass() { PASSED=$(( PASSED + 1 )); printf '  \033[1;32mPASS\033[0m %s\n' "$*"; }
 fail() { FAILED=$(( FAILED + 1 )); printf '  \033[1;31mFAIL\033[0m %s\n' "$*" >&2; }
 
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 cleanup() {
     if [ -n "${TMP_ROOT}" ] && [ -d "${TMP_ROOT}" ]; then
         case "${TMP_ROOT}" in

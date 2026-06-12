@@ -136,8 +136,12 @@ verify_release() {
 
     metadata_path="$(jq -r '.metadata_path' "${current_json}")"
     metadata_sha_expected="$(jq -r '.metadata_sha256' "${current_json}")"
-    [ -n "${metadata_path}" ] && [ "${metadata_path}" != "null" ] || die "current metadata has no metadata_path"
-    [ -n "${metadata_sha_expected}" ] && [ "${metadata_sha_expected}" != "null" ] || die "current metadata has no metadata_sha256"
+    if [ -z "${metadata_path}" ] || [ "${metadata_path}" = "null" ]; then
+        die "current metadata has no metadata_path"
+    fi
+    if [ -z "${metadata_sha_expected}" ] || [ "${metadata_sha_expected}" = "null" ]; then
+        die "current metadata has no metadata_sha256"
+    fi
 
     VERIFIED_METADATA_JSON="${root}/${metadata_path}"
     VERIFIED_RELEASE_DIR="$(dirname "${VERIFIED_METADATA_JSON}")"
@@ -156,7 +160,9 @@ verify_release() {
     VERIFIED_RELEASE_ID="$(jq -r '.release_id' "${VERIFIED_METADATA_JSON}")"
     VERIFIED_VERSION="$(jq -r '.version' "${VERIFIED_METADATA_JSON}")"
     VERIFIED_ARCH="$(jq -r '.architecture' "${VERIFIED_METADATA_JSON}")"
-    [ -n "${VERIFIED_RELEASE_ID}" ] && [ "${VERIFIED_RELEASE_ID}" != "null" ] || die "release_id missing"
+    if [ -z "${VERIFIED_RELEASE_ID}" ] || [ "${VERIFIED_RELEASE_ID}" = "null" ]; then
+        die "release_id missing"
+    fi
 
     sha_file="${VERIFIED_RELEASE_DIR}/SHA256SUMS"
     require_file "release SHA256SUMS" "${sha_file}"
@@ -268,7 +274,9 @@ activate_staged() {
     require_cmd jq
     require_file "staged update" "${staged_json}"
     release_id="$(jq -r '.release_id' "${staged_json}")"
-    [ -n "${release_id}" ] && [ "${release_id}" != "null" ] || die "staged release_id missing"
+    if [ -z "${release_id}" ] || [ "${release_id}" = "null" ]; then
+        die "staged release_id missing"
+    fi
 
     mkdir -p "${ROLLBACK_DIR}"
     if [ -f "${current_json}" ]; then

@@ -1215,8 +1215,9 @@ stage_kernel_modules() {
     local candidate
 
     [ -f "${ISO_DIR}/live/vmlinuz" ] || die "Kernel image missing before module staging."
-    [ -n "${STAGED_KERNEL_VERSION}" ] && [ "${STAGED_KERNEL_VERSION}" != "unknown" ] \
-        || die "Kernel version is unknown; set --kernel-version to stage matching modules."
+    if [ -z "${STAGED_KERNEL_VERSION}" ] || [ "${STAGED_KERNEL_VERSION}" = "unknown" ]; then
+        die "Kernel version is unknown; set --kernel-version to stage matching modules."
+    fi
 
     modules_dst="${ROOTFS_DIR}/usr/lib/modules/${STAGED_KERNEL_VERSION}"
     mkdir -p "$(dirname "${modules_dst}")"

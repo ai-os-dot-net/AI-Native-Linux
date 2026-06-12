@@ -278,8 +278,9 @@ do_configure() {
     _rollback_uuid=$(blkid -s UUID -o value "${ROLLBACK_PART}" 2>/dev/null || echo "")
     _luks_uuid=$(blkid -s UUID -o value "${LUKS_PART}" 2>/dev/null || echo "")
 
-    [ -n "${_root_uuid}" ] && [ -n "${_luks_uuid}" ] && [ -n "${_recovery_uuid}" ] && [ -n "${_rollback_uuid}" ] \
-        || die "UUID read failed" 1
+    if [ -z "${_root_uuid}" ] || [ -z "${_luks_uuid}" ] || [ -z "${_recovery_uuid}" ] || [ -z "${_rollback_uuid}" ]; then
+        die "UUID read failed" 1
+    fi
 
     # /etc/fstab
     cat > "${TARGET_MOUNT}/etc/fstab" <<FSTAB
