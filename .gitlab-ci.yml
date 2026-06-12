@@ -43,6 +43,7 @@ variables:
 .bootstrap_deps: &bootstrap_deps
   before_script:
     - apt-get update -qq && apt-get install -y -qq
+      build-essential
       protobuf-compiler
       libclang-dev
       pkg-config
@@ -136,6 +137,7 @@ cargo-clippy:
     - cargo-check
   before_script:
     - apt-get update -qq && apt-get install -y -qq
+      build-essential
       protobuf-compiler
       libclang-dev
       pkg-config
@@ -238,6 +240,7 @@ assemble-iso:
     - cargo-release
   before_script:
     - apt-get update -qq && apt-get install -y -qq
+      build-essential
       binutils
       protobuf-compiler
       libclang-dev
@@ -307,6 +310,7 @@ r13-enterprise-iso:
       artifacts: true
   before_script:
     - apt-get update -qq && apt-get install -y -qq
+      build-essential
       binutils
       protobuf-compiler
       libclang-dev
