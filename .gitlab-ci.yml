@@ -14,7 +14,7 @@ variables:
   CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
   RUSTUP_HOME: "/usr/local/rustup"
   RUST_VERSION: "1.94"
-  AIOS_RUST_CI_IMAGE: "aios-rust-ci:1.94"
+  AIOS_RUST_CI_IMAGE: "192.168.1.180:5050/platform/ci-templates/neurocad-ci-tools:latest"
   RUSTC_BOOTSTRAP: "0"
   DEBIAN_FRONTEND: "noninteractive"
   # ISO naming convention: aios-rev12-<short-sha>-x86_64.iso
