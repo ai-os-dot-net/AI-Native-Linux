@@ -274,9 +274,11 @@ assemble-iso:
     - job: r13-opensuse-rootfs
       artifacts: true
   before_script:
+    # ISO toolchain + QEMU for the boot gate — the CI image ships none of it
+    - >
+      (command -v xorriso && command -v mksquashfs && command -v qemu-system-x86_64) >/dev/null 2>&1 ||
+      (apt-get update -qq && apt-get install -y -qq xorriso squashfs-tools mtools cpio xz-utils dosfstools busybox-static cryptsetup-bin qemu-system-x86 qemu-utils)
     - xorriso -version | head -1
-    # QEMU boot gate runs inside this job — install qemu on demand (KVM via runner device)
-    - command -v qemu-system-x86_64 >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq qemu-system-x86)
   script:
     - chmod +x distro/build/build-aios-iso.sh distro/build/qemu-boot-smoke.sh
     # R12.1: unpack the openSUSE rootfs artifact — the ISO must be bootable, not scaffold
