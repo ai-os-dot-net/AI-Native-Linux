@@ -3,7 +3,7 @@
   "current_milestone": "Enterprise plan: Фаза 0 стабилизация → Rev.12 дистрибуция → Rev.13 enterprise",
   "current_task_id": "TSK-PH0-001",
   "current_task_title": "Фаза 0: 4 cargo gates на 219 некомитнати промени + комит + push gitlab + CI",
-  "current_step": "Фаза 0: всички 4 gates PASS (7001/0 след rebase); комит 8411934 пушнат към gitlab; CI pipeline 3238 pending — чакам резултат",
+  "current_step": "Комит 1d11b26 готов локално (CI fix + QEMU install gate). Чака се операторът да махне lxc.apparmor.profile от CT130 и рестарт, после push+pipeline.",
   "completed_steps": [
     "OS Research (7 modules, 5,781 lines)",
     "Rev.3 through Rev.7 (all prior milestones)",
@@ -13,7 +13,10 @@
   "discovered_constraints": [
     "INV-025: AI cannot author/load eBPF programs",
     "INV-026: Host policy supremacy — unilateral withdrawal from any state",
-    "4 pre-existing compilation errors fixed (serde/strum imports, Default derive)"
+    "4 pre-existing compilation errors fixed (serde/strum imports, Default derive)",
+    "GitLab runners изискват тагове (run_untagged=False) — новият runner 20 приема untagged, заключен за проект 10",
+    "neurocad-ci-tools image няма protoc — инсталира се on-demand в before_script",
+    "lxc.apparmor.profile: unconfined ЧУПИ вложен docker (не може да зареди docker-default профил); nesting=1 без override е правилното"
   ],
   "last_verification_result": "fmt/check/clippy PASS; test 7001 passed 0 failed (307 suites) на комит 8411934; предишен main CI (bf6f971) е failed — очаквано червено поле за поправка",
   "plan": {

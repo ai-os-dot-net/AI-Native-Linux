@@ -92,6 +92,8 @@ distro-shell-tests:
   stage: test
   image: ${AIOS_RUST_CI_IMAGE}
   before_script:
+    # neurocad-ci-tools lacks shellcheck — install on demand
+    - command -v shellcheck >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq shellcheck)
     - shellcheck --version
   script:
     - shellcheck
@@ -139,6 +141,10 @@ cargo-clippy:
   needs:
     - cargo-check
   before_script:
+    # NB: this before_script OVERRIDES bootstrap_deps — repeat the dep install
+    - >
+      (command -v protoc >/dev/null 2>&1 && ldconfig -p | grep -q libclang) ||
+      (apt-get update -qq && apt-get install -y -qq protobuf-compiler libclang-dev clang)
     - rustup component add clippy
   script:
     # Workspace [workspace.lints.clippy] sets production `all = "deny"`.
