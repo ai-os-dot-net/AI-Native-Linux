@@ -273,6 +273,7 @@ fn closure_closure_files_present() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore = "expensive nested cargo check; deadlocks with the outer cargo lock in CI where a dedicated cargo-check job provides the same evidence — run explicitly with `cargo test -p aios-cognitive --test m11_closure -- --ignored`"]
 fn closure_aios_cognitive_crate_builds_clean() {
     // Verify this crate compiles without errors
     let output = Command::new("cargo")
