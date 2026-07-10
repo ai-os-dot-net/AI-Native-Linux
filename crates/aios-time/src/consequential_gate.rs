@@ -2,10 +2,7 @@ use crate::enums::TimePostureState;
 use crate::posture::TimePosture;
 use crate::skew_budget::SkewBudget;
 
-pub fn is_consequential_action_allowed(
-    posture: &TimePosture,
-    budget: &SkewBudget,
-) -> bool {
+pub fn is_consequential_action_allowed(posture: &TimePosture, budget: &SkewBudget) -> bool {
     if posture.state == TimePostureState::SkewBlocked {
         return false;
     }

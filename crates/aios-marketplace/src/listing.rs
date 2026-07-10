@@ -1,7 +1,7 @@
-use chrono::{DateTime, Utc};
-use ulid::Ulid;
 use crate::enums::{ListingState, MarketplaceCategory};
 use crate::error::MarketplaceError;
+use chrono::{DateTime, Utc};
+use ulid::Ulid;
 
 /// A marketplace listing (S11.2 §7).
 #[derive(Debug, Clone)]
@@ -102,13 +102,18 @@ impl ListingStore {
                 listing.listing_id,
             ));
         }
-        if self.listings.iter().any(|l| l.listing_id == listing.listing_id) {
+        if self
+            .listings
+            .iter()
+            .any(|l| l.listing_id == listing.listing_id)
+        {
             return Err(MarketplaceError::ListingAlreadyPublished(
                 listing.listing_id,
             ));
         }
         self.listings.push(listing);
-        let published = self.listings.last_mut().unwrap();
+        let published_index = self.listings.len() - 1;
+        let published = &mut self.listings[published_index];
         published.state = ListingState::Published;
         published.published_at = Some(Utc::now());
         Ok(published)
@@ -122,7 +127,9 @@ impl ListingStore {
             .ok_or_else(|| MarketplaceError::ListingNotFound(listing_id.to_string()))?;
 
         if listing.state != ListingState::Published {
-            return Err(MarketplaceError::ListingNotPublished(listing_id.to_string()));
+            return Err(MarketplaceError::ListingNotPublished(
+                listing_id.to_string(),
+            ));
         }
 
         listing.state = ListingState::Deprecated;
@@ -146,10 +153,7 @@ impl ListingStore {
         Ok(listing)
     }
 
-    pub fn search_by_category(
-        &self,
-        category: MarketplaceCategory,
-    ) -> Vec<&Listing> {
+    pub fn search_by_category(&self, category: MarketplaceCategory) -> Vec<&Listing> {
         self.listings
             .iter()
             .filter(|l| l.categories.contains(&category) && l.state == ListingState::Published)

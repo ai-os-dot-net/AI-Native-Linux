@@ -8,6 +8,9 @@
 pub mod cognitive_adapter;
 /// `SandboxComposer` async trait + `ComposeRequest` / `ComposeResult` (S3.2 §19.1).
 pub mod composer;
+/// LSM confinement generator — produces AppArmor profiles and systemd units
+/// from `SandboxProfile` structs (Rev.6).
+pub mod confinement_generator;
 /// `SandboxError` taxonomy.
 pub mod error;
 /// `SandboxEvidenceEmitter` + `SandboxEvidenceLog` trait + `InMemorySandboxEvidenceLog` (S3.2 ↔ S3.1).
@@ -27,9 +30,6 @@ pub mod isolation;
 pub mod network;
 /// `SandboxProfile` + `ProfileId`.
 pub mod profile;
-/// LSM confinement generator — produces AppArmor profiles and systemd units
-/// from `SandboxProfile` structs (Rev.6).
-pub mod confinement_generator;
 /// `ResourceLimitEnforcer` + `ResourceRequest` / `ResourceUsage` / `ResourceRemaining` (S3.2).
 pub mod resource_enforcer;
 /// `ResourceLimits` + default factories + validation.

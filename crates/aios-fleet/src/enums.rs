@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
 use strum_macros::{EnumCount, EnumIter};
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ClusterOverlayMode {
     HubAndSpoke,
@@ -11,9 +9,7 @@ pub enum ClusterOverlayMode {
     HybridRelayedMesh,
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ClusterRole {
     ClusterCoordinator,
@@ -22,9 +18,7 @@ pub enum ClusterRole {
     RecoveryWitness,
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ClusterTrustScope {
     FleetTrustOnly,
@@ -32,7 +26,17 @@ pub enum ClusterTrustScope {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount, strum_macros::Display,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumIter,
+    EnumCount,
+    strum_macros::Display,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -47,9 +51,7 @@ pub enum FleetMembershipState {
     Expelled,
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TrustDelegationDirection {
     InboundAccept,
@@ -57,9 +59,7 @@ pub enum TrustDelegationDirection {
     Bidirectional,
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RemoteRoutingReason {
     HardwareAffinity,
@@ -69,9 +69,7 @@ pub enum RemoteRoutingReason {
     RecoveryFailover,
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RemoteRoutingClass {
     SandboxedCapsule,

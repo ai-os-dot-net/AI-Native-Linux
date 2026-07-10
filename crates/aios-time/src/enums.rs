@@ -2,8 +2,18 @@ use serde::{Deserialize, Serialize};
 use strum_macros::{EnumCount, EnumIter};
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
-    Serialize, Deserialize, EnumIter, EnumCount,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumIter,
+    EnumCount,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TrustedTimeSource {
@@ -15,8 +25,18 @@ pub enum TrustedTimeSource {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
-    Serialize, Deserialize, EnumIter, EnumCount,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumIter,
+    EnumCount,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TimeTrustGrade {
@@ -27,8 +47,18 @@ pub enum TimeTrustGrade {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
-    Serialize, Deserialize, EnumIter, EnumCount,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumIter,
+    EnumCount,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TimePostureState {
@@ -42,8 +72,18 @@ pub enum TimePostureState {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
-    Serialize, Deserialize, EnumIter, EnumCount,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumIter,
+    EnumCount,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SkewClassification {

@@ -226,13 +226,19 @@ impl K8sManifestValidator {
                             ValidationSeverity::Warning => {
                                 warnings.push(format!(
                                     "[{}] {}: {} (field: {})",
-                                    resource.name, finding.severity_label(), finding.message, finding.field
+                                    resource.name,
+                                    finding.severity_label(),
+                                    finding.message,
+                                    finding.field
                                 ));
                             }
                             ValidationSeverity::Error | ValidationSeverity::Block => {
                                 errors.push(format!(
                                     "[{}] {}: {} (field: {})",
-                                    resource.name, finding.severity_label(), finding.message, finding.field
+                                    resource.name,
+                                    finding.severity_label(),
+                                    finding.message,
+                                    finding.field
                                 ));
                             }
                         }
@@ -264,27 +270,25 @@ impl K8sManifestValidator {
         doc: &serde_yaml::Value,
         _doc_idx: usize,
     ) -> Result<ManifestResource, ManifestValidationError> {
-        let mapping = doc
-            .as_mapping()
-            .ok_or_else(|| ManifestValidationError::StructureError(
-                "YAML document is not a mapping".into(),
-            ))?;
+        let mapping = doc.as_mapping().ok_or_else(|| {
+            ManifestValidationError::StructureError("YAML document is not a mapping".into())
+        })?;
 
         let kind = get_str(mapping, "kind")?;
         let api_version = get_str(mapping, "apiVersion").unwrap_or_else(|_| "v1".into());
 
         let metadata = mapping
-            .get(&serde_yaml::Value::String("metadata".into()))
+            .get(serde_yaml::Value::String("metadata".into()))
             .and_then(|v| v.as_mapping());
 
         let name = metadata
-            .and_then(|m| m.get(&serde_yaml::Value::String("name".into())))
+            .and_then(|m| m.get(serde_yaml::Value::String("name".into())))
             .and_then(|v| v.as_str())
             .unwrap_or("unnamed")
             .to_string();
 
         let namespace = metadata.and_then(|m| {
-            m.get(&serde_yaml::Value::String("namespace".into()))
+            m.get(serde_yaml::Value::String("namespace".into()))
                 .and_then(|v| v.as_str())
                 .map(String::from)
         });
@@ -293,50 +297,38 @@ impl K8sManifestValidator {
         let pod_spec = match kind.as_str() {
             "Deployment" | "StatefulSet" | "DaemonSet" | "ReplicaSet" | "Job" | "CronJob" => {
                 mapping
-                    .get(&serde_yaml::Value::String("spec".into()))
+                    .get(serde_yaml::Value::String("spec".into()))
                     .and_then(|s| s.as_mapping())
-                    .and_then(|s| {
-                        s.get(&serde_yaml::Value::String("template".into()))
-                    })
+                    .and_then(|s| s.get(serde_yaml::Value::String("template".into())))
                     .and_then(|t| t.as_mapping())
-                    .and_then(|t| {
-                        t.get(&serde_yaml::Value::String("spec".into()))
-                    })
+                    .and_then(|t| t.get(serde_yaml::Value::String("spec".into())))
                     .and_then(|s| s.as_mapping())
             }
             "Pod" => mapping
-                .get(&serde_yaml::Value::String("spec".into()))
+                .get(serde_yaml::Value::String("spec".into()))
                 .and_then(|s| s.as_mapping()),
             _ => None,
         };
 
         // Extract host-level flags
         let host_pid = pod_spec
-            .and_then(|s| {
-                s.get(&serde_yaml::Value::String("hostPID".into()))
-            })
+            .and_then(|s| s.get(serde_yaml::Value::String("hostPID".into())))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
         let host_network = pod_spec
-            .and_then(|s| {
-                s.get(&serde_yaml::Value::String("hostNetwork".into()))
-            })
+            .and_then(|s| s.get(serde_yaml::Value::String("hostNetwork".into())))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
         let host_ipc = pod_spec
-            .and_then(|s| {
-                s.get(&serde_yaml::Value::String("hostIPC".into()))
-            })
+            .and_then(|s| s.get(serde_yaml::Value::String("hostIPC".into())))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
         // Extract containers
         let containers = pod_spec
-            .and_then(|s| {
-                s.get(&serde_yaml::Value::String("containers".into()))
-            })
+            .and_then(|s| s.get(serde_yaml::Value::String("containers".into())))
             .and_then(|v| v.as_sequence())
             .map(|seq| {
                 seq.iter()
@@ -361,39 +353,39 @@ impl K8sManifestValidator {
     /// Parse a single container from a YAML mapping.
     fn parse_container(&self, cm: &serde_yaml::Mapping) -> ContainerSpec {
         let name = cm
-            .get(&serde_yaml::Value::String("name".into()))
+            .get(serde_yaml::Value::String("name".into()))
             .and_then(|v| v.as_str())
             .unwrap_or("unnamed-container")
             .to_string();
 
         let image = cm
-            .get(&serde_yaml::Value::String("image".into()))
+            .get(serde_yaml::Value::String("image".into()))
             .and_then(|v| v.as_str())
             .unwrap_or("scratch")
             .to_string();
 
         let ports: Vec<PortSpec> = cm
-            .get(&serde_yaml::Value::String("ports".into()))
+            .get(serde_yaml::Value::String("ports".into()))
             .and_then(|v| v.as_sequence())
             .map(|seq| {
                 seq.iter()
                     .filter_map(|p| p.as_mapping())
                     .map(|pm| PortSpec {
                         container_port: pm
-                            .get(&serde_yaml::Value::String("containerPort".into()))
+                            .get(serde_yaml::Value::String("containerPort".into()))
                             .and_then(|v| v.as_u64())
                             .unwrap_or(0) as u16,
                         protocol: pm
-                            .get(&serde_yaml::Value::String("protocol".into()))
+                            .get(serde_yaml::Value::String("protocol".into()))
                             .and_then(|v| v.as_str())
                             .unwrap_or("TCP")
                             .to_string(),
                         name: pm
-                            .get(&serde_yaml::Value::String("name".into()))
+                            .get(serde_yaml::Value::String("name".into()))
                             .and_then(|v| v.as_str())
                             .map(String::from),
                         host_port: pm
-                            .get(&serde_yaml::Value::String("hostPort".into()))
+                            .get(serde_yaml::Value::String("hostPort".into()))
                             .and_then(|v| v.as_u64())
                             .map(|p| p as u16),
                     })
@@ -402,24 +394,24 @@ impl K8sManifestValidator {
             .unwrap_or_default();
 
         let volumes: Vec<VolumeSpec> = cm
-            .get(&serde_yaml::Value::String("volumeMounts".into()))
+            .get(serde_yaml::Value::String("volumeMounts".into()))
             .and_then(|v| v.as_sequence())
             .map(|seq| {
                 seq.iter()
                     .filter_map(|vm| vm.as_mapping())
                     .map(|vmm| VolumeSpec {
                         name: vmm
-                            .get(&serde_yaml::Value::String("name".into()))
+                            .get(serde_yaml::Value::String("name".into()))
                             .and_then(|v| v.as_str())
                             .unwrap_or("unknown")
                             .to_string(),
                         mount_path: vmm
-                            .get(&serde_yaml::Value::String("mountPath".into()))
+                            .get(serde_yaml::Value::String("mountPath".into()))
                             .and_then(|v| v.as_str())
                             .unwrap_or("/")
                             .to_string(),
                         read_only: vmm
-                            .get(&serde_yaml::Value::String("readOnly".into()))
+                            .get(serde_yaml::Value::String("readOnly".into()))
                             .and_then(|v| v.as_bool())
                             .unwrap_or(false),
                     })
@@ -428,28 +420,28 @@ impl K8sManifestValidator {
             .unwrap_or_default();
 
         let env_vars: Vec<EnvVar> = cm
-            .get(&serde_yaml::Value::String("env".into()))
+            .get(serde_yaml::Value::String("env".into()))
             .and_then(|v| v.as_sequence())
             .map(|seq| {
                 seq.iter()
                     .filter_map(|e| e.as_mapping())
                     .map(|em| {
                         let has_secret = em
-                            .get(&serde_yaml::Value::String("valueFrom".into()))
+                            .get(serde_yaml::Value::String("valueFrom".into()))
                             .and_then(|vf| vf.as_mapping())
                             .and_then(|vfm| {
-                                vfm.get(&serde_yaml::Value::String("secretKeyRef".into()))
+                                vfm.get(serde_yaml::Value::String("secretKeyRef".into()))
                             })
                             .is_some();
 
                         EnvVar {
                             name: em
-                                .get(&serde_yaml::Value::String("name".into()))
+                                .get(serde_yaml::Value::String("name".into()))
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("UNKNOWN")
                                 .to_string(),
                             value: em
-                                .get(&serde_yaml::Value::String("value".into()))
+                                .get(serde_yaml::Value::String("value".into()))
                                 .and_then(|v| v.as_str())
                                 .map(String::from),
                             value_from_secret: has_secret,
@@ -460,67 +452,61 @@ impl K8sManifestValidator {
             .unwrap_or_default();
 
         let resources = cm
-            .get(&serde_yaml::Value::String("resources".into()))
+            .get(serde_yaml::Value::String("resources".into()))
             .and_then(|v| v.as_mapping());
 
         let (cpu_req, mem_req) = resources
-            .and_then(|r| r.get(&serde_yaml::Value::String("requests".into())))
+            .and_then(|r| r.get(serde_yaml::Value::String("requests".into())))
             .and_then(|v| v.as_mapping())
             .map(|req| {
                 let cpu = req
-                    .get(&serde_yaml::Value::String("cpu".into()))
+                    .get(serde_yaml::Value::String("cpu".into()))
                     .and_then(|v| v.as_str())
-                    .and_then(|s| parse_k8s_cpu(s))
+                    .and_then(parse_k8s_cpu)
                     .unwrap_or(250);
                 let mem = req
-                    .get(&serde_yaml::Value::String("memory".into()))
+                    .get(serde_yaml::Value::String("memory".into()))
                     .and_then(|v| v.as_str())
-                    .and_then(|s| parse_k8s_memory_mb(s))
+                    .and_then(parse_k8s_memory_mb)
                     .unwrap_or(256);
                 (cpu, mem)
             })
             .unwrap_or((250, 256));
 
         let (cpu_lim, mem_lim) = resources
-            .and_then(|r| r.get(&serde_yaml::Value::String("limits".into())))
+            .and_then(|r| r.get(serde_yaml::Value::String("limits".into())))
             .and_then(|v| v.as_mapping())
             .map(|lim| {
                 let cpu = lim
-                    .get(&serde_yaml::Value::String("cpu".into()))
+                    .get(serde_yaml::Value::String("cpu".into()))
                     .and_then(|v| v.as_str())
-                    .and_then(|s| parse_k8s_cpu(s))
+                    .and_then(parse_k8s_cpu)
                     .unwrap_or(500);
                 let mem = lim
-                    .get(&serde_yaml::Value::String("memory".into()))
+                    .get(serde_yaml::Value::String("memory".into()))
                     .and_then(|v| v.as_str())
-                    .and_then(|s| parse_k8s_memory_mb(s))
+                    .and_then(parse_k8s_memory_mb)
                     .unwrap_or(512);
                 (cpu, mem)
             })
             .unwrap_or((500, 512));
 
         let security_ctx = cm
-            .get(&serde_yaml::Value::String("securityContext".into()))
+            .get(serde_yaml::Value::String("securityContext".into()))
             .and_then(|v| v.as_mapping());
 
         let privileged = security_ctx
-            .and_then(|sc| {
-                sc.get(&serde_yaml::Value::String("privileged".into()))
-            })
+            .and_then(|sc| sc.get(serde_yaml::Value::String("privileged".into())))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
         let run_as_root = security_ctx
-            .and_then(|sc| {
-                sc.get(&serde_yaml::Value::String("runAsNonRoot".into()))
-            })
+            .and_then(|sc| sc.get(serde_yaml::Value::String("runAsNonRoot".into())))
             .map(|v| !v.as_bool().unwrap_or(true))
             .unwrap_or(true);
 
         let read_only_root = security_ctx
-            .and_then(|sc| {
-                sc.get(&serde_yaml::Value::String("readOnlyRootFilesystem".into()))
-            })
+            .and_then(|sc| sc.get(serde_yaml::Value::String("readOnlyRootFilesystem".into())))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
@@ -612,7 +598,8 @@ impl K8sManifestValidator {
                         "spec.template.spec.containers[{}].securityContext.readOnlyRootFilesystem",
                         container.name
                     ),
-                    message: "readOnlyRootFilesystem is not set — container can write to root".into(),
+                    message: "readOnlyRootFilesystem is not set — container can write to root"
+                        .into(),
                     severity: ValidationSeverity::Warning,
                 });
             }
@@ -652,9 +639,7 @@ impl ValidationError {
 // ---------------------------------------------------------------------------
 
 /// Parse a YAML string into documents, handling multi-document streams.
-fn parse_yaml_documents(
-    yaml: &str,
-) -> Result<Vec<serde_yaml::Value>, ManifestValidationError> {
+fn parse_yaml_documents(yaml: &str) -> Result<Vec<serde_yaml::Value>, ManifestValidationError> {
     let trimmed = yaml.trim();
     if trimmed.is_empty() {
         return Ok(Vec::new());
@@ -673,9 +658,8 @@ fn parse_yaml_documents(
 
     let mut values = Vec::new();
     for doc in &docs {
-        let val: serde_yaml::Value = serde_yaml::from_str(doc).map_err(|e| {
-            ManifestValidationError::ParseError(format!("YAML parse failed: {e}"))
-        })?;
+        let val: serde_yaml::Value = serde_yaml::from_str(doc)
+            .map_err(|e| ManifestValidationError::ParseError(format!("YAML parse failed: {e}")))?;
         values.push(val);
     }
 
@@ -685,13 +669,11 @@ fn parse_yaml_documents(
 /// Extract a string value from a YAML mapping.
 fn get_str(mapping: &serde_yaml::Mapping, key: &str) -> Result<String, ManifestValidationError> {
     mapping
-        .get(&serde_yaml::Value::String(key.into()))
+        .get(serde_yaml::Value::String(key.into()))
         .and_then(|v| v.as_str())
         .map(String::from)
         .ok_or_else(|| {
-            ManifestValidationError::StructureError(format!(
-                "missing required field '{key}'"
-            ))
+            ManifestValidationError::StructureError(format!("missing required field '{key}'"))
         })
 }
 
@@ -700,9 +682,7 @@ fn parse_k8s_cpu(cpu: &str) -> Option<u32> {
     if let Some(milli) = cpu.strip_suffix('m') {
         milli.parse::<u32>().ok()
     } else {
-        cpu.parse::<f64>()
-            .ok()
-            .map(|v| (v * 1000.0) as u32)
+        cpu.parse::<f64>().ok().map(|v| (v * 1000.0) as u32)
     }
 }
 

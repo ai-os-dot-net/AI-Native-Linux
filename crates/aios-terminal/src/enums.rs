@@ -12,9 +12,7 @@ use strum_macros::{EnumCount, EnumIter};
 /// Per S20 §7: `Lx` is a direct POSIX shell, `Mix` is natural language by
 /// default with `LX:` escape, and `Ai` accepts only AI intents and typed
 /// actions (raw shell text is inert).
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TerminalMode {
     /// Direct Linux/POSIX shell — AI does not reinterpret commands.
@@ -30,9 +28,7 @@ pub enum TerminalMode {
 /// Transitions per S20 §3 (TypedActionCompiler → PolicyPreflightGate →
 /// HumanOversightGate → AIExecutionBroker → VerificationRunner →
 /// AIEvidenceWriter).
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ProposalState {
     /// Proposal was created but not yet submitted for review.
@@ -55,9 +51,7 @@ pub enum ProposalState {
 ///
 /// S20 §10 Transparency control: every piece of AI-generated output must be
 /// visibly distinguishable from human-written output.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AiMarker {
     /// Text written by a human operator with no AI involvement.
@@ -76,9 +70,7 @@ pub enum AiMarker {
 ///
 /// Produced by the [`PromptBoundaryClassifier`] (S20 §3) before the input
 /// reaches the AI cognitive core.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum UserIntentClass {
     /// Shell command or explicit `LX:` prefix instruction.
@@ -96,9 +88,7 @@ pub enum UserIntentClass {
 }
 
 /// Outcome of a dispatched action — reported after execution completes.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ActionOutcome {
     /// Action executed successfully.
@@ -245,7 +235,10 @@ mod tests {
     #[test]
     fn terminal_mode_wire_form() {
         assert_eq!(serde_json::to_string(&TerminalMode::Lx).unwrap(), "\"LX\"");
-        assert_eq!(serde_json::to_string(&TerminalMode::Mix).unwrap(), "\"MIX\"");
+        assert_eq!(
+            serde_json::to_string(&TerminalMode::Mix).unwrap(),
+            "\"MIX\""
+        );
         assert_eq!(serde_json::to_string(&TerminalMode::Ai).unwrap(), "\"AI\"");
     }
 

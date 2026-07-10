@@ -275,7 +275,6 @@ impl ContainerHandle {
         }
         elapsed.unsigned_abs() >= self.timeout.as_secs()
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -369,9 +368,7 @@ impl SessionContainerDriver {
             args.push("--env".into());
             args.push(format!("WAYLAND_DISPLAY={display}"));
             args.push("--volume".into());
-            args.push(format!(
-                "/run/user/1000/{display}:/run/user/1000/{display}"
-            ));
+            args.push(format!("/run/user/1000/{display}:/run/user/1000/{display}"));
         }
         // GStreamer port
         args.push("--publish".into());
@@ -412,11 +409,7 @@ impl SessionContainerDriver {
     }
 
     /// Launch a container and return the container ID.
-    async fn launch_container(
-        &self,
-        container_name: &str,
-        port: u16,
-    ) -> Result<String, AppsError> {
+    async fn launch_container(&self, container_name: &str, port: u16) -> Result<String, AppsError> {
         let args = self.build_run_args(container_name, port);
         let str_args: Vec<&str> = args.iter().map(String::as_str).collect();
         let container_id = self.exec_command(&str_args).await?;
@@ -431,13 +424,8 @@ impl SessionContainerDriver {
 
     /// Inspect a container and return its OCI state string.
     async fn inspect_container(&self, container_name: &str) -> Result<String, AppsError> {
-        self.exec_command(&[
-            "inspect",
-            "--format",
-            "{{.State.Status}}",
-            container_name,
-        ])
-        .await
+        self.exec_command(&["inspect", "--format", "{{.State.Status}}", container_name])
+            .await
     }
 
     /// Pause a running container.
@@ -457,12 +445,12 @@ impl SessionContainerDriver {
     /// Stop a container and wait for cleanup.
     async fn stop_container(&self, container_name: &str) -> Result<(), AppsError> {
         info!("Stopping container {container_name}");
-        let result = self.exec_command(&["stop", "--time", "10", container_name]).await;
+        let result = self
+            .exec_command(&["stop", "--time", "10", container_name])
+            .await;
         match result {
             Ok(_) => Ok(()),
-            Err(AppsError::SessionContainerError(ref msg))
-                if msg.contains("no such container") =>
-            {
+            Err(AppsError::SessionContainerError(ref msg)) if msg.contains("no such container") => {
                 warn!("Container {container_name} already gone");
                 Ok(())
             }
@@ -491,7 +479,10 @@ impl SessionContainerDriver {
         phase: SessionPhaseRecord,
     ) {
         if let Some(ref emitter) = self.emitter {
-            if let Err(e) = emitter.emit_session_event(session_id, package_id, phase).await {
+            if let Err(e) = emitter
+                .emit_session_event(session_id, package_id, phase)
+                .await
+            {
                 error!("Failed to emit session evidence: {e}");
             }
         }
@@ -576,12 +567,13 @@ impl SessionDriver for SessionContainerDriver {
 
         // Launch the container.
         let port = self.config.gstreamer_port;
-        let container_id = self.launch_container(&container_name, port).await.map_err(
-            |e| {
+        let container_id = self
+            .launch_container(&container_name, port)
+            .await
+            .map_err(|e| {
                 error!("Container launch failed for {session_id:?}: {e}");
                 e
-            },
-        )?;
+            })?;
 
         // Transition: Starting → Active (after successful launch).
         {
@@ -600,12 +592,8 @@ impl SessionDriver for SessionContainerDriver {
                 .ok_or_else(|| AppsError::SessionNotFound(session_id.0.clone()))?
         };
 
-        self.emit_if_configured(
-            &session_id,
-            &req.package_id,
-            SessionPhaseRecord::Opened,
-        )
-        .await;
+        self.emit_if_configured(&session_id, &req.package_id, SessionPhaseRecord::Opened)
+            .await;
 
         Ok(descriptor)
     }
@@ -648,12 +636,8 @@ impl SessionDriver for SessionContainerDriver {
 
         let exit_reason = SessionExitReason::ClosedByOwner;
 
-        self.emit_if_configured(
-            &id,
-            &package_id,
-            SessionPhaseRecord::Closed(exit_reason),
-        )
-        .await;
+        self.emit_if_configured(&id, &package_id, SessionPhaseRecord::Closed(exit_reason))
+            .await;
 
         Ok(SessionTerminationReceipt {
             session_id: id,
@@ -680,26 +664,24 @@ impl SessionDriver for SessionContainerDriver {
         }
 
         // If active or paused, verify via container inspect.
-        if entry.container_state == SessionContainerState::Active
-            || entry.container_state == SessionContainerState::Paused
+        if (entry.container_state == SessionContainerState::Active
+            || entry.container_state == SessionContainerState::Paused)
+            && self.runtime_binary_available().await
         {
-            if self.runtime_binary_available().await {
-                match self.inspect_container(&entry.container_name).await {
-                    Ok(oci_state) => {
-                        let observed =
-                            Self::oci_state_to_container_state(&oci_state);
-                        if observed != entry.container_state {
-                            debug!(
-                                "Container {id:?} state changed: {:?} -> {observed:?}",
-                                entry.container_state
-                            );
-                            entry.container_state = observed;
-                        }
+            match self.inspect_container(&entry.container_name).await {
+                Ok(oci_state) => {
+                    let observed = Self::oci_state_to_container_state(&oci_state);
+                    if observed != entry.container_state {
+                        debug!(
+                            "Container {id:?} state changed: {:?} -> {observed:?}",
+                            entry.container_state
+                        );
+                        entry.container_state = observed;
                     }
-                    Err(_) => {
-                        // Container likely gone.
-                        entry.container_state = SessionContainerState::Reclaimed;
-                    }
+                }
+                Err(_) => {
+                    // Container likely gone.
+                    entry.container_state = SessionContainerState::Reclaimed;
                 }
             }
         }
@@ -852,9 +834,7 @@ impl SessionContainerDriver {
             self.inspect_container(&entry.container_name),
         )
         .await
-        .map_err(|_| {
-            AppsError::SessionContainerError("health check timed out".into())
-        })??;
+        .map_err(|_| AppsError::SessionContainerError("health check timed out".into()))??;
 
         let observed = Self::oci_state_to_container_state(&oci_state);
         Ok(observed == entry.container_state)
@@ -1014,7 +994,7 @@ mod tests {
 
     #[test]
     fn session_lifecycle_fsm_idle_to_starting_to_active() {
-        let states = vec![
+        let states = [
             SessionContainerState::Idle,
             SessionContainerState::Starting,
             SessionContainerState::Active,
@@ -1027,7 +1007,7 @@ mod tests {
 
     #[test]
     fn session_lifecycle_fsm_active_to_paused_to_active() {
-        let states = vec![
+        let states = [
             SessionContainerState::Active,
             SessionContainerState::Paused,
             SessionContainerState::Active,
@@ -1147,8 +1127,7 @@ mod tests {
 
     #[test]
     fn gpu_device_config_stored() {
-        let config =
-            SessionContainerConfig::default().with_gpu_device("/dev/dri/renderD128");
+        let config = SessionContainerConfig::default().with_gpu_device("/dev/dri/renderD128");
         let driver = SessionContainerDriver::new(config);
         assert_eq!(
             driver.config().gpu_device.as_deref(),
@@ -1158,8 +1137,7 @@ mod tests {
 
     #[test]
     fn wayland_display_config_stored() {
-        let config =
-            SessionContainerConfig::default().with_wayland_display("wayland-1");
+        let config = SessionContainerConfig::default().with_wayland_display("wayland-1");
         let driver = SessionContainerDriver::new(config);
         assert_eq!(
             driver.config().wayland_display.as_deref(),
@@ -1285,12 +1263,14 @@ mod tests {
 
     #[test]
     fn build_run_args_includes_gpu_device_when_configured() {
-        let config =
-            SessionContainerConfig::default().with_gpu_device("/dev/dri/renderD128");
+        let config = SessionContainerConfig::default().with_gpu_device("/dev/dri/renderD128");
         let driver = SessionContainerDriver::new(config);
         let args = driver.build_run_args("test", 8080);
         let dev_idx = args.iter().position(|a| a == "--device");
-        assert!(dev_idx.is_some(), "--device flag missing with GPU configured");
+        assert!(
+            dev_idx.is_some(),
+            "--device flag missing with GPU configured"
+        );
         if let Some(idx) = dev_idx {
             assert_eq!(
                 args.get(idx + 1).map(String::as_str),
@@ -1305,19 +1285,19 @@ mod tests {
         let driver = SessionContainerDriver::new(config);
         let args = driver.build_run_args("test", 8080);
         let dev_idx = args.iter().position(|a| a == "--device");
-        assert!(dev_idx.is_none(), "--device flag present without GPU config");
+        assert!(
+            dev_idx.is_none(),
+            "--device flag present without GPU config"
+        );
     }
 
     #[test]
     fn build_run_args_includes_wayland_when_configured() {
-        let config =
-            SessionContainerConfig::default().with_wayland_display("wayland-0");
+        let config = SessionContainerConfig::default().with_wayland_display("wayland-0");
         let driver = SessionContainerDriver::new(config);
         let args = driver.build_run_args("test", 8080);
 
-        let env_idx = args
-            .iter()
-            .position(|a| a.starts_with("WAYLAND_DISPLAY="));
+        let env_idx = args.iter().position(|a| a.starts_with("WAYLAND_DISPLAY="));
         assert!(env_idx.is_some(), "WAYLAND_DISPLAY env missing");
 
         if let Some(idx) = env_idx {
@@ -1360,8 +1340,7 @@ mod tests {
 
     #[tokio::test]
     async fn quota_exceeded_returns_error() {
-        let config = SessionContainerConfig::default()
-            .with_max_sessions(0);
+        let config = SessionContainerConfig::default().with_max_sessions(0);
         let driver = SessionContainerDriver::new(config);
         let result = driver.open_session(test_open_request()).await;
         // Should fail either because runtime not found or quota (runtime check
@@ -1383,18 +1362,14 @@ mod tests {
     #[tokio::test]
     async fn close_nonexistent_session_returns_not_found() {
         let driver = SessionContainerDriver::new_with_defaults();
-        let result = driver
-            .close_session(SessionId("nonexistent".into()))
-            .await;
+        let result = driver.close_session(SessionId("nonexistent".into())).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn heartbeat_nonexistent_session_returns_not_found() {
         let driver = SessionContainerDriver::new_with_defaults();
-        let result = driver
-            .heartbeat(SessionId("nonexistent".into()))
-            .await;
+        let result = driver.heartbeat(SessionId("nonexistent".into())).await;
         assert!(result.is_err());
     }
 
@@ -1433,7 +1408,9 @@ mod tests {
     #[tokio::test]
     async fn resume_nonexistent_session_returns_error() {
         let driver = SessionContainerDriver::new_with_defaults();
-        let result = driver.resume_session(&SessionId("nonexistent".into())).await;
+        let result = driver
+            .resume_session(&SessionId("nonexistent".into()))
+            .await;
         assert!(result.is_err());
     }
 

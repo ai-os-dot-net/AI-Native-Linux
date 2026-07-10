@@ -213,9 +213,14 @@ impl RecoveryBoundary for InMemoryRecoveryBoundary {
         Ok(state.clone())
     }
 
-    async fn is_sub_recovery_active(&self, sub: RecoverySubBoundary) -> Result<bool, RecoveryError> {
+    async fn is_sub_recovery_active(
+        &self,
+        sub: RecoverySubBoundary,
+    ) -> Result<bool, RecoveryError> {
         let state = self.state.read().await;
-        let active = state.active_sub_boundaries.contains(&RecoverySubBoundary::SystemFull)
+        let active = state
+            .active_sub_boundaries
+            .contains(&RecoverySubBoundary::SystemFull)
             || state.active_sub_boundaries.contains(&sub);
         drop(state);
         Ok(active)

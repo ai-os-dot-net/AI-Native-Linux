@@ -136,7 +136,12 @@ impl WorkloadState {
     pub fn allowed_transitions(&self) -> &[WorkloadState] {
         match self {
             Self::Admitted => &[Self::Pending, Self::Terminated, Self::Blocked],
-            Self::Pending => &[Self::Running, Self::Degraded, Self::Terminated, Self::Blocked],
+            Self::Pending => &[
+                Self::Running,
+                Self::Degraded,
+                Self::Terminated,
+                Self::Blocked,
+            ],
             Self::Running => &[Self::Degraded, Self::Terminated],
             Self::Degraded => &[Self::Running, Self::Terminated],
             Self::Terminated => &[],
@@ -237,10 +242,13 @@ pub struct AdmissionRule {
     pub description: String,
     /// Evaluation function — receives the workload's passport and the active
     /// K8s profile, returns an [`AdmissionDecision`].
-    pub evaluate: Box<dyn Fn(&CloudNativePassport, K8sProfile) -> AdmissionDecision + Send + Sync>,
+    pub evaluate: Box<AdmissionEvaluator>,
     /// Lower numbers run first.
     pub priority: u8,
 }
+
+type AdmissionEvaluator =
+    dyn Fn(&CloudNativePassport, K8sProfile) -> AdmissionDecision + Send + Sync;
 
 impl std::fmt::Debug for AdmissionRule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -263,7 +271,8 @@ pub fn rule_digest_pin_required() -> AdmissionRule {
         description: "Reject non-digest-pinned images for profiles that mandate content-addressable references".into(),
         priority: 10,
         evaluate: Box::new(|passport, profile| {
-            let requires_pin = crate::profile_gates::requires_digest_pin(&profile_to_security_label(profile));
+            let requires_pin =
+                crate::profile_gates::requires_digest_pin(profile_to_security_label(profile));
             if requires_pin && passport.image_digests.is_empty() {
                 AdmissionDecision::Deny {
                     reason: "image must be digest-pinned (no tag-only references allowed)".into(),
@@ -305,7 +314,8 @@ pub fn rule_privileged_containers_blocked() -> AdmissionRule {
 pub fn rule_secrets_env_spray_blocked() -> AdmissionRule {
     AdmissionRule {
         name: "secrets_env_spray_blocked".into(),
-        description: "Block workloads attempting to spray secrets through environment variables".into(),
+        description: "Block workloads attempting to spray secrets through environment variables"
+            .into(),
         priority: 30,
         evaluate: Box::new(|passport, _profile| {
             // Heuristic: if the source contains `envFrom` or `secretKeyRef`,
@@ -340,13 +350,15 @@ pub fn rule_unsigned_images_warn_or_block() -> AdmissionRule {
 
             match profile {
                 K8sProfile::K8sDevLocal => AdmissionDecision::Warn {
-                    reason: "unsigned images are allowed in dev but should be signed before production".into(),
+                    reason:
+                        "unsigned images are allowed in dev but should be signed before production"
+                            .into(),
                 },
-                K8sProfile::K8sEdgeNode | K8sProfile::K8sWorkstationNode | K8sProfile::K8sServerCluster => {
-                    AdmissionDecision::Deny {
-                        reason: "unsigned images not permitted in production profiles".into(),
-                    }
-                }
+                K8sProfile::K8sEdgeNode
+                | K8sProfile::K8sWorkstationNode
+                | K8sProfile::K8sServerCluster => AdmissionDecision::Deny {
+                    reason: "unsigned images not permitted in production profiles".into(),
+                },
                 K8sProfile::K8sAirgapCluster => AdmissionDecision::Deny {
                     reason: "unsigned images not permitted in air-gapped environments".into(),
                 },
@@ -406,7 +418,9 @@ pub fn rule_gpu_isolation_required() -> AdmissionRule {
                 AdmissionDecision::Allow
             } else {
                 AdmissionDecision::Deny {
-                    reason: "GPU workloads require gVisor/Kata/FullVM isolation on GpuAiNode profile".into(),
+                    reason:
+                        "GPU workloads require gVisor/Kata/FullVM isolation on GpuAiNode profile"
+                            .into(),
                 }
             }
         }),
@@ -511,7 +525,10 @@ impl K8sOperator {
             profile,
             namespaces,
             workloads: HashMap::new(),
-            admission_controller: K8sAdmissionController::new("http://localhost:8443/validate", true),
+            admission_controller: K8sAdmissionController::new(
+                "http://localhost:8443/validate",
+                true,
+            ),
             evidence_emitter: None,
         }
     }
@@ -542,15 +559,13 @@ impl K8sOperator {
             return Err(K8sOperatorError::NamespaceNotFound(namespace.into()));
         }
 
-        let decision = self
-            .admission_controller
-            .evaluate(passport, self.profile);
+        let decision = self.admission_controller.evaluate(passport, self.profile);
 
         match &decision {
             AdmissionDecision::Deny { reason } => {
                 if let Some(ref emitter) = self.evidence_emitter {
                     emitter.emit_blocked(
-                        Ulid::from_string(&passport.passport_id.strip_prefix("cnp_").unwrap_or(""))
+                        Ulid::from_string(passport.passport_id.strip_prefix("cnp_").unwrap_or(""))
                             .unwrap_or_else(|_| Ulid::new()),
                         namespace,
                         reason,
@@ -563,7 +578,7 @@ impl K8sOperator {
             AdmissionDecision::Allow => {
                 if let Some(ref emitter) = self.evidence_emitter {
                     emitter.emit_admitted(
-                        Ulid::from_string(&passport.passport_id.strip_prefix("cnp_").unwrap_or(""))
+                        Ulid::from_string(passport.passport_id.strip_prefix("cnp_").unwrap_or(""))
                             .unwrap_or_else(|_| Ulid::new()),
                         namespace,
                     );
@@ -657,15 +672,16 @@ impl K8sOperator {
         let engine_str = serde_json::to_string(&engine)
             .map_err(|e| K8sOperatorError::InvalidManifest(e.to_string()))?;
 
-        let gpu_section = if self.profile == K8sProfile::K8sGpuAiNode && workload.resources.gpu_count > 0 {
-            format!(
-                r#"
+        let gpu_section =
+            if self.profile == K8sProfile::K8sGpuAiNode && workload.resources.gpu_count > 0 {
+                format!(
+                    r#"
         nvidia.com/gpu: "{}""#,
-                workload.resources.gpu_count
-            )
-        } else {
-            String::new()
-        };
+                    workload.resources.gpu_count
+                )
+            } else {
+                String::new()
+            };
 
         let manifest = format!(
             r#"---
@@ -760,10 +776,7 @@ spec:
             .revision_history
             .first()
             .ok_or_else(|| {
-                K8sOperatorError::RollbackFailed(
-                    workload_id,
-                    "previous revision missing".into(),
-                )
+                K8sOperatorError::RollbackFailed(workload_id, "previous revision missing".into())
             })?
             .clone();
 
@@ -779,10 +792,7 @@ spec:
     ///
     /// In a real operator this would query the K8s API; here we synthesize
     /// health based on the workload state.
-    pub fn health_check(
-        &self,
-        workload_id: Ulid,
-    ) -> Result<WorkloadHealth, K8sOperatorError> {
+    pub fn health_check(&self, workload_id: Ulid) -> Result<WorkloadHealth, K8sOperatorError> {
         let workload = self
             .workloads
             .get(&workload_id)
@@ -791,12 +801,13 @@ spec:
         let (ready_replicas, conditions) = match workload.state {
             WorkloadState::Running => (workload.replica_count, vec!["Ready".into()]),
             WorkloadState::Degraded => {
-                let ready = workload.replica_count.saturating_sub(1).max(0);
-                (ready, vec!["Degraded: replica count below threshold".into()])
+                let ready = workload.replica_count.saturating_sub(1);
+                (
+                    ready,
+                    vec!["Degraded: replica count below threshold".into()],
+                )
             }
-            WorkloadState::Admitted | WorkloadState::Pending => {
-                (0, vec!["Progressing".into()])
-            }
+            WorkloadState::Admitted | WorkloadState::Pending => (0, vec!["Progressing".into()]),
             WorkloadState::Terminated => (0, vec!["Terminated".into()]),
             WorkloadState::Blocked => (0, vec!["Blocked by admission policy".into()]),
         };
@@ -868,9 +879,9 @@ impl std::fmt::Debug for K8sOperator {
 pub fn profile_to_security_label(profile: K8sProfile) -> &'static str {
     match profile {
         K8sProfile::K8sDevLocal => "DEV_RELAXED",
-        K8sProfile::K8sEdgeNode
-        | K8sProfile::K8sWorkstationNode
-        | K8sProfile::K8sServerCluster => "STIG_ALIGNED",
+        K8sProfile::K8sEdgeNode | K8sProfile::K8sWorkstationNode | K8sProfile::K8sServerCluster => {
+            "STIG_ALIGNED"
+        }
         K8sProfile::K8sAirgapCluster => "AIRGAP_HIGH",
         K8sProfile::K8sGpuAiNode => "STIG_ALIGNED",
         K8sProfile::K8sRtEdgeNode => "AIRGAP_HIGH",
@@ -880,7 +891,13 @@ pub fn profile_to_security_label(profile: K8sProfile) -> &'static str {
 /// Sanitize a workload ID into a valid Kubernetes resource name.
 fn sanitize_k8s_name(raw: &str) -> String {
     raw.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim_matches('-')
         .to_lowercase()
@@ -923,7 +940,12 @@ mod tests {
 
     #[test]
     fn admit_workload_with_digest_pinned_image_accept() {
-        let passport = make_passport("wl-001", vec!["sha256:abc123"], false, ContainerAdmissionDecision::Admitted);
+        let passport = make_passport(
+            "wl-001",
+            vec!["sha256:abc123"],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
         let op = K8sOperator::new(K8sProfile::K8sServerCluster);
         let result = op.admit_workload(&passport, "default");
         assert!(result.is_ok());
@@ -932,12 +954,20 @@ mod tests {
 
     #[test]
     fn admit_workload_without_digest_reject_stig() {
-        let passport = make_passport("wl-002", vec![], false, ContainerAdmissionDecision::Admitted);
+        let passport = make_passport(
+            "wl-002",
+            vec![],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
         let op = K8sOperator::new(K8sProfile::K8sServerCluster);
         let result = op.admit_workload(&passport, "default");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("digest-pinned"), "expected digest error, got: {err}");
+        assert!(
+            err.contains("digest-pinned"),
+            "expected digest error, got: {err}"
+        );
     }
 
     #[test]
@@ -1036,20 +1066,44 @@ mod tests {
         let priorities: Vec<u8> = controller.rules.iter().map(|r| r.priority).collect();
         let mut sorted = priorities.clone();
         sorted.sort();
-        assert_eq!(priorities, sorted, "admission rules must be sorted by priority");
+        assert_eq!(
+            priorities, sorted,
+            "admission rules must be sorted by priority"
+        );
     }
 
     // -- K8sProfile → security label --------------------------------------
 
     #[test]
     fn profile_to_security_label_mapping() {
-        assert_eq!(profile_to_security_label(K8sProfile::K8sDevLocal), "DEV_RELAXED");
-        assert_eq!(profile_to_security_label(K8sProfile::K8sEdgeNode), "STIG_ALIGNED");
-        assert_eq!(profile_to_security_label(K8sProfile::K8sWorkstationNode), "STIG_ALIGNED");
-        assert_eq!(profile_to_security_label(K8sProfile::K8sServerCluster), "STIG_ALIGNED");
-        assert_eq!(profile_to_security_label(K8sProfile::K8sAirgapCluster), "AIRGAP_HIGH");
-        assert_eq!(profile_to_security_label(K8sProfile::K8sGpuAiNode), "STIG_ALIGNED");
-        assert_eq!(profile_to_security_label(K8sProfile::K8sRtEdgeNode), "AIRGAP_HIGH");
+        assert_eq!(
+            profile_to_security_label(K8sProfile::K8sDevLocal),
+            "DEV_RELAXED"
+        );
+        assert_eq!(
+            profile_to_security_label(K8sProfile::K8sEdgeNode),
+            "STIG_ALIGNED"
+        );
+        assert_eq!(
+            profile_to_security_label(K8sProfile::K8sWorkstationNode),
+            "STIG_ALIGNED"
+        );
+        assert_eq!(
+            profile_to_security_label(K8sProfile::K8sServerCluster),
+            "STIG_ALIGNED"
+        );
+        assert_eq!(
+            profile_to_security_label(K8sProfile::K8sAirgapCluster),
+            "AIRGAP_HIGH"
+        );
+        assert_eq!(
+            profile_to_security_label(K8sProfile::K8sGpuAiNode),
+            "STIG_ALIGNED"
+        );
+        assert_eq!(
+            profile_to_security_label(K8sProfile::K8sRtEdgeNode),
+            "AIRGAP_HIGH"
+        );
     }
 
     // -- K8sProfile selection → correct engine -----------------------------
@@ -1057,17 +1111,29 @@ mod tests {
     #[test]
     fn gpu_ai_node_defaults_to_containerd() {
         let op = K8sOperator::new(K8sProfile::K8sGpuAiNode);
-        let mut passport = make_passport("wl-eng", vec!["sha256:d1"], false, ContainerAdmissionDecision::Admitted);
+        let mut passport = make_passport(
+            "wl-eng",
+            vec!["sha256:d1"],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
         passport.isolation_level = IsolationLevel::GVisor;
         let mut op = op;
-        let wl = op.deploy_workload(passport, "default", K8sResourceRequest::default()).unwrap();
+        let wl = op
+            .deploy_workload(passport, "default", K8sResourceRequest::default())
+            .unwrap();
         let manifest = op.generate_manifest(&wl).unwrap();
         assert!(manifest.contains("CONTAINERD") || manifest.contains("containerd"));
     }
 
     #[test]
     fn dev_local_allows_unsigned_as_warn() {
-        let passport = make_passport("wl-dev", vec![], false, ContainerAdmissionDecision::Admitted);
+        let passport = make_passport(
+            "wl-dev",
+            vec![],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
         let op = K8sOperator::new(K8sProfile::K8sDevLocal);
         let result = op.admit_workload(&passport, "default");
         // DEV_RELAXED does not require digest pin, and unsigned rule returns Warn
@@ -1079,8 +1145,15 @@ mod tests {
     #[test]
     fn deploy_workload_succeeds_for_admitted_passport() {
         let mut op = K8sOperator::new(K8sProfile::K8sDevLocal);
-        let passport = make_passport("wl-deploy", vec!["sha256:d1"], false, ContainerAdmissionDecision::Admitted);
-        let wl = op.deploy_workload(passport, "default", K8sResourceRequest::default()).unwrap();
+        let passport = make_passport(
+            "wl-deploy",
+            vec!["sha256:d1"],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
+        let wl = op
+            .deploy_workload(passport, "default", K8sResourceRequest::default())
+            .unwrap();
         assert_eq!(wl.state, WorkloadState::Admitted);
         assert!(op.workloads.contains_key(&wl.workload_id));
     }
@@ -1088,7 +1161,12 @@ mod tests {
     #[test]
     fn deploy_workload_fails_for_blocked_passport() {
         let mut op = K8sOperator::new(K8sProfile::K8sAirgapCluster);
-        let passport = make_passport("wl-blocked", vec![], false, ContainerAdmissionDecision::Admitted);
+        let passport = make_passport(
+            "wl-blocked",
+            vec![],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
         let result = op.deploy_workload(passport, "default", K8sResourceRequest::default());
         assert!(result.is_err());
     }
@@ -1096,8 +1174,15 @@ mod tests {
     #[test]
     fn generate_manifest_produces_valid_yaml_structure() {
         let mut op = K8sOperator::new(K8sProfile::K8sServerCluster);
-        let passport = make_passport("wl-manifest", vec!["sha256:d1"], false, ContainerAdmissionDecision::Admitted);
-        let wl = op.deploy_workload(passport, "default", K8sResourceRequest::default()).unwrap();
+        let passport = make_passport(
+            "wl-manifest",
+            vec!["sha256:d1"],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
+        let wl = op
+            .deploy_workload(passport, "default", K8sResourceRequest::default())
+            .unwrap();
         let manifest = op.generate_manifest(&wl).unwrap();
 
         assert!(manifest.contains("apiVersion: apps/v1"));
@@ -1109,7 +1194,12 @@ mod tests {
     #[test]
     fn generate_manifest_for_gpu_profile_includes_gpu_resources() {
         let mut op = K8sOperator::new(K8sProfile::K8sGpuAiNode);
-        let mut passport = make_passport("wl-gpu-m", vec!["sha256:d1"], false, ContainerAdmissionDecision::Admitted);
+        let mut passport = make_passport(
+            "wl-gpu-m",
+            vec!["sha256:d1"],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
         passport.isolation_level = IsolationLevel::GVisor;
         let resources = K8sResourceRequest {
             cpu_millicores: 1000,
@@ -1118,7 +1208,10 @@ mod tests {
         };
         let wl = op.deploy_workload(passport, "default", resources).unwrap();
         let manifest = op.generate_manifest(&wl).unwrap();
-        assert!(manifest.contains("nvidia.com/gpu"), "GPU manifest should include nvidia.com/gpu");
+        assert!(
+            manifest.contains("nvidia.com/gpu"),
+            "GPU manifest should include nvidia.com/gpu"
+        );
     }
 
     // -- Rollback ----------------------------------------------------------
@@ -1126,14 +1219,26 @@ mod tests {
     #[test]
     fn rollback_workload_restores_previous_version() {
         let mut op = K8sOperator::new(K8sProfile::K8sDevLocal);
-        let p1 = make_passport("wl-rb", vec!["sha256:v1"], false, ContainerAdmissionDecision::Admitted);
-        let wl = op.deploy_workload(p1, "default", K8sResourceRequest::default()).unwrap();
+        let p1 = make_passport(
+            "wl-rb",
+            vec!["sha256:v1"],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
+        let wl = op
+            .deploy_workload(p1, "default", K8sResourceRequest::default())
+            .unwrap();
         let wid = wl.workload_id;
 
         // Simulate a revision push
         {
             let w = op.workloads.get_mut(&wid).unwrap();
-            let p2 = make_passport("wl-rb", vec!["sha256:v2"], false, ContainerAdmissionDecision::Admitted);
+            let p2 = make_passport(
+                "wl-rb",
+                vec!["sha256:v2"],
+                false,
+                ContainerAdmissionDecision::Admitted,
+            );
             w.revision_history.insert(
                 0,
                 K8sWorkloadRevision {
@@ -1150,17 +1255,30 @@ mod tests {
         }
 
         let restored = op.rollback_workload(wid).unwrap();
-        assert_eq!(restored.replica_count, 1, "rollback should restore original replica count");
+        assert_eq!(
+            restored.replica_count, 1,
+            "rollback should restore original replica count"
+        );
         assert_eq!(restored.state, WorkloadState::Admitted);
         let digests = &restored.passport.image_digests;
-        assert!(digests.iter().any(|d| d.contains("v1")), "rollback should restore v1 image");
+        assert!(
+            digests.iter().any(|d| d.contains("v1")),
+            "rollback should restore v1 image"
+        );
     }
 
     #[test]
     fn rollback_without_history_fails() {
         let mut op = K8sOperator::new(K8sProfile::K8sDevLocal);
-        let passport = make_passport("wl-nohist", vec!["sha256:v1"], false, ContainerAdmissionDecision::Admitted);
-        let wl = op.deploy_workload(passport, "default", K8sResourceRequest::default()).unwrap();
+        let passport = make_passport(
+            "wl-nohist",
+            vec!["sha256:v1"],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
+        let wl = op
+            .deploy_workload(passport, "default", K8sResourceRequest::default())
+            .unwrap();
         let result = op.rollback_workload(wl.workload_id);
         assert!(result.is_err());
     }
@@ -1170,8 +1288,15 @@ mod tests {
     #[test]
     fn health_check_running_workload() {
         let mut op = K8sOperator::new(K8sProfile::K8sDevLocal);
-        let passport = make_passport("wl-hc", vec!["sha256:d1"], false, ContainerAdmissionDecision::Admitted);
-        let wl = op.deploy_workload(passport, "default", K8sResourceRequest::default()).unwrap();
+        let passport = make_passport(
+            "wl-hc",
+            vec!["sha256:d1"],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
+        let wl = op
+            .deploy_workload(passport, "default", K8sResourceRequest::default())
+            .unwrap();
         let _ = op.set_workload_state(wl.workload_id, WorkloadState::Pending);
         let _ = op.set_workload_state(wl.workload_id, WorkloadState::Running);
 
@@ -1194,11 +1319,19 @@ mod tests {
     #[test]
     fn operator_rejects_invalid_state_transition() {
         let mut op = K8sOperator::new(K8sProfile::K8sDevLocal);
-        let passport = make_passport("wl-fsm", vec!["sha256:d1"], false, ContainerAdmissionDecision::Admitted);
-        let wl = op.deploy_workload(passport, "default", K8sResourceRequest::default()).unwrap();
+        let passport = make_passport(
+            "wl-fsm",
+            vec!["sha256:d1"],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
+        let wl = op
+            .deploy_workload(passport, "default", K8sResourceRequest::default())
+            .unwrap();
 
         // Terminated → Running is invalid
-        op.set_workload_state(wl.workload_id, WorkloadState::Terminated).unwrap();
+        op.set_workload_state(wl.workload_id, WorkloadState::Terminated)
+            .unwrap();
         let result = op.set_workload_state(wl.workload_id, WorkloadState::Running);
         assert!(result.is_err());
     }
@@ -1211,8 +1344,15 @@ mod tests {
         let ns = K8sNamespace::new("production");
         op.register_namespace(ns).unwrap();
 
-        let passport = make_passport("wl-ns", vec!["sha256:d1"], false, ContainerAdmissionDecision::Admitted);
-        let wl = op.deploy_workload(passport, "production", K8sResourceRequest::default()).unwrap();
+        let passport = make_passport(
+            "wl-ns",
+            vec!["sha256:d1"],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
+        let wl = op
+            .deploy_workload(passport, "production", K8sResourceRequest::default())
+            .unwrap();
         assert_eq!(wl.namespace, "production");
         assert_eq!(op.list_workloads_in_namespace("production").len(), 1);
     }
@@ -1220,7 +1360,12 @@ mod tests {
     #[test]
     fn admit_to_unknown_namespace_fails() {
         let op = K8sOperator::new(K8sProfile::K8sDevLocal);
-        let passport = make_passport("wl-unk", vec!["sha256:d1"], false, ContainerAdmissionDecision::Admitted);
+        let passport = make_passport(
+            "wl-unk",
+            vec!["sha256:d1"],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
         let result = op.admit_workload(&passport, "nonexistent");
         assert!(result.is_err());
     }
@@ -1230,7 +1375,12 @@ mod tests {
     #[test]
     fn airgap_cluster_blocks_unsigned() {
         let mut op = K8sOperator::new(K8sProfile::K8sAirgapCluster);
-        let passport = make_passport("wl-airgap", vec![], false, ContainerAdmissionDecision::Admitted);
+        let passport = make_passport(
+            "wl-airgap",
+            vec![],
+            false,
+            ContainerAdmissionDecision::Admitted,
+        );
         let result = op.deploy_workload(passport, "default", K8sResourceRequest::default());
         assert!(result.is_err());
     }

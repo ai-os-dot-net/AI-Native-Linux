@@ -66,21 +66,21 @@ pub mod mirror_blacklist;
 pub mod mirror_fetch;
 pub mod mirror_policy;
 pub mod package_kind;
+pub mod publisher_trust;
 pub mod repository;
 pub mod rollout;
 pub mod rotation;
 pub mod service;
 pub mod takedown;
-pub mod publisher_trust;
 pub mod trust;
 pub mod trust_chain;
 pub mod verifier;
 pub mod version;
 
 pub use airgap_store::{
-    AirgapAuditEvent, AirgapAuditLog, AirgapAuditLogEntry, AirgapInstallSource, AirgapPackage,
-    AirgapProfileGate, AirgapStoreBuilder, AirgapStoreManifest, AirgapStoreMedium,
-    AirgapUpdateSet, blocks_live_registry, requires_airgap_only,
+    blocks_live_registry, requires_airgap_only, AirgapAuditEvent, AirgapAuditLog,
+    AirgapAuditLogEntry, AirgapInstallSource, AirgapPackage, AirgapProfileGate, AirgapStoreBuilder,
+    AirgapStoreManifest, AirgapStoreMedium, AirgapUpdateSet,
 };
 pub use canonical::{content_hash, manifest_canonical_hash, signing_payload};
 pub use catalog::{PublisherCatalog, SigningKeyCatalog};
@@ -115,6 +115,10 @@ pub use mirror_blacklist::MirrorBlacklist;
 pub use mirror_fetch::{resolve_and_verify, MirrorByteSource, ResolvedBytes};
 pub use mirror_policy::{detect_resign_attempt, fetch_order, verify_mirror_bytes, MirrorEndpoint};
 pub use package_kind::{InstallScope, PackageKind};
+pub use publisher_trust::{
+    AuditEntry, PublisherAuditTrail, PublisherReputation, PublisherTrustPolicy, ReputationEngine,
+    ReputationEvent, SigningKeyRotation, TrustTier,
+};
 pub use repository::{RepositoryKind, UpdateChannel};
 pub use rollout::{
     auto_update_allowed, channel_widening_requires_approval, recovery_critical_requires_recovery,
@@ -126,10 +130,6 @@ pub use rotation::{
     RotationOutcome,
 };
 pub use takedown::TakedownReason;
-pub use publisher_trust::{
-    AuditEntry, PublisherAuditTrail, PublisherReputation, PublisherTrustPolicy, ReputationEngine,
-    ReputationEvent, SigningKeyRotation, TrustTier,
-};
 pub use trust::PublisherTrustLevel;
 pub use trust_chain::{
     canonical_depth, AiosRootKey, LinkSignature, PackageSigningKey, PublisherRoot, SignedPayload,

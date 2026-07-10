@@ -78,5 +78,6 @@ pub trait RecoveryBoundary: Send + Sync {
     /// Return `true` when `sub` is currently active — either directly or
     /// because [`RecoverySubBoundary::SystemFull`] is active (full recovery
     /// mode subsumes all sub-boundaries).
-    async fn is_sub_recovery_active(&self, sub: RecoverySubBoundary) -> Result<bool, RecoveryError>;
+    async fn is_sub_recovery_active(&self, sub: RecoverySubBoundary)
+        -> Result<bool, RecoveryError>;
 }

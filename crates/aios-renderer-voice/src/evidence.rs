@@ -62,11 +62,7 @@ pub struct VoiceEvidence {
 impl VoiceEvidence {
     /// Create a new evidence record with the minimum required fields.
     #[must_use]
-    pub fn new(
-        record_type: VoiceRecordType,
-        surface_id: String,
-        subject: String,
-    ) -> Self {
+    pub fn new(record_type: VoiceRecordType, surface_id: String, subject: String) -> Self {
         Self {
             record_type,
             surface_id,
@@ -162,7 +158,10 @@ mod tests {
         emitter.emit(evidence).await.expect("emit succeed");
         assert_eq!(emitter.len().await, 1);
         let records = emitter.records().await;
-        assert_eq!(records[0].record_type, VoiceRecordType::VoiceSurfaceRegistered);
+        assert_eq!(
+            records[0].record_type,
+            VoiceRecordType::VoiceSurfaceRegistered
+        );
     }
 
     #[tokio::test]
@@ -191,7 +190,10 @@ mod tests {
         emitter.emit(evidence).await.expect("emit succeed");
         assert_eq!(emitter.len().await, 1);
         let records = emitter.records().await;
-        assert_eq!(records[0].record_type, VoiceRecordType::VoiceApprovalConfirmed);
+        assert_eq!(
+            records[0].record_type,
+            VoiceRecordType::VoiceApprovalConfirmed
+        );
         assert_eq!(records[0].session_id, Some("vas_01HY".to_string()));
     }
 

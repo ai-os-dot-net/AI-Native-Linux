@@ -214,11 +214,7 @@ impl VoiceApprovalSession {
             _ => VoiceRecordType::VoiceApprovalStarted,
         };
 
-        let mut evidence = VoiceEvidence::new(
-            record_type,
-            self.surface_id.clone(),
-            String::new(),
-        );
+        let mut evidence = VoiceEvidence::new(record_type, self.surface_id.clone(), String::new());
         evidence.session_id = Some(self.session_id.clone());
         evidence.bound_action_id = Some(self.bound_action_request_id.clone());
         evidence.transcript = self.transcript.clone();

@@ -129,7 +129,14 @@ pub struct SbomComponent {
 
 impl SbomComponent {
     pub fn new(name: String, version: String, supplier: String, sha256: String) -> Self {
-        Self { name, version, supplier, sha256, license: None, purl: None }
+        Self {
+            name,
+            version,
+            supplier,
+            sha256,
+            license: None,
+            purl: None,
+        }
     }
 
     #[must_use]
@@ -163,7 +170,11 @@ pub struct SbomRelationship {
 
 impl SbomRelationship {
     pub fn new(from_bom_ref: String, to_bom_ref: String, kind: SbomRelationshipKind) -> Self {
-        Self { from_bom_ref, to_bom_ref, kind }
+        Self {
+            from_bom_ref,
+            to_bom_ref,
+            kind,
+        }
     }
 }
 
@@ -205,13 +216,20 @@ impl SbomDocument {
         }
     }
 
-    pub fn sign(&mut self, signature: Vec<u8>) { self.signature = Some(signature); }
-
-    pub fn verify_signature(&self, expected: &[u8]) -> bool {
-        match &self.signature { Some(sig) => sig == expected, None => false }
+    pub fn sign(&mut self, signature: Vec<u8>) {
+        self.signature = Some(signature);
     }
 
-    pub fn component_count(&self) -> usize { self.components.len() }
+    pub fn verify_signature(&self, expected: &[u8]) -> bool {
+        match &self.signature {
+            Some(sig) => sig == expected,
+            None => false,
+        }
+    }
+
+    pub fn component_count(&self) -> usize {
+        self.components.len()
+    }
 
     /// Returns `true` iff every component satisfies the S16.6 §4
     /// correlatability requirement (purl or hash present).
@@ -257,11 +275,7 @@ pub struct SlcaProvenanceAttestation {
 }
 
 impl SlcaProvenanceAttestation {
-    pub fn new(
-        builder_id: String,
-        build_type: String,
-        slsa_level: SlcaProvenanceLevel,
-    ) -> Self {
+    pub fn new(builder_id: String, build_type: String, slsa_level: SlcaProvenanceLevel) -> Self {
         Self {
             builder_id,
             build_type,
@@ -303,7 +317,7 @@ impl SlcaProvenanceAttestation {
     pub fn verify_output(&self, filename: &str, expected_hash: &str) -> bool {
         self.output_hashes
             .get(filename)
-            .map_or(false, |h| h == expected_hash)
+            .is_some_and(|h| h == expected_hash)
     }
 
     /// Verifies that a subject digest matches; returns `false` when the
@@ -312,7 +326,7 @@ impl SlcaProvenanceAttestation {
     pub fn verify_subject_digest(&self, artifact_path: &str, expected_digest: &str) -> bool {
         self.subject_digests
             .get(artifact_path)
-            .map_or(false, |d| d == expected_digest)
+            .is_some_and(|d| d == expected_digest)
     }
 }
 
@@ -334,7 +348,12 @@ pub struct SlsaProvenance {
 
 impl SlsaProvenance {
     pub fn new(builder_id: String, source_repo: String, build_command: String) -> Self {
-        Self { builder_id, source_repo, build_command, output_hashes: HashMap::new() }
+        Self {
+            builder_id,
+            source_repo,
+            build_command,
+            output_hashes: HashMap::new(),
+        }
     }
 
     pub fn add_output_hash(&mut self, filename: String, hash: String) {
@@ -348,7 +367,9 @@ impl SlsaProvenance {
 
     #[must_use]
     pub fn verify_output(&self, filename: &str, expected_hash: &str) -> bool {
-        self.output_hashes.get(filename).map_or(false, |h| h == expected_hash)
+        self.output_hashes
+            .get(filename)
+            .is_some_and(|h| h == expected_hash)
     }
 }
 
@@ -402,10 +423,14 @@ impl VexStatement {
     }
 
     #[must_use]
-    pub fn is_fixed(&self) -> bool { self.status == VexStatus::Fixed }
+    pub fn is_fixed(&self) -> bool {
+        self.status == VexStatus::Fixed
+    }
 
     #[must_use]
-    pub fn is_affected(&self) -> bool { self.status == VexStatus::Affected }
+    pub fn is_affected(&self) -> bool {
+        self.status == VexStatus::Affected
+    }
 
     /// Returns `true` when the VEX statement *may* relieve a CVE for gating:
     /// `NotAffected` with a non-empty justification, or `Fixed`.
@@ -563,16 +588,21 @@ mod tests {
 
     // ── retained tests from the original module ──
 
-    #[test] fn sbom_generation() {
-        let components = vec![
-            SbomComponent::new("libc".into(), "2.35".into(), "GNU".into(), "abc123".into()),
-        ];
+    #[test]
+    fn sbom_generation() {
+        let components = vec![SbomComponent::new(
+            "libc".into(),
+            "2.35".into(),
+            "GNU".into(),
+            "abc123".into(),
+        )];
         let doc = SbomDocument::new(components, SbomFormat::Spdx_2_3, 1000);
         assert_eq!(doc.component_count(), 1);
         assert_eq!(doc.format, SbomFormat::Spdx_2_3);
     }
 
-    #[test] fn sbom_signature_verification() {
+    #[test]
+    fn sbom_signature_verification() {
         let mut doc = SbomDocument::new(vec![], SbomFormat::Cyclonedx_1_6, 1000);
         assert!(!doc.verify_signature(b"sig"));
         doc.sign(b"sig".to_vec());
@@ -580,14 +610,15 @@ mod tests {
         assert!(!doc.verify_signature(b"wrong"));
     }
 
-    #[test] fn slsa_builder_verification() {
-        let provenance =
-            SlsaProvenance::new("github-actions".into(), "repo".into(), "make".into());
+    #[test]
+    fn slsa_builder_verification() {
+        let provenance = SlsaProvenance::new("github-actions".into(), "repo".into(), "make".into());
         assert!(provenance.verify_builder("github-actions"));
         assert!(!provenance.verify_builder("other"));
     }
 
-    #[test] fn slsa_output_hash_verification() {
+    #[test]
+    fn slsa_output_hash_verification() {
         let mut p = SlsaProvenance::new("b".into(), "r".into(), "c".into());
         p.add_output_hash("binary".into(), "hash123".into());
         assert!(p.verify_output("binary", "hash123"));
@@ -595,7 +626,8 @@ mod tests {
         assert!(!p.verify_output("missing", "hash"));
     }
 
-    #[test] fn vex_status_detection() {
+    #[test]
+    fn vex_status_detection() {
         let fixed = VexStatement::new(
             "CVE-2024-0001".into(),
             "libc".into(),
@@ -612,22 +644,17 @@ mod tests {
         assert!(!affected.is_fixed());
     }
 
-    #[test] fn sbom_multiple_components() {
+    #[test]
+    fn sbom_multiple_components() {
         let comps: Vec<_> = (0..3)
-            .map(|i| {
-                SbomComponent::new(
-                    format!("pkg{i}"),
-                    "1.0".into(),
-                    "test".into(),
-                    "h".into(),
-                )
-            })
+            .map(|i| SbomComponent::new(format!("pkg{i}"), "1.0".into(), "test".into(), "h".into()))
             .collect();
         let doc = SbomDocument::new(comps, SbomFormat::Spdx_2_3, 1000);
         assert_eq!(doc.component_count(), 3);
     }
 
-    #[test] fn sbom_format_enum() {
+    #[test]
+    fn sbom_format_enum() {
         assert_ne!(SbomFormat::Spdx_2_3, SbomFormat::Cyclonedx_1_6);
     }
 
@@ -656,8 +683,7 @@ mod tests {
             .with_purl("pkg:generic/a@1".into());
         assert!(with_purl.is_correlatable());
 
-        let uncorrelated =
-            SbomComponent::new("a".into(), "1".into(), "s".into(), String::new());
+        let uncorrelated = SbomComponent::new("a".into(), "1".into(), "s".into(), String::new());
         assert!(!uncorrelated.is_correlatable());
     }
 
@@ -684,16 +710,22 @@ mod tests {
 
     #[test]
     fn slca_provenance_attestation_new() {
-        let att =
-            SlcaProvenanceAttestation::new("gh".into(), "hermetic".into(), SlcaProvenanceLevel::Level3);
+        let att = SlcaProvenanceAttestation::new(
+            "gh".into(),
+            "hermetic".into(),
+            SlcaProvenanceLevel::Level3,
+        );
         assert!(att.verify_builder("gh"));
         assert!(!att.verify_builder("other"));
     }
 
     #[test]
     fn slca_provenance_attestation_subject_digest() {
-        let mut att =
-            SlcaProvenanceAttestation::new("gh".into(), "hermetic".into(), SlcaProvenanceLevel::Level3);
+        let mut att = SlcaProvenanceAttestation::new(
+            "gh".into(),
+            "hermetic".into(),
+            SlcaProvenanceLevel::Level3,
+        );
         att.add_subject_digest("binary".into(), "abc123".into());
         assert!(att.verify_subject_digest("binary", "abc123"));
         assert!(!att.verify_subject_digest("binary", "wrong"));
@@ -755,9 +787,12 @@ mod tests {
     fn sbom_generator_produces_valid_documents() {
         let gen = SbomGenerator::new("aios-builder".into());
 
-        let comps = vec![
-            SbomComponent::new("my-app".into(), "1.0".into(), "org".into(), "aaa".into()),
-        ];
+        let comps = vec![SbomComponent::new(
+            "my-app".into(),
+            "1.0".into(),
+            "org".into(),
+            "aaa".into(),
+        )];
         let sbom = gen
             .generate_sbom(comps, SbomFormat::Cyclonedx_1_5)
             .expect("non-empty component list must produce an SBOM");
@@ -778,12 +813,8 @@ mod tests {
             .expect("valid vuln id must produce a VEX statement");
         assert!(vex.relieves_cve());
 
-        let empty_vex = gen.generate_vex(
-            String::new(),
-            "app".into(),
-            VexStatus::Fixed,
-            String::new(),
-        );
+        let empty_vex =
+            gen.generate_vex(String::new(), "app".into(), VexStatus::Fixed, String::new());
         assert!(empty_vex.is_none());
     }
 

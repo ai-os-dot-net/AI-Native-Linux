@@ -70,12 +70,16 @@ mod tests {
 
     #[test]
     fn ebpf_is_not_ai_allowed() {
-        assert!(!is_ai_allowed_runtime(EcosystemRuntimeAdapter::RuntimeEbpfNative));
+        assert!(!is_ai_allowed_runtime(
+            EcosystemRuntimeAdapter::RuntimeEbpfNative
+        ));
     }
 
     #[test]
     fn wasm_is_ai_allowed() {
-        assert!(is_ai_allowed_runtime(EcosystemRuntimeAdapter::RuntimeWasmNative));
+        assert!(is_ai_allowed_runtime(
+            EcosystemRuntimeAdapter::RuntimeWasmNative
+        ));
     }
 
     #[test]
@@ -90,6 +94,8 @@ mod tests {
 
     #[test]
     fn python_native_is_ai_allowed() {
-        assert!(is_ai_allowed_runtime(EcosystemRuntimeAdapter::RuntimePythonNative));
+        assert!(is_ai_allowed_runtime(
+            EcosystemRuntimeAdapter::RuntimePythonNative
+        ));
     }
 }

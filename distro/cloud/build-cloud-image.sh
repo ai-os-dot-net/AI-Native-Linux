@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # =============================================================================
-# AI-OS.NET Cloud Image Builder — Revision 7
+# AI-OS.NET Cloud Image Builder — Revision 11
 # =============================================================================
 # Builds cloud images (AWS AMI, GCP image, Azure VHD, OCI qcow2) from a shared
 # AIOS rootfs. Integrates with cloud-init for fleet auto-enrollment and
@@ -25,9 +25,9 @@ set -euo pipefail
 #                          [--dry-run] [--no-compress] [--help]
 #
 # Output:
-#   <output-dir>/aios-rev7-<cloud>-<profile>-<date>.<format>
-#   <output-dir>/aios-rev7-<cloud>-<profile>-<date>.manifest
-#   <output-dir>/aios-rev7-<cloud>-<profile>-<date>.sha256
+#   <output-dir>/aios-rev11-<cloud>-<profile>-<date>.<format>
+#   <output-dir>/aios-rev11-<cloud>-<profile>-<date>.manifest
+#   <output-dir>/aios-rev11-<cloud>-<profile>-<date>.sha256
 # =============================================================================
 
 # ── Project paths ────────────────────────────────────────────────────────────
@@ -54,6 +54,7 @@ DRY_RUN=false
 NO_COMPRESS=false
 DISK_SIZE_GB="${DISK_SIZE_GB:-10}"
 ROOTFS_SOURCE="${ROOTFS_SOURCE:-}"
+ALLOW_SCAFFOLD_ROOTFS="${AIOS_ALLOW_SCAFFOLD_ROOTFS:-0}"
 
 # ── Color output ─────────────────────────────────────────────────────────────
 
@@ -74,7 +75,7 @@ die()   { err "$*"; exit 1; }
 banner() {
     printf "\n${BOLD}${BLUE}"
     printf "╔══════════════════════════════════════════════════════════╗\n"
-    printf "║   AI-OS.NET Cloud Image Builder — Revision 7             ║\n"
+    printf "║   AI-OS.NET Cloud Image Builder — Revision 11            ║\n"
     printf "║   Version: %-10s  Profile: %-8s              ║\n" "${AIOS_VERSION}" "${PROFILE}"
     printf "║   Cloud:   %-10s  Format:  %-8s              ║\n" "${CLOUD}" "${FORMAT}"
     printf "║   Output:  %-40s  ║\n" "${OUTPUT_DIR}"
@@ -94,6 +95,7 @@ usage() {
     printf "  --build-id ID        Build identifier\n"
     printf "  --disk-size GB       Disk image size in GB (default: 10)\n"
     printf "  --rootfs PATH        Path to pre-built rootfs directory (skips rootfs build)\n"
+    printf "  AIOS_ALLOW_SCAFFOLD_ROOTFS=1 allows a non-bootable scaffold rootfs.\n"
     printf "  --dry-run            Print actions without executing\n"
     printf "  --no-compress        Skip image compression\n"
     printf "  --help, -h           Show this help\n"
@@ -138,7 +140,7 @@ if [ -z "${OUTPUT_DIR}" ]; then
     die "--output-dir is required"
 fi
 
-IMAGE_NAME="aios-rev7-${CLOUD}-${PROFILE}-${DATE_STAMP}"
+IMAGE_NAME="aios-rev11-${CLOUD}-${PROFILE}-${DATE_STAMP}"
 DISK_IMAGE="${OUTPUT_DIR}/${IMAGE_NAME}.${FORMAT}"
 WORK_DIR="${OUTPUT_DIR}/.work-${IMAGE_NAME}"
 ROOTFS_DIR="${WORK_DIR}/rootfs"
@@ -159,10 +161,12 @@ main() {
     }
     check_dep sha256sum "coreutils"
     check_dep tar        "tar"
+    check_dep rsync      "rsync"
     check_dep gzip       "gzip"
     check_dep xz         "xz-utils"
     check_dep dd         "coreutils"
     check_dep losetup    "mount"
+    check_dep mkfs.vfat  "dosfstools"
     check_dep mkfs.ext4  "e2fsprogs"
     check_dep sfdisk     "util-linux"
     check_dep qemu-img   "qemu-utils"
@@ -201,15 +205,19 @@ main() {
     step "Phase 2: Preparing base rootfs"
     mkdir -p "${WORK_DIR}" "${ROOTFS_DIR}" "${OUTPUT_DIR}"
 
-    if [ -n "${ROOTFS_SOURCE}" ] && [ -d "${ROOTFS_SOURCE}" ]; then
+    if [ -n "${ROOTFS_SOURCE}" ]; then
+        if [ ! -d "${ROOTFS_SOURCE}" ]; then
+            die "Rootfs source does not exist or is not a directory: ${ROOTFS_SOURCE}"
+        fi
         info "Copying rootfs from: ${ROOTFS_SOURCE}"
         rsync -a "${ROOTFS_SOURCE}/" "${ROOTFS_DIR}/"
+    elif [ "${ALLOW_SCAFFOLD_ROOTFS}" = "1" ]; then
+        warn "No --rootfs provided; creating non-bootable scaffold cloud rootfs."
     else
-        info "Building rootfs from project source..."
-        if [ -x "${BUILD_DIR}/build-aios-iso.sh" ]; then
-            ROOTFS_ONLY=true "${BUILD_DIR}/build-aios-iso.sh" --output "${OUTPUT_DIR}/aios-rev4.iso" || \
-                warn "build-aios-iso.sh failed; continuing with empty rootfs."
-        fi
+        die "Cloud image build requires --rootfs PATH (or AIOS_ALLOW_SCAFFOLD_ROOTFS=1 for packaging tests)."
+    fi
+
+    if [ -z "${ROOTFS_SOURCE}" ]; then
         mkdir -p "${ROOTFS_DIR}"/usr/{bin,lib/aios,share/aios}
         mkdir -p "${ROOTFS_DIR}"/etc/{aios/config.d,selinux/aios/policy,systemd/system,ssl/certs}
         mkdir -p "${ROOTFS_DIR}"/var/{lib/aios/{evidence,policy,capsules,backup,state},log/aios,cache/aios,tmp}
@@ -431,7 +439,7 @@ LOADEREOF
 
     mkdir -p "${ROOT_MOUNT}/boot/loader/entries"
     cat > "${ROOT_MOUNT}/boot/loader/entries/aios.conf" <<LOADEREOF
-title   AI-OS.NET (Revision 7)
+title   AI-OS.NET (Revision 11)
 linux   /vmlinuz-aios
 initrd  /initramfs-aios.img
 options root=LABEL=aios-root ro quiet loglevel=3
@@ -474,7 +482,7 @@ LOADEREOF
     step "Phase 10: Generating checksums and manifest"
 
     CHECKSUM_FILE="${OUTPUT_DIR}/${IMAGE_NAME}.sha256"
-    sha256sum "$(basename "${DISK_IMAGE}")" > "${CHECKSUM_FILE}" || \
+    ( cd "$(dirname "${DISK_IMAGE}")" && sha256sum "$(basename "${DISK_IMAGE}")" ) > "${CHECKSUM_FILE}" || \
         warn "Could not generate checksum file."
     ok "Checksums: ${CHECKSUM_FILE}"
 

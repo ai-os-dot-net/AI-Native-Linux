@@ -14,8 +14,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-pub use crate::self_healing::ComponentIsolationLevel;
 use crate::self_healing::ComponentHealthState;
+pub use crate::self_healing::ComponentIsolationLevel;
 
 // ---------------------------------------------------------------------------
 // Registry entry

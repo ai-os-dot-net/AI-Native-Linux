@@ -572,8 +572,7 @@ impl RecipeRegistry {
         self.recipes
             .values()
             .filter(|r| {
-                r.name.to_lowercase().contains(&q)
-                    || r.description.to_lowercase().contains(&q)
+                r.name.to_lowercase().contains(&q) || r.description.to_lowercase().contains(&q)
             })
             .collect()
     }
@@ -1095,7 +1094,10 @@ mod tests {
         let id = recipe_id();
         reg.submit_recipe(make_recipe(id.clone(), "gimp"))
             .expect("submit");
-        assert_eq!(reg.get_recipe_state(&id).expect("state"), RecipeState::Proposed);
+        assert_eq!(
+            reg.get_recipe_state(&id).expect("state"),
+            RecipeState::Proposed
+        );
 
         // Review
         reg.review_recipe(&id, "r1", ReviewVerdict::Approve, "good")

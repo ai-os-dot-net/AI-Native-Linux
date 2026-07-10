@@ -83,7 +83,11 @@ pub struct RemoteComponentHealth {
 impl RemoteComponentHealth {
     /// Create a new health snapshot for a component.
     #[must_use]
-    pub fn new(component_id: impl Into<String>, host_id: impl Into<String>, state: HealthState) -> Self {
+    pub fn new(
+        component_id: impl Into<String>,
+        host_id: impl Into<String>,
+        state: HealthState,
+    ) -> Self {
         Self {
             component_id: component_id.into(),
             host_id: host_id.into(),
@@ -188,11 +192,7 @@ impl CrossMachineHealing {
         }
 
         let total = self.remote_hosts.len();
-        let reachable = self
-            .remote_hosts
-            .iter()
-            .filter(|h| h.is_reachable)
-            .count();
+        let reachable = self.remote_hosts.iter().filter(|h| h.is_reachable).count();
 
         let has_failed = self.remote_hosts.iter().any(|h| {
             h.component_health
@@ -226,8 +226,7 @@ impl CrossMachineHealing {
         if self.remote_hosts.iter().any(|h| h.host_id == host_id) {
             return;
         }
-        self.remote_hosts
-            .push(RemoteHost::new(host_id, "default"));
+        self.remote_hosts.push(RemoteHost::new(host_id, "default"));
     }
 
     /// Remove a host from the fleet registry by id.
@@ -317,9 +316,7 @@ impl CrossMachineHealing {
                     .remote_hosts
                     .iter()
                     .find(|h| {
-                        h.host_id != host_id
-                            && h.is_reachable
-                            && h.cluster_id == host.cluster_id
+                        h.host_id != host_id && h.is_reachable && h.cluster_id == host.cluster_id
                     })
                     .map(|h| h.host_id.clone());
 
@@ -362,10 +359,7 @@ impl CrossMachineHealing {
             .collect();
 
         if degraded_hosts.len() >= CASCADE_THRESHOLD {
-            degraded_hosts
-                .iter()
-                .map(|h| h.host_id.clone())
-                .collect()
+            degraded_hosts.iter().map(|h| h.host_id.clone()).collect()
         } else {
             Vec::new()
         }
@@ -572,8 +566,10 @@ mod tests {
 
         // h2 is healthy and reachable
         let h2 = ch.find_host_mut("h2").unwrap();
-        h2.component_health
-            .insert("kernel".to_owned(), make_health("kernel", "h2", HealthState::Healthy, 0, 0));
+        h2.component_health.insert(
+            "kernel".to_owned(),
+            make_health("kernel", "h2", HealthState::Healthy, 0, 0),
+        );
 
         let health = make_health("kernel", "h1", HealthState::Failed, 0, 0);
         ch.observe_remote_health("h1", health).unwrap();
@@ -676,11 +672,17 @@ mod tests {
         ch.observe_remote_health("h1", make_health("kernel", "h1", HealthState::Failed, 1, 0))
             .unwrap();
         // h2 has a degraded component
-        ch.observe_remote_health("h2", make_health("gateway", "h2", HealthState::Degraded, 2, 1))
-            .unwrap();
+        ch.observe_remote_health(
+            "h2",
+            make_health("gateway", "h2", HealthState::Degraded, 2, 1),
+        )
+        .unwrap();
         // h3 is healthy
-        ch.observe_remote_health("h3", make_health("kernel", "h3", HealthState::Healthy, 0, 0))
-            .unwrap();
+        ch.observe_remote_health(
+            "h3",
+            make_health("kernel", "h3", HealthState::Healthy, 0, 0),
+        )
+        .unwrap();
 
         let isolated = ch.cascading_failure_check();
         assert_eq!(isolated.len(), 2);
@@ -696,10 +698,16 @@ mod tests {
         ch.register_host("h1");
         ch.register_host("h2");
 
-        ch.observe_remote_health("h1", make_health("kernel", "h1", HealthState::Degraded, 1, 0))
-            .unwrap();
-        ch.observe_remote_health("h2", make_health("kernel", "h2", HealthState::Healthy, 0, 0))
-            .unwrap();
+        ch.observe_remote_health(
+            "h1",
+            make_health("kernel", "h1", HealthState::Degraded, 1, 0),
+        )
+        .unwrap();
+        ch.observe_remote_health(
+            "h2",
+            make_health("kernel", "h2", HealthState::Healthy, 0, 0),
+        )
+        .unwrap();
 
         let isolated = ch.cascading_failure_check();
         assert!(isolated.is_empty());
@@ -714,12 +722,21 @@ mod tests {
         ch.register_host("h2");
         ch.register_host("h3");
 
-        ch.observe_remote_health("h1", make_health("kernel", "h1", HealthState::Healthy, 0, 0))
-            .unwrap();
-        ch.observe_remote_health("h2", make_health("kernel", "h2", HealthState::Healthy, 0, 0))
-            .unwrap();
-        ch.observe_remote_health("h3", make_health("kernel", "h3", HealthState::Healthy, 0, 0))
-            .unwrap();
+        ch.observe_remote_health(
+            "h1",
+            make_health("kernel", "h1", HealthState::Healthy, 0, 0),
+        )
+        .unwrap();
+        ch.observe_remote_health(
+            "h2",
+            make_health("kernel", "h2", HealthState::Healthy, 0, 0),
+        )
+        .unwrap();
+        ch.observe_remote_health(
+            "h3",
+            make_health("kernel", "h3", HealthState::Healthy, 0, 0),
+        )
+        .unwrap();
 
         let isolated = ch.cascading_failure_check();
         assert!(isolated.is_empty());
@@ -756,8 +773,11 @@ mod tests {
             .unwrap();
 
         // Then observe as healthy
-        ch.observe_remote_health("h1", make_health("kernel", "h1", HealthState::Healthy, 0, 0))
-            .unwrap();
+        ch.observe_remote_health(
+            "h1",
+            make_health("kernel", "h1", HealthState::Healthy, 0, 0),
+        )
+        .unwrap();
 
         let comp = ch
             .find_host("h1")

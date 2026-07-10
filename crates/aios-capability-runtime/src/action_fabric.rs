@@ -270,14 +270,8 @@ impl ActionFabric {
         let typed = intent.translate(&self.catalog);
 
         let mut evidence = Vec::with_capacity(2);
-        evidence.push(format!(
-            "action_fabric:translated:{}",
-            typed.action_kind
-        ));
-        evidence.push(format!(
-            "action_fabric:dispatched:{}",
-            typed.action_id
-        ));
+        evidence.push(format!("action_fabric:translated:{}", typed.action_kind));
+        evidence.push(format!("action_fabric:dispatched:{}", typed.action_id));
 
         let result = FabricResult::new(
             typed.action_id.clone(),
@@ -323,8 +317,7 @@ mod tests {
         catalog.register("service.restart", "system.service.restart");
         catalog.register("filesystem.mount", "storage.mount");
 
-        let intent =
-            ActionIntent::new("restart the nginx service", "service.restart", 0.95);
+        let intent = ActionIntent::new("restart the nginx service", "service.restart", 0.95);
 
         let typed = intent.translate(&catalog);
 
@@ -341,8 +334,7 @@ mod tests {
     #[test]
     fn intent_translation_passthrough_for_unknown_capability() {
         let catalog = CapabilityCatalog::new();
-        let intent =
-            ActionIntent::new("archive old logs", "maintenance.archive_logs", 0.80);
+        let intent = ActionIntent::new("archive old logs", "maintenance.archive_logs", 0.80);
 
         let typed = intent.translate(&catalog);
 
@@ -494,11 +486,7 @@ mod tests {
             "container.list",
             0.85,
         ));
-        let r2 = fabric.process(ActionIntent::new(
-            "show disk usage",
-            "disk.usage",
-            0.70,
-        ));
+        let r2 = fabric.process(ActionIntent::new("show disk usage", "disk.usage", 0.70));
 
         assert_eq!(fabric.result_count(), 2);
         assert_ne!(r1.action_id, r2.action_id);

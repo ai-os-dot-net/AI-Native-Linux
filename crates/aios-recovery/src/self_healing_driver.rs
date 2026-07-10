@@ -22,9 +22,8 @@ use crate::ipc::{HealCommand, HealCommandResponse};
 use crate::mode::RecoveryMode;
 use crate::registry::ComponentRegistry;
 use crate::self_healing::{
-    ComponentHealingTracker, ComponentHealthState, ComponentIsolationLevel,
-    ComponentSnapshot, HealAction, HealActionKind, PanicContext, RestartBoundary,
-    SelfHealingPolicy,
+    ComponentHealingTracker, ComponentHealthState, ComponentIsolationLevel, ComponentSnapshot,
+    HealAction, HealActionKind, PanicContext, RestartBoundary, SelfHealingPolicy,
 };
 use crate::watchdog::{WatchdogPolicy, WatchdogTimer};
 use crate::{RecoveryError, RecoveryMutableScope, RecoverySubBoundary};
@@ -72,7 +71,8 @@ pub trait SelfHealingDriver: Send + Sync {
     ///
     /// Returns [`RecoveryError`] when recovery is not active, the required
     /// scope grant is missing, or evidence emission fails.
-    async fn execute_heal(&self, action: &HealAction) -> Result<HealExecutionResult, RecoveryError>;
+    async fn execute_heal(&self, action: &HealAction)
+        -> Result<HealExecutionResult, RecoveryError>;
 
     /// Run one full observe → evaluate → execute cycle for all components.
     ///
@@ -117,7 +117,10 @@ pub struct HealCycleResult {
 // ---------------------------------------------------------------------------
 
 /// Internal envelope alias used by the command-channel machinery.
-type CommandEnvelope = (HealCommand, tokio::sync::oneshot::Sender<HealCommandResponse>);
+type CommandEnvelope = (
+    HealCommand,
+    tokio::sync::oneshot::Sender<HealCommandResponse>,
+);
 
 /// In-process self-healing driver backed by `HashMap`s and an optional emitter.
 pub struct InMemorySelfHealingDriver {
@@ -515,8 +518,7 @@ impl SelfHealingDriver for InMemorySelfHealingDriver {
         } else {
             Ok(format!(
                 "panic-{}-{}",
-                ctx.component_id,
-                ctx.consecutive_panics
+                ctx.component_id, ctx.consecutive_panics
             ))
         }
     }
@@ -630,7 +632,10 @@ impl SelfHealingDriver for InMemorySelfHealingDriver {
         Ok(actions)
     }
 
-    async fn execute_heal(&self, action: &HealAction) -> Result<HealExecutionResult, RecoveryError> {
+    async fn execute_heal(
+        &self,
+        action: &HealAction,
+    ) -> Result<HealExecutionResult, RecoveryError> {
         // INV-012 guard: map the action's required scope to its narrowest
         // sub-boundary and verify it is active.  Falls back to the traditional
         // is_recovery_active() check for backward compatibility when no
@@ -787,8 +792,10 @@ async fn emit_healing_action(
     };
     // Use RECOVERY_OPERATION_PERFORMED as the closest S3.1 record type for
     // autonomous healing actions.  A future vocabulary may add HEALING_ATTEMPTED.
-    emitter.emit(RecordType::RecoveryOperationPerformed, &payload, None).await
-    }
+    emitter
+        .emit(RecordType::RecoveryOperationPerformed, &payload, None)
+        .await
+}
 
 /// Emit a structured panic evidence record.
 ///

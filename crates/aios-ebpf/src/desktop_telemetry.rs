@@ -125,9 +125,7 @@ impl DesktopEventBuffer {
                 event.evidence_grade == EbpfEvidenceGrade::Suspicious
                     || event.evidence_grade == EbpfEvidenceGrade::Blocked
             }
-            EbpfEvidenceGrade::Blocked => {
-                event.evidence_grade == EbpfEvidenceGrade::Blocked
-            }
+            EbpfEvidenceGrade::Blocked => event.evidence_grade == EbpfEvidenceGrade::Blocked,
         }
     }
 }
@@ -209,6 +207,12 @@ impl DesktopTelemetryCollector {
             collection_task: Mutex::new(None),
             active: Mutex::new(false),
         }
+    }
+
+    /// Return the configured ring buffer capacity.
+    #[must_use]
+    pub const fn ring_buffer_capacity(&self) -> usize {
+        self.ring_buffer_capacity
     }
 
     /// Attach a program from the registry for telemetry collection.
@@ -399,7 +403,11 @@ impl DesktopTelemetryCollector {
     /// - Capability use → `Suspicious` unless from known system services.
     /// - Everything else → `AuditOnly`.
     #[must_use]
-    pub fn classify_event(event_class: DesktopEventClass, _detail: &str, _subject_comm: &str) -> EbpfEvidenceGrade {
+    pub fn classify_event(
+        event_class: DesktopEventClass,
+        _detail: &str,
+        _subject_comm: &str,
+    ) -> EbpfEvidenceGrade {
         match event_class {
             DesktopEventClass::SelinuxAvc => EbpfEvidenceGrade::Blocked,
             DesktopEventClass::ProcessExec => EbpfEvidenceGrade::Suspicious,
@@ -452,9 +460,7 @@ mod tests {
         Arc::new(EbpfProgramRegistry::new(capacity))
     }
 
-    fn push_program_to_running(
-        registry: &Arc<EbpfProgramRegistry>,
-    ) -> ProgramId {
+    fn push_program_to_running(registry: &Arc<EbpfProgramRegistry>) -> ProgramId {
         let hash: crate::desktop_event::Hash = [0xab; 32];
         let desc = EbpfProgramDescriptor::new(
             crate::enums::EbpfProgramType::DesktopSession,
@@ -556,51 +562,32 @@ mod tests {
     async fn telemetry_start_generates_unique_id() {
         let registry = make_shared_registry(8);
         let e1 = InMemoryEbpfEvidenceEmitter::new_shared();
-        let c1 = DesktopTelemetryCollector::with_evidence_emitter(
-            registry.clone(),
-            100,
-            16,
-            e1,
-        );
+        let c1 = DesktopTelemetryCollector::with_evidence_emitter(registry.clone(), 100, 16, e1);
 
         let e2 = InMemoryEbpfEvidenceEmitter::new_shared();
-        let c2 = DesktopTelemetryCollector::with_evidence_emitter(
-            registry.clone(),
-            100,
-            16,
-            e2,
-        );
+        let c2 = DesktopTelemetryCollector::with_evidence_emitter(registry.clone(), 100, 16, e2);
 
         assert_ne!(c1.collector_id, c2.collector_id);
     }
 
     #[test]
     fn classify_event_selinux_avc_is_blocked() {
-        let grade = DesktopTelemetryCollector::classify_event(
-            DesktopEventClass::SelinuxAvc,
-            "",
-            "",
-        );
+        let grade =
+            DesktopTelemetryCollector::classify_event(DesktopEventClass::SelinuxAvc, "", "");
         assert_eq!(grade, EbpfEvidenceGrade::Blocked);
     }
 
     #[test]
     fn classify_event_process_exec_is_suspicious() {
-        let grade = DesktopTelemetryCollector::classify_event(
-            DesktopEventClass::ProcessExec,
-            "",
-            "",
-        );
+        let grade =
+            DesktopTelemetryCollector::classify_event(DesktopEventClass::ProcessExec, "", "");
         assert_eq!(grade, EbpfEvidenceGrade::Suspicious);
     }
 
     #[test]
     fn classify_event_process_exit_is_audit_only() {
-        let grade = DesktopTelemetryCollector::classify_event(
-            DesktopEventClass::ProcessExit,
-            "",
-            "",
-        );
+        let grade =
+            DesktopTelemetryCollector::classify_event(DesktopEventClass::ProcessExit, "", "");
         assert_eq!(grade, EbpfEvidenceGrade::AuditOnly);
     }
 

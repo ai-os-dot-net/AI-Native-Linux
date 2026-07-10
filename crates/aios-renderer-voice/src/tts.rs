@@ -105,11 +105,9 @@ impl TtsAdapter {
     /// and [`VoiceRendererError::TtsUnsupportedProvider`] for unknown providers.
     pub async fn synthesize(&self, _request: &TtsRequest) -> Result<TtsResult, VoiceRendererError> {
         match self {
-            Self::ElevenLabsVaultBrokered => {
-                Err(VoiceRendererError::TtsSynthesisFailed(
-                    "ElevenLabs Vault Broker route not yet integrated (stub)".to_string(),
-                ))
-            }
+            Self::ElevenLabsVaultBrokered => Err(VoiceRendererError::TtsSynthesisFailed(
+                "ElevenLabs Vault Broker route not yet integrated (stub)".to_string(),
+            )),
             _ => Err(VoiceRendererError::TtsSynthesisFailed(
                 "TTS engine not integrated (stub)".to_string(),
             )),

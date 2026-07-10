@@ -66,9 +66,7 @@ pub fn validate_data_path(data_path: &PathBuf) -> Result<(), WaydroidError> {
     if !data_path.starts_with(&allowed_base) {
         return Err(WaydroidError::container_init_failed(
             "unknown",
-            format!(
-                "data path {data_path:?} is outside allowed waydroid root {allowed_base:?}"
-            ),
+            format!("data path {data_path:?} is outside allowed waydroid root {allowed_base:?}"),
         ));
     }
     Ok(())
@@ -117,16 +115,14 @@ mod tests {
     #[test]
     fn sandbox_profile_denies_network_by_default() {
         let data_path = PathBuf::from("/var/lib/aios/waydroid/caps_01ABCDEF/");
-        let profile =
-            generate_waydroid_sandbox_profile("caps_01ABCDEF", &data_path, false);
+        let profile = generate_waydroid_sandbox_profile("caps_01ABCDEF", &data_path, false);
         assert_eq!(profile.network_posture, NetworkPosture::DenyAll);
     }
 
     #[test]
     fn sandbox_profile_allows_network_when_requested() {
         let data_path = PathBuf::from("/var/lib/aios/waydroid/caps_01ABCDEF/");
-        let profile =
-            generate_waydroid_sandbox_profile("caps_01ABCDEF", &data_path, true);
+        let profile = generate_waydroid_sandbox_profile("caps_01ABCDEF", &data_path, true);
         assert_eq!(profile.network_posture, NetworkPosture::Full);
     }
 
@@ -159,8 +155,7 @@ mod tests {
     #[test]
     fn sandbox_profile_name_includes_capsule_id() {
         let data_path = PathBuf::from("/var/lib/aios/waydroid/caps_XYZ/");
-        let profile =
-            generate_waydroid_sandbox_profile("caps_XYZ", &data_path, false);
+        let profile = generate_waydroid_sandbox_profile("caps_XYZ", &data_path, false);
         assert!(profile.name.contains("caps_XYZ"));
     }
 

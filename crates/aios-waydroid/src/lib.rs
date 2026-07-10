@@ -42,7 +42,6 @@ pub use gpu::{
     waydroid_gpu_env_vars, WaydroidGpuConfig,
 };
 pub use sandbox_profile::{
-    allow_binder_socket, allow_waydroid_network, allow_waydroid_system_paths,
-    deny_proc_sys_access, deny_waydroid_network, generate_waydroid_sandbox_profile,
-    validate_data_path,
+    allow_binder_socket, allow_waydroid_network, allow_waydroid_system_paths, deny_proc_sys_access,
+    deny_waydroid_network, generate_waydroid_sandbox_profile, validate_data_path,
 };

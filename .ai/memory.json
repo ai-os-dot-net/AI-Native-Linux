@@ -1,9 +1,9 @@
 {
   "project_goal": "AIOS — AI-Native Linux daily-driver OS with constitutional security model",
-  "current_milestone": "Rev.8 Certified hardening — SELinux/STIG/NIST/CIS, FIPS, EU AI Act",
-  "current_task_id": "TSK-REV8-001",
-  "current_task_title": "SELinux MAC Policy Engine for Rev.8",
-  "current_step": "Implementation complete — 50 tests pass (22 original + 27 new + 1 cross-module)",
+  "current_milestone": "Enterprise plan: Фаза 0 стабилизация → Rev.12 дистрибуция → Rev.13 enterprise",
+  "current_task_id": "TSK-PH0-001",
+  "current_task_title": "Фаза 0: 4 cargo gates на 219 некомитнати промени + комит + push gitlab + CI",
+  "current_step": "cargo fmt PASS; cargo check running; clippy+test pending",
   "completed_steps": [
     "OS Research (7 modules, 5,781 lines)",
     "Rev.3 through Rev.7 (all prior milestones)",
@@ -15,5 +15,28 @@
     "INV-026: Host policy supremacy — unilateral withdrawal from any state",
     "4 pre-existing compilation errors fixed (serde/strum imports, Default derive)"
   ],
-  "last_verification_result": "cargo check passes. 50/50 selinux tests pass (27 new Rev.8 tests)."
+  "last_verification_result": "fmt gate PASS 2026-07-10; other gates in progress",
+  "plan": {
+    "phase0": "gates + commit + push gitlab + CI green",
+    "phase1_rev12": [
+      "R12.1 ISO boot gate",
+      "R12.2 installer vdisk",
+      "R12.3 systemd/binary contract",
+      "R12.4 signed repo+update+rollback+SBOM",
+      "R12.5 kernel pipeline",
+      "R12.6 SELinux/dm-verity/signed boot",
+      "R12.7 all gates in CI"
+    ],
+    "phase2_rev13": [
+      "R13.1 openSUSE Leap 16 base+LTS",
+      "R13.2 hermetic reproducible build",
+      "R13.3 daemon+systemd hardening",
+      "R13.4 SecureBoot+TPM",
+      "R13.5 enterprise repo+atomic updates",
+      "R13.6 enterprise installer",
+      "R13.7 8 CI gates",
+      "R13.8 CIS/STIG+CVE process"
+    ],
+    "exit_criteria": "REV12/REV13 spec exit criteria in distro/build/*.md"
+  }
 }

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use tracing::{debug, info};
 
@@ -8,7 +8,7 @@ use crate::AndroidAppState;
 
 pub fn install_apk(
     container: &mut WaydroidContainer,
-    apk_path: &PathBuf,
+    apk_path: &Path,
     package_name: impl Into<String>,
 ) -> Result<(), WaydroidError> {
     let pkg = package_name.into();
@@ -23,21 +23,14 @@ pub fn install_apk(
         ));
     }
 
-    if let Some((_, existing_state)) = container
-        .app_list
-        .iter()
-        .find(|(name, _)| name == &pkg)
-    {
+    if let Some((_, existing_state)) = container.app_list.iter().find(|(name, _)| name == &pkg) {
         if *existing_state == AndroidAppState::Installed
             || *existing_state == AndroidAppState::Running
             || *existing_state == AndroidAppState::Suspended
         {
             return Err(WaydroidError::apk_install_failed(
                 &pkg,
-                format!(
-                    "package already present with state: {:?}",
-                    existing_state
-                ),
+                format!("package already present with state: {:?}", existing_state),
             ));
         }
     }
@@ -52,12 +45,8 @@ pub fn install_apk(
 
     info!(package = %pkg, name = %app_name, "APK installed");
 
-    container
-        .app_list
-        .retain(|(name, _)| name != &pkg);
-    container
-        .app_list
-        .push((pkg, AndroidAppState::Installed));
+    container.app_list.retain(|(name, _)| name != &pkg);
+    container.app_list.push((pkg, AndroidAppState::Installed));
 
     Ok(())
 }
@@ -68,10 +57,7 @@ pub fn uninstall_app(
 ) -> Result<(), WaydroidError> {
     let pkg: String = package_name.into();
 
-    let found = container
-        .app_list
-        .iter()
-        .any(|(name, _)| name == &pkg);
+    let found = container.app_list.iter().any(|(name, _)| name == &pkg);
 
     if !found {
         return Err(WaydroidError::app_not_found(&pkg));
@@ -80,9 +66,7 @@ pub fn uninstall_app(
     debug!(package = %pkg, "uninstalling Android app");
 
     container.app_list.retain(|(name, _)| name != &pkg);
-    container
-        .app_list
-        .push((pkg, AndroidAppState::Uninstalled));
+    container.app_list.push((pkg, AndroidAppState::Uninstalled));
 
     info!("app uninstalled");
 
@@ -190,10 +174,7 @@ pub fn generate_desktop_entry(
     )
 }
 
-pub fn get_app_state(
-    container: &WaydroidContainer,
-    package_name: &str,
-) -> Option<AndroidAppState> {
+pub fn get_app_state(container: &WaydroidContainer, package_name: &str) -> Option<AndroidAppState> {
     container
         .app_list
         .iter()
@@ -205,12 +186,12 @@ pub fn get_app_state(
 mod tests {
     use super::*;
     use crate::WaydroidContainerState;
+    use std::path::PathBuf;
 
     fn make_running_container() -> WaydroidContainer {
         let capsule_id = ulid::Ulid::new();
         let data_path = PathBuf::from(format!("/var/lib/aios/waydroid/{capsule_id}/"));
-        let mut container = WaydroidContainer::new(capsule_id)
-            .expect("new container");
+        let mut container = WaydroidContainer::new(capsule_id).expect("new container");
         container.data_path = data_path;
         container
     }

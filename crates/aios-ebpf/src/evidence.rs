@@ -16,8 +16,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::desktop_event::DesktopEvent;
-use crate::enums::{DesktopEventClass, EbpfEvidenceGrade};
-
 /// Record types emitted by the eBPF telemetry subsystem.
 ///
 /// Each variant corresponds to a lifecycle or observation event that should be
@@ -231,10 +229,7 @@ impl EbpfEvidenceEmitter for InMemoryEbpfEvidenceEmitter {
     }
 
     fn record_count(&self) -> usize {
-        self.records
-            .lock()
-            .map(|guard| guard.len())
-            .unwrap_or(0)
+        self.records.lock().map(|guard| guard.len()).unwrap_or(0)
     }
 }
 
@@ -252,6 +247,7 @@ impl EbpfEvidenceEmitter for InMemoryEbpfEvidenceEmitter {
 )]
 mod tests {
     use super::*;
+    use crate::enums::{DesktopEventClass, EbpfEvidenceGrade};
 
     #[test]
     fn evidence_emitter_fires_on_load() {
@@ -264,10 +260,7 @@ mod tests {
         assert_eq!(emitter.record_count(), 1);
         let records = emitter.drain();
         assert_eq!(records.len(), 1);
-        matches!(
-            &records[0],
-            EbpfEvidenceRecord::EbpfProgramLoaded { .. }
-        );
+        matches!(&records[0], EbpfEvidenceRecord::EbpfProgramLoaded { .. });
         // After drain, count is zero.
         assert_eq!(emitter.record_count(), 0);
     }
@@ -282,10 +275,7 @@ mod tests {
         });
         assert_eq!(emitter.record_count(), 1);
         let records = emitter.drain();
-        matches!(
-            &records[0],
-            EbpfEvidenceRecord::EbpfProgramAttached { .. }
-        );
+        matches!(&records[0], EbpfEvidenceRecord::EbpfProgramAttached { .. });
     }
 
     #[test]
@@ -297,10 +287,7 @@ mod tests {
         });
         let records = emitter.drain();
         assert_eq!(records.len(), 1);
-        matches!(
-            &records[0],
-            EbpfEvidenceRecord::EbpfProgramDetached { .. }
-        );
+        matches!(&records[0], EbpfEvidenceRecord::EbpfProgramDetached { .. });
     }
 
     #[test]
@@ -317,10 +304,7 @@ mod tests {
         });
         let records = emitter.drain();
         assert_eq!(records.len(), 1);
-        matches!(
-            &records[0],
-            EbpfEvidenceRecord::DesktopEventObserved { .. }
-        );
+        matches!(&records[0], EbpfEvidenceRecord::DesktopEventObserved { .. });
     }
 
     #[test]
@@ -383,10 +367,7 @@ mod tests {
 
         let json = serde_json::to_value(&record).expect("serialize");
         let back: EbpfEvidenceRecord = serde_json::from_value(json).expect("deserialize");
-        assert_eq!(
-            format!("{back:?}"),
-            format!("{record:?}")
-        );
+        assert_eq!(format!("{back:?}"), format!("{record:?}"));
     }
 
     #[test]

@@ -272,16 +272,14 @@ mod tests {
 
     #[test]
     fn high_risk_ready_blocks_ai() {
-        let mut s =
-            TerminalModeSwitch::new(TerminalMode::Mix, SecurityProfileLevel::HighRiskReady);
+        let mut s = TerminalModeSwitch::new(TerminalMode::Mix, SecurityProfileLevel::HighRiskReady);
         let result = s.switch_to(TerminalMode::Ai);
         assert_eq!(result, Err(ModeSwitchError::ModeNotAllowedForProfile));
     }
 
     #[test]
     fn high_risk_ready_allows_lx_and_mix() {
-        let mut s =
-            TerminalModeSwitch::new(TerminalMode::Lx, SecurityProfileLevel::HighRiskReady);
+        let mut s = TerminalModeSwitch::new(TerminalMode::Lx, SecurityProfileLevel::HighRiskReady);
         let result = s.switch_to(TerminalMode::Mix);
         assert!(result.is_ok());
         let modes = s.available_modes();
@@ -307,10 +305,22 @@ mod tests {
 
     #[test]
     fn available_modes_for_profile_function() {
-        assert_eq!(available_modes_for_profile(SecurityProfileLevel::AirgapHigh).len(), 1);
-        assert_eq!(available_modes_for_profile(SecurityProfileLevel::HighRiskReady).len(), 2);
-        assert_eq!(available_modes_for_profile(SecurityProfileLevel::General).len(), 3);
-        assert_eq!(available_modes_for_profile(SecurityProfileLevel::Dev).len(), 3);
+        assert_eq!(
+            available_modes_for_profile(SecurityProfileLevel::AirgapHigh).len(),
+            1
+        );
+        assert_eq!(
+            available_modes_for_profile(SecurityProfileLevel::HighRiskReady).len(),
+            2
+        );
+        assert_eq!(
+            available_modes_for_profile(SecurityProfileLevel::General).len(),
+            3
+        );
+        assert_eq!(
+            available_modes_for_profile(SecurityProfileLevel::Dev).len(),
+            3
+        );
     }
 
     #[test]

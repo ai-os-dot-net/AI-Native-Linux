@@ -61,8 +61,14 @@ mod tests {
     fn new_defaults_are_safe() {
         let policy = ContainerEnginePolicy::new();
         assert_eq!(policy.default_engine, ContainerEngine::PodmanRootless);
-        assert!(!policy.docker_socket_exposed, "docker socket must never be exposed by default");
-        assert!(policy.rootful_requires_human_approval, "rootful engines must require human approval by default");
+        assert!(
+            !policy.docker_socket_exposed,
+            "docker socket must never be exposed by default"
+        );
+        assert!(
+            policy.rootful_requires_human_approval,
+            "rootful engines must require human approval by default"
+        );
     }
 
     #[test]

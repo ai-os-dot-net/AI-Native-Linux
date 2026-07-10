@@ -39,7 +39,12 @@ impl TimePosture {
         skew_ms: i64,
     ) {
         assert!(
-            matches!(self.state, TimePostureState::Untrusted | TimePostureState::Monotonic | TimePostureState::SkewBlocked),
+            matches!(
+                self.state,
+                TimePostureState::Untrusted
+                    | TimePostureState::Monotonic
+                    | TimePostureState::SkewBlocked
+            ),
             "transition_to_attested only valid from Untrusted, Monotonic, or SkewBlocked"
         );
         assert!(
@@ -108,14 +113,17 @@ impl TimePosture {
         self.observed_skew_ms = 0;
     }
 
-    pub fn is_consequential_action_allowed(
-        &self,
-        grade_floor: TimeTrustGrade,
-    ) -> bool {
+    pub fn is_consequential_action_allowed(&self, grade_floor: TimeTrustGrade) -> bool {
         if self.state == TimePostureState::SkewBlocked {
             return false;
         }
         self.active_grade >= grade_floor
+    }
+}
+
+impl Default for TimePosture {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

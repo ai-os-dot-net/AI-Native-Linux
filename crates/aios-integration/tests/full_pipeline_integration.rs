@@ -4,62 +4,60 @@
 //! PolicyKernel -> CapabilityRuntime -> Evidence pipeline -> Recovery watchdog.
 
 #![forbid(unsafe_code)]
-#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used,
-         clippy::doc_markdown, clippy::wildcard_imports, clippy::similar_names,
-         clippy::too_many_lines, clippy::too_many_arguments, clippy::unused_imports,
-         clippy::unused_variables, missing_docs,
-         reason = "test code; panic-on-failure is the idiomatic test signal")]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    clippy::doc_markdown,
+    clippy::wildcard_imports,
+    clippy::similar_names,
+    clippy::too_many_lines,
+    clippy::too_many_arguments,
+    clippy::unused_imports,
+    clippy::unused_variables,
+    missing_docs,
+    reason = "test code; panic-on-failure is the idiomatic test signal"
+)]
 
+use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Arc;
-use chrono::Utc;
 
-use aios_terminal::{
-    AIActionProposal, PromptSafetyClassifier, ProposalRiskClass,
-    ProposalState, ProposalValidation, SafetyVerdict, SubmissionResult,
-    TerminalFabric, TerminalMode, TerminalModeSwitch, SecurityProfileLevel,
-    ModeSwitchError, FabricContext,
+use aios_action::{ActionEnvelope, ActionId, Identity, Request, Trace};
+use aios_autonomous::{
+    enums::{AutonomyLevel, FleetHealthAggregate},
+    AutonomyEngine,
+};
+use aios_backup::{BackupSet, ConstitutionalBackupContract, RestoreMode, RestorePlan};
+use aios_capability_runtime::{
+    capsule_namespace::*, sel4_cap_model::*, transparent_ipc::*, ActionContext, ActionDispatchKind,
+    ActionLifecycleState, CapabilityRuntime, InMemoryCapabilityRuntime, QueueClass, RuntimeContext,
 };
 use aios_cognitive::{
-    CognitiveIntent, InMemoryCognitiveCore, CognitiveCore, TranslationContext,
-    IntentId, SubjectRef, LatencyTier, PrivacyClass, TranslatorEngine,
-    routing::AICrossOriginPosture, ModelRouter,
+    routing::AICrossOriginPosture, CognitiveCore, CognitiveIntent, InMemoryCognitiveCore, IntentId,
+    LatencyTier, ModelRouter, PrivacyClass, SubjectRef, TranslationContext, TranslatorEngine,
+};
+use aios_evidence::{ReceiptBuilder, ReceiptChain, RecordType, RetentionClass};
+use aios_fleet::fleet_recovery::FleetRecoveryCoordinator;
+use aios_mobile::{
+    ApprovalRiskBand, MobileApprovalRequest, MobileApprovalState, OfflineApprovalToken,
 };
 use aios_policy::{
-    InMemoryPolicyKernel, PolicyContext, HydratedSubject, SubjectType,
-    EnrichmentSnapshot, PolicyKernel,
-};
-use aios_action::{ActionId, ActionEnvelope, Identity, Request, Trace};
-use aios_evidence::{
-    ReceiptBuilder, RecordType, RetentionClass, ReceiptChain,
-};
-use aios_capability_runtime::{
-    InMemoryCapabilityRuntime, ActionContext, ActionDispatchKind, QueueClass,
-    ActionLifecycleState, CapabilityRuntime, RuntimeContext,
-    sel4_cap_model::*,
-    capsule_namespace::*,
-    transparent_ipc::*,
+    EnrichmentSnapshot, HydratedSubject, InMemoryPolicyKernel, PolicyContext, PolicyKernel,
+    SubjectType,
 };
 use aios_recovery::{
-    InMemorySelfHealingDriver, SelfHealingDriver, WatchdogPolicy, WatchdogTimer,
-    ComponentHealthState, SelfHealingPolicy,
-    InMemoryRecoveryBoundary, RecoveryBoundary,
+    ComponentHealthState, InMemoryRecoveryBoundary, InMemorySelfHealingDriver, RecoveryBoundary,
+    SelfHealingDriver, SelfHealingPolicy, WatchdogPolicy, WatchdogTimer,
 };
-use aios_fleet::fleet_recovery::FleetRecoveryCoordinator;
-use aios_autonomous::{
-    AutonomyEngine,
-    enums::{FleetHealthAggregate, AutonomyLevel},
-};
-use aios_backup::{
-    ConstitutionalBackupContract, BackupSet, RestorePlan, RestoreMode,
+use aios_terminal::{
+    AIActionProposal, FabricContext, ModeSwitchError, PromptSafetyClassifier, ProposalRiskClass,
+    ProposalState, ProposalValidation, SafetyVerdict, SecurityProfileLevel, SubmissionResult,
+    TerminalFabric, TerminalMode, TerminalModeSwitch,
 };
 use aios_time::{
-    TimePosture, TimePostureState, TimeTrustGrade, TrustedTimeSource,
-    SkewBudget, is_consequential_action_allowed,
-};
-use aios_mobile::{
-    MobileApprovalRequest, MobileApprovalState, OfflineApprovalToken,
-    ApprovalRiskBand,
+    is_consequential_action_allowed, SkewBudget, TimePosture, TimePostureState, TimeTrustGrade,
+    TrustedTimeSource,
 };
 
 fn make_trace() -> Trace {
@@ -180,7 +178,10 @@ async fn test_full_pipeline_human_user_interactive() {
     assert!(!chain.receipts().is_empty());
 
     // 8. Recovery watchdog monitors component health
-    let policy = WatchdogPolicy { enabled: true, ..Default::default() };
+    let policy = WatchdogPolicy {
+        enabled: true,
+        ..Default::default()
+    };
     let timer = WatchdogTimer::new(policy);
     timer.register("terminal-fabric").await;
     timer.ping("terminal-fabric").await;
@@ -218,9 +219,12 @@ async fn test_ai_pipeline_agent_proposal() {
     // INV-002: Now that it's approved, validate with AI actor -> must fail
     let ai_validation = proposal.validate(Some("AI_AGENT_CAPSULE"));
     assert!(
-        matches!(ai_validation, ProposalValidation::Invalid(
-            aios_terminal::ProposalValidationError::AiSelfApprovalForbidden
-        )),
+        matches!(
+            ai_validation,
+            ProposalValidation::Invalid(
+                aios_terminal::ProposalValidationError::AiSelfApprovalForbidden
+            )
+        ),
         "INV-002: AI agent must not validate an already-approved proposal"
     );
 
@@ -252,17 +256,17 @@ async fn test_ai_pipeline_agent_proposal() {
 
 #[test]
 fn test_security_profile_airgap_high_blocks_external_model() {
-    let mut switch = TerminalModeSwitch::new(
-        TerminalMode::Lx,
-        SecurityProfileLevel::AirgapHigh,
-    );
+    let mut switch = TerminalModeSwitch::new(TerminalMode::Lx, SecurityProfileLevel::AirgapHigh);
     let available = switch.available_modes();
     assert!(available.contains(&TerminalMode::Lx));
     assert!(!available.contains(&TerminalMode::Ai));
 
     // Switch to Ai under AIRGAP_HIGH must fail
     let result = switch.switch_to(TerminalMode::Ai);
-    assert!(matches!(result, Err(ModeSwitchError::ModeNotAllowedForProfile)));
+    assert!(matches!(
+        result,
+        Err(ModeSwitchError::ModeNotAllowedForProfile)
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +280,9 @@ fn test_capability_token_attenuation() {
 
     // INV-CAP-002: derive with empty rights mask = strict attenuation
     let empty_mask = CapRights::empty();
-    let child_id = tree.derive(root_id, &empty_mask, "child-no-rights").unwrap();
+    let child_id = tree
+        .derive(root_id, &empty_mask, "child-no-rights")
+        .unwrap();
 
     // Verify attenuation: parent is superset of child
     let root = tree.get(&root_id).unwrap();
@@ -308,23 +314,45 @@ fn test_capsule_namespace_isolation() {
     // INV-NS-003: one capsule cannot mutate another's mount table
     let mut ns_a = CapsuleNamespace::new(CapsuleId(1));
     let ns_b = CapsuleNamespace::new(CapsuleId(2));
-    let _ = ns_a.bind(src.clone(), target.clone(), MountFlag::Regular, CapRights::full());
+    let _ = ns_a.bind(
+        src.clone(),
+        target.clone(),
+        MountFlag::Regular,
+        CapRights::full(),
+    );
 
     // Resolve the *target* path (what the capsule sees)
     let resolved_a = ns_a.resolve(&target);
-    assert!(!resolved_a.is_empty(), "capsule A should see its binding at target path");
+    assert!(
+        !resolved_a.is_empty(),
+        "capsule A should see its binding at target path"
+    );
     let resolved_b = ns_b.resolve(&target);
-    assert!(resolved_b.is_empty(), "capsule B should NOT see A's binding");
+    assert!(
+        resolved_b.is_empty(),
+        "capsule B should NOT see A's binding"
+    );
 
     // INV-NS-004: clone independence
     let mut clone = ns_a.clone();
     let clone_src = NamespacePath::new("/clone/data").unwrap();
     let clone_tgt = NamespacePath::new("/clone").unwrap();
-    let _ = clone.bind(clone_src.clone(), clone_tgt.clone(), MountFlag::Regular, CapRights::full());
+    let _ = clone.bind(
+        clone_src.clone(),
+        clone_tgt.clone(),
+        MountFlag::Regular,
+        CapRights::full(),
+    );
 
-    assert!(!clone.resolve(&clone_tgt).is_empty(), "clone should see its own binding");
+    assert!(
+        !clone.resolve(&clone_tgt).is_empty(),
+        "clone should see its own binding"
+    );
     let original_resolved = ns_a.resolve(&clone_tgt);
-    assert!(original_resolved.is_empty(), "original should not see clone's bindings");
+    assert!(
+        original_resolved.is_empty(),
+        "original should not see clone's bindings"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -341,8 +369,12 @@ fn test_transparent_ipc_routing() {
 
     // INV-IPC-002/003: Request-reply pairing + no double-reply
     let mut router = MessageRouter::new();
-    router.register(CapsuleAddr::Local { capsule_id: CapsuleId(1) });
-    router.register(CapsuleAddr::Local { capsule_id: CapsuleId(2) });
+    router.register(CapsuleAddr::Local {
+        capsule_id: CapsuleId(1),
+    });
+    router.register(CapsuleAddr::Local {
+        capsule_id: CapsuleId(2),
+    });
 
     let msg = CapsuleMessage::request(CapsuleId(1), CapsuleId(2), "ping".into(), None);
     let msg_id = msg.msg_id;
@@ -395,17 +427,26 @@ async fn test_fleet_autonomous_healing_pipeline() {
     let boundary: Arc<dyn RecoveryBoundary> = Arc::new(InMemoryRecoveryBoundary::new());
     let driver = InMemorySelfHealingDriver::new(boundary);
 
-    let mut healing_policy = SelfHealingPolicy::default();
-    healing_policy.enabled = true;
+    let healing_policy = SelfHealingPolicy {
+        enabled: true,
+        ..SelfHealingPolicy::default()
+    };
     driver.set_policy(healing_policy).await.unwrap();
 
-    driver.observe_health("fleet-host-2", ComponentHealthState::Degraded).await.unwrap();
+    driver
+        .observe_health("fleet-host-2", ComponentHealthState::Degraded)
+        .await
+        .unwrap();
     let heal_actions = driver.evaluate().await.unwrap();
     // Fleet healing may produce 0+ actions depending on policy configuration;
     // the driver itself must not error
     for action in &heal_actions {
         let exec_result = driver.execute_heal(action).await.unwrap();
-        assert!(exec_result.success, "heal execution should succeed: {}", exec_result.detail);
+        assert!(
+            exec_result.success,
+            "heal execution should succeed: {}",
+            exec_result.detail
+        );
     }
 }
 
@@ -445,7 +486,8 @@ fn test_mobile_approval_pipeline() {
         blake3::hash(b"action-canonical-bytes").to_hex().to_string(),
         ApprovalRiskBand::Low,
         3600,
-    ).expect("low risk token should be created");
+    )
+    .expect("low risk token should be created");
     assert!(token.single_use);
     assert!(token.is_valid(Utc::now()));
 
@@ -478,7 +520,9 @@ fn test_time_consequential_gating() {
     let mut posture = TimePosture::new();
     posture.transition_to_untrusted();
     posture.transition_to_attested(
-        TimeTrustGrade::AttestedSingle, TrustedTimeSource::NtpAuthenticated, 100,
+        TimeTrustGrade::AttestedSingle,
+        TrustedTimeSource::NtpAuthenticated,
+        100,
     );
     let budget = SkewBudget::for_profile("SECURE_DEFAULT");
     assert!(is_consequential_action_allowed(&posture, &budget));

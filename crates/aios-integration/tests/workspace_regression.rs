@@ -67,8 +67,7 @@ const ALL_CRATES: &[&str] = &[
 ];
 
 fn workspace_root() -> std::path::PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .expect("CARGO_MANIFEST_DIR must be set");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set");
     std::path::PathBuf::from(&manifest_dir)
         .parent()
         .unwrap()
@@ -136,6 +135,7 @@ fn cargo_test_crate(crate_name: &str) -> bool {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
+#[ignore = "expensive nested cargo workspace regression; run explicitly with `cargo test -p aios-integration --test workspace_regression -- --ignored`"]
 fn test_all_crates_cargo_check() {
     assert_eq!(ALL_CRATES.len(), 34, "must have exactly 34 crates");
 
@@ -158,6 +158,7 @@ fn test_all_crates_cargo_check() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
+#[ignore = "expensive nested cargo workspace regression; run explicitly with `cargo test -p aios-integration --test workspace_regression -- --ignored`"]
 fn test_foundational_crates_tests_pass() {
     let foundational = ["aios-action", "aios-policy", "aios-evidence", "aios-fs"];
 
@@ -180,6 +181,7 @@ fn test_foundational_crates_tests_pass() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
+#[ignore = "expensive nested cargo workspace regression; run explicitly with `cargo test -p aios-integration --test workspace_regression -- --ignored`"]
 fn test_runtime_crates_tests_pass() {
     let runtime = [
         "aios-capability-runtime",
@@ -207,6 +209,7 @@ fn test_runtime_crates_tests_pass() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
+#[ignore = "expensive nested cargo workspace regression; run explicitly with `cargo test -p aios-integration --test workspace_regression -- --ignored`"]
 fn test_distribution_crates_tests_pass() {
     let distribution = ["aios-distribution", "aios-apps"];
 
@@ -229,6 +232,7 @@ fn test_distribution_crates_tests_pass() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
+#[ignore = "expensive nested cargo workspace regression; run explicitly with `cargo test -p aios-integration --test workspace_regression -- --ignored`"]
 fn test_fleet_crates_tests_pass() {
     let fleet = ["aios-fleet", "aios-container", "aios-autonomous"];
 

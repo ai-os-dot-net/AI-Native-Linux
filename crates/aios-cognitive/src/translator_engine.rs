@@ -211,10 +211,7 @@ impl TranslatorEngine {
         }
 
         // Case 2: plain code fence ``` ... ```
-        if let Some(inner) = text
-            .strip_prefix("```")
-            .and_then(|s| s.strip_suffix("```"))
-        {
+        if let Some(inner) = text.strip_prefix("```").and_then(|s| s.strip_suffix("```")) {
             let inner = inner.trim();
             if !inner.is_empty() && (inner.starts_with('{') || inner.starts_with('[')) {
                 return Some(inner.to_string());
@@ -310,11 +307,7 @@ impl TranslatorEngine {
                 &parsed.action_name,
                 serde_json::to_value(&parsed.parameters).unwrap_or_default(),
             ),
-            Trace::new(
-                "00000000000000000000000000000000",
-                "0000000000000000",
-                None,
-            ),
+            Trace::new("00000000000000000000000000000000", "0000000000000000", None),
         );
 
         let latency_ms = start.elapsed().as_millis() as u64;
@@ -381,14 +374,8 @@ impl TranslatorEngine {
 
                 match adapter.generate(request).await {
                     Ok(response) => {
-                        let tokens_in = u32::try_from(
-                            response.prompt_eval_count.unwrap_or(0),
-                        )
-                        .unwrap_or(u32::MAX);
-                        let tokens_out = u32::try_from(
-                            response.eval_count.unwrap_or(0),
-                        )
-                        .unwrap_or(u32::MAX);
+                        let tokens_in = response.prompt_eval_count.unwrap_or(0);
+                        let tokens_out = response.eval_count.unwrap_or(0);
                         Ok((response.response, tokens_in, tokens_out, model_name))
                     }
                     Err(err) => Err(map_ollama_err(err)),
@@ -570,7 +557,10 @@ mod tests {
 
         let parsed = engine.parse_json_response(json).unwrap();
         assert_eq!(parsed.action_name, "service.restart");
-        assert_eq!(parsed.parameters.get("service_name").map(String::as_str), Some("nginx"));
+        assert_eq!(
+            parsed.parameters.get("service_name").map(String::as_str),
+            Some("nginx")
+        );
         assert!((parsed.confidence - 0.95).abs() < 0.001);
         assert!(parsed.reasoning.contains("nginx"));
     }
@@ -677,7 +667,10 @@ Hope this helps!"#;
 
         let parsed = engine.parse_json_response(raw).unwrap();
         assert_eq!(parsed.action_name, "file.read");
-        assert_eq!(parsed.parameters.get("path").map(String::as_str), Some("/etc/hosts"));
+        assert_eq!(
+            parsed.parameters.get("path").map(String::as_str),
+            Some("/etc/hosts")
+        );
         assert!((parsed.confidence - 0.9).abs() < 0.001);
     }
 
@@ -688,7 +681,10 @@ Hope this helps!"#;
 
         let parsed = engine.parse_json_response(raw).unwrap();
         assert_eq!(parsed.action_name, "service.restart");
-        assert_eq!(parsed.parameters.get("svc").map(String::as_str), Some("apache"));
+        assert_eq!(
+            parsed.parameters.get("svc").map(String::as_str),
+            Some("apache")
+        );
         assert!((parsed.confidence - 0.85).abs() < 0.001);
     }
 
@@ -734,14 +730,22 @@ Hope this helps!"#;
         let engine = make_engine();
 
         // Above 1.0 → clamped
-        let json_high = r#"{"action_name": "x", "parameters": {}, "confidence": 1.5, "reasoning": "x"}"#;
+        let json_high =
+            r#"{"action_name": "x", "parameters": {}, "confidence": 1.5, "reasoning": "x"}"#;
         let parsed = engine.parse_json_response(json_high).unwrap();
-        assert!((parsed.confidence - 1.5).abs() < 0.01, "raw value preserved; caller clamps");
+        assert!(
+            (parsed.confidence - 1.5).abs() < 0.01,
+            "raw value preserved; caller clamps"
+        );
 
         // Below 0.0 → clamped
-        let json_low = r#"{"action_name": "x", "parameters": {}, "confidence": -0.5, "reasoning": "x"}"#;
+        let json_low =
+            r#"{"action_name": "x", "parameters": {}, "confidence": -0.5, "reasoning": "x"}"#;
         let parsed = engine.parse_json_response(json_low).unwrap();
-        assert!(parsed.confidence < 0.0, "raw value preserved; caller clamps");
+        assert!(
+            parsed.confidence < 0.0,
+            "raw value preserved; caller clamps"
+        );
     }
 
     // -------------------------------------------------------------------

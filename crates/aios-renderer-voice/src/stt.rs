@@ -78,7 +78,9 @@ impl SttAdapter {
     /// Configure the model path for this adapter.
     pub fn configure_model(&mut self, path: &str) {
         match self {
-            Self::WhisperCpp { model_path } | Self::Vosk { model_path } | Self::OnDevice { model_path } => {
+            Self::WhisperCpp { model_path }
+            | Self::Vosk { model_path }
+            | Self::OnDevice { model_path } => {
                 *model_path = Some(path.to_string());
             }
         }
@@ -88,9 +90,9 @@ impl SttAdapter {
     #[must_use]
     pub fn is_configured(&self) -> bool {
         match self {
-            Self::WhisperCpp { model_path } | Self::Vosk { model_path } | Self::OnDevice { model_path } => {
-                model_path.is_some()
-            }
+            Self::WhisperCpp { model_path }
+            | Self::Vosk { model_path }
+            | Self::OnDevice { model_path } => model_path.is_some(),
         }
     }
 
@@ -171,7 +173,9 @@ impl VoiceIntentClassifier {
             || transcript.contains("iptables")
         {
             VoiceRiskClass::High
-        } else if transcript.contains("apt") || transcript.contains("pip") || transcript.contains("curl")
+        } else if transcript.contains("apt")
+            || transcript.contains("pip")
+            || transcript.contains("curl")
         {
             VoiceRiskClass::Medium
         } else {

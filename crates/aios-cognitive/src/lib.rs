@@ -4,6 +4,8 @@
 
 #![forbid(unsafe_code)]
 
+/// Provider adapters — Ollama HTTP client, vLLM, etc.
+pub mod adapter;
 /// S14.1 circuit breaker driver.
 pub mod breaker;
 /// S14.1 circuit breaker registry.
@@ -34,6 +36,8 @@ pub mod model;
 pub mod model_binding;
 /// `CognitiveModelCatalog` — model registration and lifecycle (S13.1).
 pub mod model_catalog;
+/// Production `CognitiveCore` — wires Ollama/vLLM adapters into the cognitive pipeline.
+pub mod production_core;
 /// INV-002 cross-crate provenance adapter — bridges `aios-cognitive` ↔ `aios-capability-runtime`.
 pub mod provenance_adapter;
 /// Provider dispatch — routes model invocations by ProviderClass (S13.2 §5).
@@ -46,10 +50,6 @@ pub mod router_state;
 pub mod routing;
 /// gRPC CognitiveCore service (T-101, S13.1 §19).
 pub mod service;
-/// Provider adapters — Ollama HTTP client, vLLM, etc.
-pub mod adapter;
-/// Production `CognitiveCore` — wires Ollama/vLLM adapters into the cognitive pipeline.
-pub mod production_core;
 /// `TranslationResult` + `TranslationProvenance`.
 pub mod translator;
 /// LLM-driven capability translator engine (Rev.5 Agent 5/8).
@@ -69,6 +69,7 @@ pub use evidence_payloads::{
     AiDirectInternetDeniedPayload, BackendHealthChangedPayload, CircuitBreakerTrippedPayload,
     ModelCallPayload, RoutingDecisionPayload,
 };
+pub use health_monitor::{BackendHealthSnapshot, HealthMonitor, HealthMonitorConfig, HealthReport};
 pub use in_memory_core::InMemoryCognitiveCore;
 pub use intent::{CognitiveIntent, IntentId, SubjectRef};
 pub use latency::{LatencyTier, PrivacyClass};
@@ -81,7 +82,6 @@ pub use provenance_adapter::{CognitiveProvenanceAdapter, PROVENANCE_MARKER_KEY};
 pub use provider_dispatch::{
     DispatchOutcome, ProviderDispatcher, VaultClientAdapter, VaultRequest, VaultResponse,
 };
-pub use health_monitor::{BackendHealthSnapshot, HealthMonitor, HealthMonitorConfig, HealthReport};
 pub use router::{ModelRouter, RoutingRule};
 pub use router_state::RouterState;
 pub use routing::{

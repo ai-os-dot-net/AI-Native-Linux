@@ -46,8 +46,6 @@ use super::ima::ImaAppraisalState;
 use super::security_profile::SecurityProfile;
 use super::tpm::PcrBank;
 
-
-
 // ---------------------------------------------------------------------------
 // Error types
 // ---------------------------------------------------------------------------
@@ -105,8 +103,18 @@ pub enum BootAttestationError {
 ///
 /// Ordered from most trusted to least trusted.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
-    Serialize, Deserialize, EnumIter, EnumCount,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumIter,
+    EnumCount,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BootIntegrityState {
@@ -375,11 +383,7 @@ impl BootAttestationReport {
     }
 
     /// Record the dm-verity root hash verification result.
-    pub fn with_verity_root(
-        mut self,
-        root_hash: [u8; 32],
-        verified: bool,
-    ) -> Self {
+    pub fn with_verity_root(mut self, root_hash: [u8; 32], verified: bool) -> Self {
         self.verity_root_hash = Some(root_hash);
         self.verity_root_verified = verified;
         self
@@ -406,8 +410,7 @@ impl BootAttestationReport {
     /// Whether the active profile accepts this attestation result.
     #[must_use]
     pub fn is_accepted_by_profile(&self) -> bool {
-        MeasuredBootPolicy::for_profile(self.evaluated_profile)
-            .accepts_state(self.integrity_state)
+        MeasuredBootPolicy::for_profile(self.evaluated_profile).accepts_state(self.integrity_state)
     }
 }
 
@@ -528,11 +531,7 @@ impl BootAttestationChain {
     }
 
     /// Record IMA appraisal information.
-    pub fn with_ima_appraisal(
-        mut self,
-        result: ImaAppraisalState,
-        violation_count: u64,
-    ) -> Self {
+    pub fn with_ima_appraisal(mut self, result: ImaAppraisalState, violation_count: u64) -> Self {
         self.ima_appraisal_result = Some(result);
         self.ima_violation_count = violation_count;
         self
@@ -637,13 +636,8 @@ fn evaluate_chain_state(
                 degraded = true;
             }
         }
-    } else if chain.tpm_quote_provided {
-        match chain.pcr_values_matched {
-            Some(false) => {
-                degraded = true;
-            }
-            Some(true) | None => {}
-        }
+    } else if chain.tpm_quote_provided && chain.pcr_values_matched == Some(false) {
+        degraded = true;
     }
 
     // --- IMA appraisal evaluation ---
@@ -698,7 +692,10 @@ fn evaluate_chain_state(
 fn build_summary(report: &BootAttestationReport) -> String {
     let mut parts: Vec<String> = Vec::new();
 
-    parts.push(format!("boot integrity: {}", report.integrity_state.label()));
+    parts.push(format!(
+        "boot integrity: {}",
+        report.integrity_state.label()
+    ));
 
     if report.tpm_quote_provided {
         match report.pcr_values_matched {
@@ -778,15 +775,15 @@ mod tests {
         assert_eq!(BootIntegrityState::Trusted.label(), "TRUSTED");
         assert_eq!(BootIntegrityState::Degraded.label(), "DEGRADED");
         assert_eq!(BootIntegrityState::Untrusted.label(), "UNTRUSTED");
-        assert_eq!(BootIntegrityState::RecoveryRequired.label(), "RECOVERY_REQUIRED");
+        assert_eq!(
+            BootIntegrityState::RecoveryRequired.label(),
+            "RECOVERY_REQUIRED"
+        );
     }
 
     #[test]
     fn boot_integrity_state_display_matches_label() {
-        assert_eq!(
-            format!("{}", BootIntegrityState::Trusted),
-            "TRUSTED"
-        );
+        assert_eq!(format!("{}", BootIntegrityState::Trusted), "TRUSTED");
         assert_eq!(
             format!("{}", BootIntegrityState::RecoveryRequired),
             "RECOVERY_REQUIRED"
@@ -978,8 +975,7 @@ mod tests {
 
     #[test]
     fn attest_boot_chain_secure_default_tpm_mismatch_degraded() {
-        let chain = chain_for(SecurityProfile::SecureDefault)
-            .with_tpm_quote("mismatch-hex", false);
+        let chain = chain_for(SecurityProfile::SecureDefault).with_tpm_quote("mismatch-hex", false);
         let report = attest_boot_chain(&chain).expect("attestation should succeed");
         assert_eq!(report.integrity_state, BootIntegrityState::Degraded);
     }
@@ -1024,7 +1020,10 @@ mod tests {
         assert!(report.tpm_quote_provided);
         assert_eq!(report.pcr_values_matched, Some(true));
         assert_eq!(report.pcr_quote_digest_hex, Some("abcdef".to_string()));
-        assert_eq!(report.ima_appraisal_result, Some(ImaAppraisalState::Trusted));
+        assert_eq!(
+            report.ima_appraisal_result,
+            Some(ImaAppraisalState::Trusted)
+        );
         assert_eq!(report.ima_violation_count, 0);
         assert_eq!(report.verity_root_hash, Some(sha256_hash(3)));
         assert!(report.verity_root_verified);
@@ -1171,8 +1170,8 @@ mod tests {
 
     #[test]
     fn attest_boot_chain_cmdline_hash_with_empty_list_is_trusted_on_secure_default() {
-        let chain = chain_for(SecurityProfile::SecureDefault)
-            .with_kernel_cmdline_hash(sha256_hash(88));
+        let chain =
+            chain_for(SecurityProfile::SecureDefault).with_kernel_cmdline_hash(sha256_hash(88));
 
         let report = attest_boot_chain(&chain).expect("attestation should succeed");
         assert_eq!(report.integrity_state, BootIntegrityState::Trusted);

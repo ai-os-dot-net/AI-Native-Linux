@@ -297,6 +297,7 @@ impl CognitiveEvidenceEmitter {
     /// # Errors
     ///
     /// Returns [`CognitiveError::EvidenceEmitFailed`] when evidence append fails.
+    #[allow(clippy::too_many_arguments)]
     pub async fn emit_backend_health_changed(
         &self,
         backend_kind: ModelBackendKind,

@@ -235,9 +235,7 @@ impl DriverRegistry {
         };
 
         if let Some(snapshot_id) = capsule.rollback_snapshot_id.take() {
-            capsule.canary_result = Some(CanaryBootResult::Rolledback {
-                snapshot_id,
-            });
+            capsule.canary_result = Some(CanaryBootResult::Rolledback { snapshot_id });
             true
         } else {
             false

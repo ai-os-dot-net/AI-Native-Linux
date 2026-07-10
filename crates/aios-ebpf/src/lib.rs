@@ -44,12 +44,9 @@ pub use enums::{
     DesktopEventClass, EbpfAuthorRole, EbpfEvidenceGrade, EbpfProgramState, EbpfProgramType,
 };
 pub use error::{EbpfError, EbpfResult};
-pub use evidence::{
-    EbpfEvidenceEmitter, EbpfEvidenceRecord, InMemoryEbpfEvidenceEmitter,
-};
+pub use evidence::{EbpfEvidenceEmitter, EbpfEvidenceRecord, InMemoryEbpfEvidenceEmitter};
 pub use inv025_enforcement::{
-    EbpfSignature, EbpfSubject, enforce_ai_author_role,
-    enforce_inv025, enforce_signature_chain_present,
-    enforce_valid_state_transition, is_drop_only_template,
+    enforce_ai_author_role, enforce_inv025, enforce_signature_chain_present,
+    enforce_valid_state_transition, is_drop_only_template, EbpfSignature, EbpfSubject,
 };
 pub use program_registry::{EbpfProgramDescriptor, EbpfProgramRegistry, ProgramId};

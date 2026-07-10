@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use aios_sandbox::{GpuPolicy, IsolationKind, NetworkPosture, ProfileId, ResourceLimits, SandboxProfile};
+use aios_sandbox::{
+    GpuPolicy, IsolationKind, NetworkPosture, ProfileId, ResourceLimits, SandboxProfile,
+};
 
 use crate::error::WineError;
 
@@ -68,15 +70,12 @@ pub fn generate_wine_sandbox_profile(
     }
 }
 
-#[must_use]
 pub fn validate_prefix_path(prefix_path: &PathBuf) -> Result<(), WineError> {
     let allowed_base = PathBuf::from("/var/lib/aios/capsules/");
     if !prefix_path.starts_with(&allowed_base) {
         return Err(WineError::sandbox_violation(
             "unknown",
-            format!(
-                "prefix path {prefix_path:?} is outside allowed capsule root {allowed_base:?}"
-            ),
+            format!("prefix path {prefix_path:?} is outside allowed capsule root {allowed_base:?}"),
         ));
     }
     Ok(())

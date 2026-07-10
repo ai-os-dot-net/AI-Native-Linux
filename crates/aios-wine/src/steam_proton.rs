@@ -64,14 +64,10 @@ impl SteamProtonAdapter {
         Ok(())
     }
 
-    #[must_use]
     pub fn map_app_to_prefix(&self, steam_app_id: &str) -> Result<ProtonAppMapping, WineError> {
-        let default_proton = self
-            .default_version
-            .as_ref()
-            .ok_or_else(|| {
-                WineError::proton_version_not_found("no default proton version detected")
-            })?;
+        let default_proton = self.default_version.as_ref().ok_or_else(|| {
+            WineError::proton_version_not_found("no default proton version detected")
+        })?;
 
         let compatdata = self
             .steam_library_path

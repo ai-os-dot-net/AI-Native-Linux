@@ -11,11 +11,20 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const BIN_NAME: &str = "aios-system";
 
 fn binary() -> Command {
     Command::cargo_bin(BIN_NAME).unwrap()
+}
+
+fn unique_state_dir() -> std::path::PathBuf {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!("aios-system-test-{nonce}"))
 }
 
 #[test]
@@ -91,4 +100,31 @@ fn aios_system_health_check_prints_scaffold_ready_for_each() {
         "expected 17 scaffold-ready lines, got {}:\n{stdout}",
         scaffold_lines.len()
     );
+}
+
+#[test]
+fn aios_system_run_service_once_writes_state_for_alias() {
+    let state_dir = unique_state_dir();
+
+    binary()
+        .args([
+            "run-service",
+            "aios-policy-kernel",
+            "--config",
+            "/tmp/aios-test-config.toml",
+            "--state-dir",
+        ])
+        .arg(&state_dir)
+        .arg("--once")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "requested=aios-policy-kernel canonical=aios-policy",
+        ));
+
+    let state_path = state_dir.join("aios-policy-kernel.json");
+    let state = std::fs::read_to_string(&state_path).unwrap();
+    assert!(state.contains("\"canonical_service_id\": \"aios-policy\""));
+
+    std::fs::remove_dir_all(&state_dir).unwrap();
 }

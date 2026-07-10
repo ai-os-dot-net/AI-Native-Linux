@@ -306,7 +306,11 @@ impl SandboxHierarchy {
     /// Create the root sandbox.  Returns `false` if a root already exists
     /// (there can be only one root).
     pub fn create_root(&mut self, capsule_id: CapsuleId) -> bool {
-        if self.sandboxes.values().any(|s| s.level == SandboxLevel::ROOT) {
+        if self
+            .sandboxes
+            .values()
+            .any(|s| s.level == SandboxLevel::ROOT)
+        {
             return false;
         }
         self.sandboxes
@@ -379,11 +383,7 @@ impl SandboxHierarchy {
     /// Returns `false` if:
     /// - The child doesn't exist.
     /// - The parent doesn't possess a matching capability to delegate.
-    pub fn grant_capability(
-        &mut self,
-        child_id: CapsuleId,
-        capability: SandboxCapability,
-    ) -> bool {
+    pub fn grant_capability(&mut self, child_id: CapsuleId, capability: SandboxCapability) -> bool {
         // Phase 1: extract parent_id (immutable borrow).
         let parent_id = match self.sandboxes.get(&child_id) {
             Some(child) => child.parent_id,
@@ -396,9 +396,10 @@ impl SandboxHierarchy {
                 Some(p) => p,
                 None => return false,
             };
-            let can_delegate = parent.capabilities.iter().any(|c| {
-                c.resource == capability.resource && c.rights.contains(&CapRight::Grant)
-            });
+            let can_delegate = parent
+                .capabilities
+                .iter()
+                .any(|c| c.resource == capability.resource && c.rights.contains(&CapRight::Grant));
             if !can_delegate {
                 return false;
             }
@@ -465,10 +466,7 @@ impl SandboxHierarchy {
     /// Count total capabilities across the entire hierarchy.
     #[must_use]
     pub fn total_capability_count(&self) -> usize {
-        self.sandboxes
-            .values()
-            .map(|s| s.capabilities.len())
-            .sum()
+        self.sandboxes.values().map(|s| s.capabilities.len()).sum()
     }
 
     /// Whether the hierarchy is empty.
@@ -744,11 +742,6 @@ mod tests {
         h.create_child(CapsuleId(2), CapsuleId(1));
 
         // Give parent a grantable GPU capability.
-        let root_grant = h.get_mut(CapsuleId(1));
-        // Need to grant the capability differently since get_mut returns Option.
-        // We'll modify the test approach.
-        drop(root_grant);
-
         // Grant through the hierarchy API.
         let parent_cap = SandboxCapability::new(
             "gpu-access".into(),
@@ -850,7 +843,7 @@ mod tests {
         h.create_child(CapsuleId(2), CapsuleId(1));
 
         // Root gets 2 capabilities.
-        let mut root = h.sandboxes.get_mut(&CapsuleId(1)).unwrap();
+        let root = h.sandboxes.get_mut(&CapsuleId(1)).unwrap();
         root.grant_capability(SandboxCapability::new(
             "a".into(),
             SandboxResource::Gpu,
@@ -863,7 +856,6 @@ mod tests {
             vec![CapRight::Write],
             None,
         ));
-        drop(root);
 
         h.grant_capability(
             CapsuleId(2),
@@ -886,13 +878,5 @@ mod tests {
         let mut h = SandboxHierarchy::new();
         h.create_root(CapsuleId(1));
         assert!(h.get(CapsuleId(1)).is_some());
-    }
-
-    /// Helper: get mutable access to a sandbox (used by tests that need
-    /// to pre-load capabilities without going through delegation).
-    impl SandboxHierarchy {
-        fn get_mut(&mut self, capsule_id: CapsuleId) -> Option<&mut RecursiveSandbox> {
-            self.sandboxes.get_mut(&capsule_id)
-        }
     }
 }

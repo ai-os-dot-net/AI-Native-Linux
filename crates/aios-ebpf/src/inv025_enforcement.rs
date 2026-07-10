@@ -69,11 +69,7 @@ pub struct EbpfSignature {
 /// # Errors
 ///
 /// Returns [`EbpfError::AiAuthorRejected`] if `subject` is [`EbpfSubject::AiSubject`].
-pub fn enforce_inv025(
-    subject: EbpfSubject,
-    operation: &str,
-    program_id: &str,
-) -> EbpfResult<()> {
+pub fn enforce_inv025(subject: EbpfSubject, operation: &str, program_id: &str) -> EbpfResult<()> {
     if matches!(subject, EbpfSubject::AiSubject) {
         return Err(EbpfError::AiAuthorRejected {
             subject: "ai_subject".to_owned(),
@@ -145,8 +141,10 @@ pub fn enforce_valid_state_transition(
     let permitted = match operation {
         "load" => current_state == EbpfProgramState::Registered,
         "attach" => current_state == EbpfProgramState::Loaded,
-        "detach" => current_state == EbpfProgramState::Attached
-            || current_state == EbpfProgramState::Running,
+        "detach" => {
+            current_state == EbpfProgramState::Attached
+                || current_state == EbpfProgramState::Running
+        }
         "run" => current_state == EbpfProgramState::Attached,
         _ => false,
     };
@@ -306,7 +304,8 @@ mod tests {
 
     #[test]
     fn ebpf_program_lifecycle_fsm_load_from_registered() {
-        let result = enforce_valid_state_transition(EbpfProgramState::Registered, "load", "01HTEST");
+        let result =
+            enforce_valid_state_transition(EbpfProgramState::Registered, "load", "01HTEST");
         assert!(result.is_ok());
     }
 
@@ -356,8 +355,12 @@ mod tests {
 
     #[test]
     fn drop_only_template_detects_drop() {
-        assert!(is_drop_only_template("Drop all outbound TCP to 8.8.8.8:443"));
-        assert!(is_drop_only_template("deny syscall mount in capsule dev-capsule"));
+        assert!(is_drop_only_template(
+            "Drop all outbound TCP to 8.8.8.8:443"
+        ));
+        assert!(is_drop_only_template(
+            "deny syscall mount in capsule dev-capsule"
+        ));
         assert!(is_drop_only_template("block CAP_SYS_ADMIN"));
         assert!(is_drop_only_template("discard UDP on port 53"));
         assert!(is_drop_only_template("reject inbound TCP SYN"));

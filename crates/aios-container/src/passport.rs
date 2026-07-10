@@ -101,16 +101,15 @@ mod tests {
         assert!(passport.rootless);
         assert!(!passport.privileged);
         assert_eq!(passport.runtime_engine, ContainerEngine::PodmanRootless);
-        assert_eq!(passport.decision, ContainerAdmissionDecision::RequiresHumanApproval);
+        assert_eq!(
+            passport.decision,
+            ContainerAdmissionDecision::RequiresHumanApproval
+        );
     }
 
     #[test]
     fn dev_relaxed_admits_everything() {
-        let mut passport = CloudNativePassport::new(
-            "wl_002",
-            "untrusted.io/image",
-            vec![],
-        );
+        let mut passport = CloudNativePassport::new("wl_002", "untrusted.io/image", vec![]);
         passport.privileged = true;
         passport.admit("DEV_RELAXED");
         assert_eq!(passport.decision, ContainerAdmissionDecision::Admitted);
@@ -118,56 +117,42 @@ mod tests {
 
     #[test]
     fn stig_aligned_blocks_unsigned() {
-        let mut passport = CloudNativePassport::new(
-            "wl_003",
-            "untrusted.io/image",
-            vec![],
-        );
+        let mut passport = CloudNativePassport::new("wl_003", "untrusted.io/image", vec![]);
         passport.admit("STIG_ALIGNED");
         assert_eq!(passport.decision, ContainerAdmissionDecision::Blocked);
     }
 
     #[test]
     fn stig_aligned_allows_signed_unprivileged() {
-        let mut passport = CloudNativePassport::new(
-            "wl_004",
-            "trusted.io/image",
-            vec!["sha256:def456".into()],
-        );
+        let mut passport =
+            CloudNativePassport::new("wl_004", "trusted.io/image", vec!["sha256:def456".into()]);
         passport.admit("STIG_ALIGNED");
         assert_eq!(passport.decision, ContainerAdmissionDecision::Admitted);
     }
 
     #[test]
     fn stig_aligned_requires_human_approval_for_privileged() {
-        let mut passport = CloudNativePassport::new(
-            "wl_005",
-            "trusted.io/image",
-            vec!["sha256:def456".into()],
-        );
+        let mut passport =
+            CloudNativePassport::new("wl_005", "trusted.io/image", vec!["sha256:def456".into()]);
         passport.privileged = true;
         passport.admit("STIG_ALIGNED");
-        assert_eq!(passport.decision, ContainerAdmissionDecision::RequiresHumanApproval);
+        assert_eq!(
+            passport.decision,
+            ContainerAdmissionDecision::RequiresHumanApproval
+        );
     }
 
     #[test]
     fn airgap_high_quarantines_unsigned() {
-        let mut passport = CloudNativePassport::new(
-            "wl_006",
-            "untrusted.io/image",
-            vec![],
-        );
+        let mut passport = CloudNativePassport::new("wl_006", "untrusted.io/image", vec![]);
         passport.admit("AIRGAP_HIGH");
         assert_eq!(passport.decision, ContainerAdmissionDecision::Quarantined);
     }
 
     #[test]
     fn airgap_high_blocks_privileged() {
-        let mut passport = CloudNativePassport::new(
-            "wl_007",
-            "trusted.io/image",
-            vec!["sha256:ghi789".into()],
-        );
+        let mut passport =
+            CloudNativePassport::new("wl_007", "trusted.io/image", vec!["sha256:ghi789".into()]);
         passport.privileged = true;
         passport.admit("AIRGAP_HIGH");
         assert_eq!(passport.decision, ContainerAdmissionDecision::Blocked);
@@ -175,23 +160,20 @@ mod tests {
 
     #[test]
     fn airgap_high_allows_signed_unprivileged() {
-        let mut passport = CloudNativePassport::new(
-            "wl_008",
-            "trusted.io/image",
-            vec!["sha256:ghi789".into()],
-        );
+        let mut passport =
+            CloudNativePassport::new("wl_008", "trusted.io/image", vec!["sha256:ghi789".into()]);
         passport.admit("AIRGAP_HIGH");
         assert_eq!(passport.decision, ContainerAdmissionDecision::Admitted);
     }
 
     #[test]
     fn unknown_profile_requires_human_approval() {
-        let mut passport = CloudNativePassport::new(
-            "wl_009",
-            "any.io/image",
-            vec!["sha256:jkl012".into()],
-        );
+        let mut passport =
+            CloudNativePassport::new("wl_009", "any.io/image", vec!["sha256:jkl012".into()]);
         passport.admit("UNKNOWN_PROFILE");
-        assert_eq!(passport.decision, ContainerAdmissionDecision::RequiresHumanApproval);
+        assert_eq!(
+            passport.decision,
+            ContainerAdmissionDecision::RequiresHumanApproval
+        );
     }
 }

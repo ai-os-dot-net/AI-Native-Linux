@@ -352,9 +352,7 @@ mod tests {
         let err = ManifestValidator::new()
             .validate(&manifest)
             .expect_err("empty publisher_id should fail");
-        assert!(
-            matches!(err, ManifestValidationError::MissingField(ref f) if f == "publisher_id")
-        );
+        assert!(matches!(err, ManifestValidationError::MissingField(ref f) if f == "publisher_id"));
     }
 
     #[test]
@@ -364,7 +362,10 @@ mod tests {
         let err = ManifestValidator::new()
             .validate(&manifest)
             .expect_err("empty capabilities should fail");
-        assert!(matches!(err, ManifestValidationError::MissingCapabilities(_)));
+        assert!(matches!(
+            err,
+            ManifestValidationError::MissingCapabilities(_)
+        ));
     }
 
     #[test]

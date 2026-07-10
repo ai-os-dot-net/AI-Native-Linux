@@ -317,10 +317,7 @@ impl CapTokenTree {
         let child = parent.derive(mask, label)?;
         let child_id = child.id;
 
-        self.children
-            .entry(parent_id)
-            .or_default()
-            .push(child_id);
+        self.children.entry(parent_id).or_default().push(child_id);
         self.tokens.insert(child_id, child);
 
         Some(child_id)
@@ -511,9 +508,7 @@ mod tests {
         let full = CapRights::full();
         let mut extra_set = HashSet::new();
         extra_set.insert(CapRight::Grant);
-        let mask = CapRights {
-            rights: extra_set,
-        };
+        let mask = CapRights { rights: extra_set };
 
         // Mask is a subset of full — this should succeed
         assert!(full.attenuate(&mask).is_some());
@@ -529,9 +524,7 @@ mod tests {
         let full = CapRights::full();
         let mut subset_set = HashSet::new();
         subset_set.insert(CapRight::Read);
-        let subset = CapRights {
-            rights: subset_set,
-        };
+        let subset = CapRights { rights: subset_set };
 
         assert!(full.is_superset_of(&subset));
         assert!(!subset.is_superset_of(&full));
@@ -561,7 +554,9 @@ mod tests {
             CapRights { rights: s }
         };
 
-        let child = root.derive(&mask, "child").expect("derivation should succeed");
+        let child = root
+            .derive(&mask, "child")
+            .expect("derivation should succeed");
         assert_eq!(child.rights.count(), 2);
         assert!(child.rights.has(CapRight::Read));
         assert!(child.rights.has(CapRight::Write));
@@ -591,7 +586,9 @@ mod tests {
             s.insert(CapRight::Read);
             CapRights { rights: s }
         };
-        let child = root.derive(&mask, "child").expect("first derivation should succeed");
+        let child = root
+            .derive(&mask, "child")
+            .expect("first derivation should succeed");
         assert!(!child.rights.has(CapRight::Grant));
 
         // Trying to derive from child (which has no Grant) should fail
@@ -663,7 +660,9 @@ mod tests {
             s.insert(CapRight::Read);
             CapRights { rights: s }
         };
-        let child = root.derive(&mask, "child").expect("derivation should succeed");
+        let child = root
+            .derive(&mask, "child")
+            .expect("derivation should succeed");
         // Clone to make mutable — this child has no Destroy right
         let mut child_mut = child.clone();
         assert!(!child.rights.has(CapRight::Destroy));
@@ -762,7 +761,10 @@ mod tests {
 
         // Revoke child_a — should cascade to grandchild_a1 but not child_b
         let revoked = tree.revoke_cascade(child_a);
-        assert_eq!(revoked, 2, "only child_a and grandchild_a1 should be revoked");
+        assert_eq!(
+            revoked, 2,
+            "only child_a and grandchild_a1 should be revoked"
+        );
 
         assert!(!tree.get(&child_a).unwrap().is_alive());
         assert!(!tree.get(&grandchild_a1).unwrap().is_alive());

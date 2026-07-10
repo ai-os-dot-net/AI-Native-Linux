@@ -14,12 +14,22 @@ if ! command -v packer >/dev/null 2>&1; then
     exit 0
 fi
 
+PACKER_VERSION="$(packer version 2>&1 | head -1 || true)"
+case "${PACKER_VERSION}" in
+    Packer\ v*|*HashiCorp*)
+        ;;
+    *)
+        echo "SKIP: command named 'packer' is not HashiCorp Packer: ${PACKER_VERSION}"
+        exit 0
+        ;;
+esac
+
 PASS=0
 FAIL=0
 FAILED_FILES=()
 
 echo "=== AI-OS.NET Cloud — Packer Template Validation ==="
-echo "Packer version: $(packer version | head -1)"
+echo "Packer version: ${PACKER_VERSION}"
 echo ""
 
 packer init "${PACKER_DIR}" 2>/dev/null || true

@@ -13,8 +13,8 @@ pub mod distributed_cognition;
 pub mod governance;
 
 // ── Orchestration ──
-pub mod orchestrator;
 pub mod failover;
+pub mod orchestrator;
 
 // ── Integration ──
 pub mod bridge;
@@ -25,11 +25,11 @@ pub mod enums;
 pub mod error;
 
 pub use autonomy_engine::AutonomyEngine;
+pub use bridge::FleetCognitionBridge;
 pub use cross_machine_healing::CrossMachineHealing;
 pub use distributed_cognition::DistributedCognitiveRouter;
+pub use error::AutonomousError;
+pub use evidence_sync::CrossMachineEvidenceSync;
+pub use failover::AutonomousFailoverEngine;
 pub use governance::FleetConstitution;
 pub use orchestrator::AutonomousOrchestrator;
-pub use failover::AutonomousFailoverEngine;
-pub use bridge::FleetCognitionBridge;
-pub use evidence_sync::CrossMachineEvidenceSync;
-pub use error::AutonomousError;

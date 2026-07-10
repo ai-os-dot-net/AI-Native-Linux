@@ -1,9 +1,9 @@
 use chrono::Utc;
 
-use crate::error::AutonomousError;
 use crate::enums::{
     AutonomousAction, AutonomousDecisionVerdict, AutonomyLevel, FleetHealthAggregate,
 };
+use crate::error::AutonomousError;
 use crate::governance::FleetConstitution;
 
 #[derive(Debug, Clone)]
@@ -154,7 +154,7 @@ impl AutonomyEngine {
         let gov_verdict = self.policy.evaluate_action(&action_name, 0, 0);
         if gov_verdict == AutonomousDecisionVerdict::Approved {
             self.evidence_log
-                .push(AutonomyEvidence::new(action, gov_verdict.clone()));
+                .push(AutonomyEvidence::new(action, gov_verdict));
             Ok(gov_verdict)
         } else {
             self.evidence_log
@@ -222,7 +222,10 @@ mod tests {
         };
         assert_eq!(
             AutonomyEngine::evaluate_health(snap),
-            FleetHealthAggregate::Healthy { resource_imbalance: false }        );
+            FleetHealthAggregate::Healthy {
+                resource_imbalance: false
+            }
+        );
     }
 
     #[test]
@@ -235,7 +238,10 @@ mod tests {
         };
         assert_eq!(
             AutonomyEngine::evaluate_health(snap),
-            FleetHealthAggregate::Healthy { resource_imbalance: false }        );
+            FleetHealthAggregate::Healthy {
+                resource_imbalance: false
+            }
+        );
     }
 
     #[test]
@@ -318,7 +324,9 @@ mod tests {
     #[test]
     fn decide_healthy_balanced_no_action() {
         let engine = AutonomyEngine::new(AutonomyLevel::FullyAutonomous);
-        let actions = engine.decide_action(FleetHealthAggregate::Healthy { resource_imbalance: false });
+        let actions = engine.decide_action(FleetHealthAggregate::Healthy {
+            resource_imbalance: false,
+        });
         assert!(actions.is_empty());
     }
 
@@ -407,14 +415,21 @@ mod tests {
     fn evidence_log_accumulates_across_multiple_execute_calls() {
         let mut engine = AutonomyEngine::new(AutonomyLevel::FullyAutonomous);
         engine.execute_action(AutonomousAction::RestartRemote).ok();
-        engine.execute_action(AutonomousAction::MigrateWorkload).ok();
+        engine
+            .execute_action(AutonomousAction::MigrateWorkload)
+            .ok();
         assert_eq!(engine.evidence_log.len(), 2);
     }
 
     #[test]
     fn engine_new_starts_healthy() {
         let engine = AutonomyEngine::new(AutonomyLevel::FullyAutonomous);
-        assert_eq!(engine.fleet_state, FleetHealthAggregate::Healthy { resource_imbalance: false });
+        assert_eq!(
+            engine.fleet_state,
+            FleetHealthAggregate::Healthy {
+                resource_imbalance: false
+            }
+        );
         assert_eq!(engine.autonomy_level, AutonomyLevel::FullyAutonomous);
         assert!(engine.evidence_log.is_empty());
     }
@@ -439,7 +454,10 @@ mod tests {
         };
         assert_eq!(
             AutonomyEngine::evaluate_health(snap),
-            FleetHealthAggregate::Healthy { resource_imbalance: false }        );
+            FleetHealthAggregate::Healthy {
+                resource_imbalance: false
+            }
+        );
     }
 
     #[test]
@@ -486,7 +504,12 @@ mod tests {
         let mut engine = AutonomyEngine::new(AutonomyLevel::FullyAutonomous);
         engine.fleet_state = FleetHealthAggregate::Critical;
         let _ = engine.run_autonomy_loop();
-        assert_eq!(engine.fleet_state, FleetHealthAggregate::Healthy { resource_imbalance: false });
+        assert_eq!(
+            engine.fleet_state,
+            FleetHealthAggregate::Healthy {
+                resource_imbalance: false
+            }
+        );
     }
 
     #[test]

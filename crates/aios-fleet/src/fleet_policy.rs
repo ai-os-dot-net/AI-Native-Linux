@@ -69,7 +69,9 @@ impl fmt::Display for FleetHardDenyRule {
             Self::AiAuthorCheckpoint => write!(f, "hd.s25.ai_author_checkpoint"),
             Self::AiApproveRouting => write!(f, "hd.s25.ai_approve_routing"),
             Self::ForeignSubjectAdmin => write!(f, "hd.s25.foreign_subject_admin"),
-            Self::TransitiveDelegationUnsigned => write!(f, "hd.s25.transitive_delegation_unsigned"),
+            Self::TransitiveDelegationUnsigned => {
+                write!(f, "hd.s25.transitive_delegation_unsigned")
+            }
             Self::SilentLegacyIdCollision => write!(f, "hd.s25.silent_legacy_id_collision"),
         }
     }
@@ -135,11 +137,7 @@ pub struct SecurityProfile {
 impl SecurityProfile {
     /// Creates a new security profile.
     #[must_use]
-    pub fn new(
-        profile_id: String,
-        posture_floor: u8,
-        current_posture: u8,
-    ) -> Self {
+    pub fn new(profile_id: String, posture_floor: u8, current_posture: u8) -> Self {
         Self {
             profile_id,
             posture_floor,
@@ -356,7 +354,10 @@ impl FleetPolicyGate {
     /// Creates a new fleet policy gate with only the given rules.
     #[must_use]
     pub fn with_rules(rules: Vec<FleetHardDenyRule>) -> Self {
-        Self { rules, active: true }
+        Self {
+            rules,
+            active: true,
+        }
     }
 
     /// Returns `true` when the given rule is active on this gate.
@@ -436,49 +437,47 @@ fn enforce_host_sovereignty(
     denials: &mut Vec<FleetPolicyDenial>,
 ) {
     match action {
-        ClusterAction::OverrideHostPolicy => {
-            if rules.contains(&FleetHardDenyRule::ClusterOverrideHostPolicy) {
-                denials.push(FleetPolicyDenial::new(
-                    FleetHardDenyRule::ClusterOverrideHostPolicy,
-                    "INV-026: cluster cannot override host policy — host sovereignty is constitutional".into(),
-                ));
-            }
+        ClusterAction::OverrideHostPolicy
+            if rules.contains(&FleetHardDenyRule::ClusterOverrideHostPolicy) =>
+        {
+            denials.push(FleetPolicyDenial::new(
+                FleetHardDenyRule::ClusterOverrideHostPolicy,
+                "INV-026: cluster cannot override host policy — host sovereignty is constitutional"
+                    .into(),
+            ));
         }
-        ClusterAction::WeakenProfile => {
-            if rules.contains(&FleetHardDenyRule::ClusterWeakenProfile) {
-                if profile.host_originated {
-                    denials.push(FleetPolicyDenial::new(
-                        FleetHardDenyRule::ClusterWeakenProfile,
-                        format!(
-                            "cluster cannot weaken host-originated security profile '{}' (posture floor: {})",
-                            profile.profile_id, profile.posture_floor,
-                        ),
-                    ));
-                }
-            }
+        ClusterAction::WeakenProfile
+            if rules.contains(&FleetHardDenyRule::ClusterWeakenProfile)
+                && profile.host_originated =>
+        {
+            denials.push(FleetPolicyDenial::new(
+                FleetHardDenyRule::ClusterWeakenProfile,
+                format!(
+                    "cluster cannot weaken host-originated security profile '{}' (posture floor: {})",
+                    profile.profile_id, profile.posture_floor,
+                ),
+            ));
         }
-        ClusterAction::MutateHostEvidence => {
-            if rules.contains(&FleetHardDenyRule::ClusterMutateHostEvidence) {
-                denials.push(FleetPolicyDenial::new(
-                    FleetHardDenyRule::ClusterMutateHostEvidence,
-                    "cluster cannot mutate host evidence records — evidence sovereignty is constitutional".into(),
-                ));
-            }
+        ClusterAction::MutateHostEvidence
+            if rules.contains(&FleetHardDenyRule::ClusterMutateHostEvidence) =>
+        {
+            denials.push(FleetPolicyDenial::new(
+                FleetHardDenyRule::ClusterMutateHostEvidence,
+                "cluster cannot mutate host evidence records — evidence sovereignty is constitutional"
+                    .into(),
+            ));
         }
-        ClusterAction::BecomeRoot => {
-            if rules.contains(&FleetHardDenyRule::ClusterBecomeRoot) {
-                if !subject.is_cluster_root {
-                    denials.push(FleetPolicyDenial::new(
-                        FleetHardDenyRule::ClusterBecomeRoot,
-                        format!(
-                            "subject '{}' cannot escalate to root on the host — only the cluster root may perform BecomeRoot",
-                            subject.canonical_id,
-                        ),
-                    ));
-                }
-                // Cluster root's own actions are not censored by BecomeRoot.
-                // A cluster root subject is allowed to BecomeRoot.
-            }
+        ClusterAction::BecomeRoot
+            if rules.contains(&FleetHardDenyRule::ClusterBecomeRoot)
+                && !subject.is_cluster_root =>
+        {
+            denials.push(FleetPolicyDenial::new(
+                FleetHardDenyRule::ClusterBecomeRoot,
+                format!(
+                    "subject '{}' cannot escalate to root on the host — only the cluster root may perform BecomeRoot",
+                    subject.canonical_id,
+                ),
+            ));
         }
         _ => {}
     }
@@ -500,27 +499,25 @@ fn enforce_ai_denials(
     }
 
     match action {
-        ClusterAction::AuthorCheckpoint => {
-            if rules.contains(&FleetHardDenyRule::AiAuthorCheckpoint) {
-                denials.push(FleetPolicyDenial::new(
-                    FleetHardDenyRule::AiAuthorCheckpoint,
-                    format!(
-                        "AI subject '{}' cannot author a cluster checkpoint — checkpoint authorship is reserved for human operators",
-                        subject.canonical_id,
-                    ),
-                ));
-            }
+        ClusterAction::AuthorCheckpoint
+            if rules.contains(&FleetHardDenyRule::AiAuthorCheckpoint) =>
+        {
+            denials.push(FleetPolicyDenial::new(
+                FleetHardDenyRule::AiAuthorCheckpoint,
+                format!(
+                    "AI subject '{}' cannot author a cluster checkpoint — checkpoint authorship is reserved for human operators",
+                    subject.canonical_id,
+                ),
+            ));
         }
-        ClusterAction::ApproveRouting => {
-            if rules.contains(&FleetHardDenyRule::AiApproveRouting) {
-                denials.push(FleetPolicyDenial::new(
-                    FleetHardDenyRule::AiApproveRouting,
-                    format!(
-                        "AI subject '{}' cannot approve remote routing — routing approval is reserved for human operators",
-                        subject.canonical_id,
-                    ),
-                ));
-            }
+        ClusterAction::ApproveRouting if rules.contains(&FleetHardDenyRule::AiApproveRouting) => {
+            denials.push(FleetPolicyDenial::new(
+                FleetHardDenyRule::AiApproveRouting,
+                format!(
+                    "AI subject '{}' cannot approve remote routing — routing approval is reserved for human operators",
+                    subject.canonical_id,
+                ),
+            ));
         }
         _ => {}
     }
@@ -617,7 +614,14 @@ fn enforce_transitive_delegation(
             .iter()
             .enumerate()
             .filter(|(_, d)| !d.allows_transitive())
-            .map(|(i, d)| format!("hop {}: delegation '{}' (max_hops: {})", i + 1, d.delegation_id, d.max_hops))
+            .map(|(i, d)| {
+                format!(
+                    "hop {}: delegation '{}' (max_hops: {})",
+                    i + 1,
+                    d.delegation_id,
+                    d.max_hops
+                )
+            })
             .collect();
 
         if !unsupported_hops.is_empty() {
@@ -741,15 +745,15 @@ mod tests {
         let gate = FleetPolicyGate::full();
         let subject = local_human("worker");
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::OverrideHostPolicy,
-            &subject,
-            &profile,
-        );
+        let result =
+            gate.evaluate_cluster_action(&ClusterAction::OverrideHostPolicy, &subject, &profile);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.denial_count(), 1);
-        assert_eq!(err.denials[0].rule, FleetHardDenyRule::ClusterOverrideHostPolicy);
+        assert_eq!(
+            err.denials[0].rule,
+            FleetHardDenyRule::ClusterOverrideHostPolicy
+        );
     }
 
     // --- Cluster weaken profile — DENIED ---
@@ -759,13 +763,13 @@ mod tests {
         let gate = FleetPolicyGate::full();
         let subject = local_human("worker");
         let profile = SecurityProfile::new("prof_host_01".into(), 80, 80);
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::WeakenProfile,
-            &subject,
-            &profile,
-        );
+        let result =
+            gate.evaluate_cluster_action(&ClusterAction::WeakenProfile, &subject, &profile);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().denials[0].rule, FleetHardDenyRule::ClusterWeakenProfile);
+        assert_eq!(
+            result.unwrap_err().denials[0].rule,
+            FleetHardDenyRule::ClusterWeakenProfile
+        );
     }
 
     // --- Cluster mutate host evidence — DENIED ---
@@ -775,13 +779,13 @@ mod tests {
         let gate = FleetPolicyGate::full();
         let subject = local_human("worker");
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::MutateHostEvidence,
-            &subject,
-            &profile,
-        );
+        let result =
+            gate.evaluate_cluster_action(&ClusterAction::MutateHostEvidence, &subject, &profile);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().denials[0].rule, FleetHardDenyRule::ClusterMutateHostEvidence);
+        assert_eq!(
+            result.unwrap_err().denials[0].rule,
+            FleetHardDenyRule::ClusterMutateHostEvidence
+        );
     }
 
     // --- Cluster BecomeRoot — non-root denied, root allowed ---
@@ -791,13 +795,12 @@ mod tests {
         let gate = FleetPolicyGate::full();
         let subject = local_human("worker");
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::BecomeRoot,
-            &subject,
-            &profile,
-        );
+        let result = gate.evaluate_cluster_action(&ClusterAction::BecomeRoot, &subject, &profile);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().denials[0].rule, FleetHardDenyRule::ClusterBecomeRoot);
+        assert_eq!(
+            result.unwrap_err().denials[0].rule,
+            FleetHardDenyRule::ClusterBecomeRoot
+        );
     }
 
     #[test]
@@ -805,11 +808,7 @@ mod tests {
         let gate = FleetPolicyGate::full();
         let subject = cluster_root();
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::BecomeRoot,
-            &subject,
-            &profile,
-        );
+        let result = gate.evaluate_cluster_action(&ClusterAction::BecomeRoot, &subject, &profile);
         assert!(result.is_ok());
     }
 
@@ -820,13 +819,13 @@ mod tests {
         let gate = FleetPolicyGate::full();
         let subject = local_ai();
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::AuthorCheckpoint,
-            &subject,
-            &profile,
-        );
+        let result =
+            gate.evaluate_cluster_action(&ClusterAction::AuthorCheckpoint, &subject, &profile);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().denials[0].rule, FleetHardDenyRule::AiAuthorCheckpoint);
+        assert_eq!(
+            result.unwrap_err().denials[0].rule,
+            FleetHardDenyRule::AiAuthorCheckpoint
+        );
     }
 
     // --- AI approve routing — DENIED ---
@@ -836,40 +835,32 @@ mod tests {
         let gate = FleetPolicyGate::full();
         let subject = local_ai();
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::ApproveRouting,
-            &subject,
-            &profile,
-        );
+        let result =
+            gate.evaluate_cluster_action(&ClusterAction::ApproveRouting, &subject, &profile);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().denials[0].rule, FleetHardDenyRule::AiApproveRouting);
+        assert_eq!(
+            result.unwrap_err().denials[0].rule,
+            FleetHardDenyRule::AiApproveRouting
+        );
     }
-
 
     #[test]
     fn human_author_checkpoint_allowed() {
         let gate = FleetPolicyGate::full();
         let subject = local_admin("human_admin");
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::AuthorCheckpoint,
-            &subject,
-            &profile,
-        );
+        let result =
+            gate.evaluate_cluster_action(&ClusterAction::AuthorCheckpoint, &subject, &profile);
         assert!(result.is_ok());
     }
-
 
     #[test]
     fn human_approve_routing_allowed() {
         let gate = FleetPolicyGate::full();
         let subject = local_admin("human_admin");
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::ApproveRouting,
-            &subject,
-            &profile,
-        );
+        let result =
+            gate.evaluate_cluster_action(&ClusterAction::ApproveRouting, &subject, &profile);
         assert!(result.is_ok());
     }
 
@@ -882,14 +873,15 @@ mod tests {
         let profile = host_profile();
         let foreign_id = FederatedSubjectId::new("realm:other".into(), "foreign-admin".into());
         let result = gate.evaluate_cluster_action(
-            &ClusterAction::GrantAdmin {
-                target: foreign_id,
-            },
+            &ClusterAction::GrantAdmin { target: foreign_id },
             &subject,
             &profile,
         );
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().denials[0].rule, FleetHardDenyRule::ForeignSubjectAdmin);
+        assert_eq!(
+            result.unwrap_err().denials[0].rule,
+            FleetHardDenyRule::ForeignSubjectAdmin
+        );
     }
 
     // --- Foreign subject with ceiling — within ceiling ALLOWED ---
@@ -915,9 +907,7 @@ mod tests {
         let profile = host_profile();
         let local_id = FederatedSubjectId::resolve_legacy("local_user");
         let result = gate.evaluate_cluster_action(
-            &ClusterAction::GrantAdmin {
-                target: local_id,
-            },
+            &ClusterAction::GrantAdmin { target: local_id },
             &subject,
             &profile,
         );
@@ -949,16 +939,17 @@ mod tests {
         let profile = host_profile();
         let foreign_id = FederatedSubjectId::new("realm:remote".into(), "bad-admin".into());
         let result = gate.evaluate_cluster_action(
-            &ClusterAction::GrantAdmin {
-                target: foreign_id,
-            },
+            &ClusterAction::GrantAdmin { target: foreign_id },
             &subject,
             &profile,
         );
         assert!(result.is_err());
         // Both ForeignSubjectAdmin should fire (target is foreign, and subject is foreign admin beyond ceiling)
         let err = result.unwrap_err();
-        assert!(err.denials.iter().any(|d| d.rule == FleetHardDenyRule::ForeignSubjectAdmin));
+        assert!(err
+            .denials
+            .iter()
+            .any(|d| d.rule == FleetHardDenyRule::ForeignSubjectAdmin));
     }
 
     // --- Transitive delegation unsigned — DENIED ---
@@ -970,11 +961,15 @@ mod tests {
         let profile = host_profile();
 
         let d1 = CrossOrgTrustDelegation::new(
-            "del_01".into(), "realm:a".into(), "realm:b".into(),
+            "del_01".into(),
+            "realm:a".into(),
+            "realm:b".into(),
             TrustDelegationDirection::OutboundVouch,
         );
         let d2 = CrossOrgTrustDelegation::new(
-            "del_02".into(), "realm:b".into(), "realm:c".into(),
+            "del_02".into(),
+            "realm:b".into(),
+            "realm:c".into(),
             TrustDelegationDirection::OutboundVouch,
         );
         // d1.max_hops = 0, d2.max_hops = 0 — both forbid transitive
@@ -1002,12 +997,16 @@ mod tests {
         let profile = host_profile();
 
         let mut d1 = CrossOrgTrustDelegation::new(
-            "del_01".into(), "realm:a".into(), "realm:b".into(),
+            "del_01".into(),
+            "realm:a".into(),
+            "realm:b".into(),
             TrustDelegationDirection::OutboundVouch,
         );
         d1.max_hops = 2;
         let mut d2 = CrossOrgTrustDelegation::new(
-            "del_02".into(), "realm:b".into(), "realm:c".into(),
+            "del_02".into(),
+            "realm:b".into(),
+            "realm:c".into(),
             TrustDelegationDirection::OutboundVouch,
         );
         d2.max_hops = 2;
@@ -1051,11 +1050,8 @@ mod tests {
         let gate = FleetPolicyGate::full();
         let subject = local_admin("admin");
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::AuthorCheckpoint,
-            &subject,
-            &profile,
-        );
+        let result =
+            gate.evaluate_cluster_action(&ClusterAction::AuthorCheckpoint, &subject, &profile);
         assert!(result.is_ok());
     }
 
@@ -1089,15 +1085,16 @@ mod tests {
         let gate = FleetPolicyGate::full();
         let subject = local_ai();
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::OverrideHostPolicy,
-            &subject,
-            &profile,
-        );
+        let result =
+            gate.evaluate_cluster_action(&ClusterAction::OverrideHostPolicy, &subject, &profile);
         assert!(result.is_err());
         let err = result.unwrap_err();
         // ClusterOverrideHostPolicy fires + AI checks don't fire for OverrideHostPolicy
-        assert_eq!(err.denial_count(), 1, "OverrideHostPolicy triggers 1 denial");
+        assert_eq!(
+            err.denial_count(),
+            1,
+            "OverrideHostPolicy triggers 1 denial"
+        );
     }
 
     #[test]
@@ -1105,11 +1102,8 @@ mod tests {
         let gate = FleetPolicyGate::full();
         let subject = local_ai();
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::AuthorCheckpoint,
-            &subject,
-            &profile,
-        );
+        let result =
+            gate.evaluate_cluster_action(&ClusterAction::AuthorCheckpoint, &subject, &profile);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.denial_count(), 1);
@@ -1122,7 +1116,11 @@ mod tests {
     fn all_nine_rules_individually_enforceable() {
         use strum::IntoEnumIterator;
         let variants: Vec<_> = FleetHardDenyRule::iter().collect();
-        assert_eq!(variants.len(), 9, "S25 §12 defines exactly 9 hard-deny rules");
+        assert_eq!(
+            variants.len(),
+            9,
+            "S25 §12 defines exactly 9 hard-deny rules"
+        );
 
         for rule in &variants {
             let gate = FleetPolicyGate::with_rules(vec![*rule]);
@@ -1138,11 +1136,8 @@ mod tests {
         gate.active = false;
         let subject = local_ai();
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::OverrideHostPolicy,
-            &subject,
-            &profile,
-        );
+        let result =
+            gate.evaluate_cluster_action(&ClusterAction::OverrideHostPolicy, &subject, &profile);
         assert!(result.is_ok());
     }
 
@@ -1217,11 +1212,8 @@ mod tests {
             Some(del),
         );
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::AuthorCheckpoint,
-            &subject,
-            &profile,
-        );
+        let result =
+            gate.evaluate_cluster_action(&ClusterAction::AuthorCheckpoint, &subject, &profile);
         assert!(result.is_ok());
     }
 
@@ -1248,14 +1240,16 @@ mod tests {
         let profile = host_profile();
         let foreign_id = FederatedSubjectId::new("realm:remote".into(), "evil-admin".into());
         let result = gate.evaluate_cluster_action(
-            &ClusterAction::GrantAdmin {
-                target: foreign_id,
-            },
+            &ClusterAction::GrantAdmin { target: foreign_id },
             &subject,
             &profile,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().denials.iter().any(|d| d.rule == FleetHardDenyRule::ForeignSubjectAdmin));
+        assert!(result
+            .unwrap_err()
+            .denials
+            .iter()
+            .any(|d| d.rule == FleetHardDenyRule::ForeignSubjectAdmin));
     }
 
     // --- Cluster root's own actions not censored ---
@@ -1265,11 +1259,7 @@ mod tests {
         let gate = FleetPolicyGate::full();
         let subject = cluster_root();
         let profile = host_profile();
-        let result = gate.evaluate_cluster_action(
-            &ClusterAction::BecomeRoot,
-            &subject,
-            &profile,
-        );
+        let result = gate.evaluate_cluster_action(&ClusterAction::BecomeRoot, &subject, &profile);
         assert!(result.is_ok());
     }
 }

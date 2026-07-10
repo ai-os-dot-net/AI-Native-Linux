@@ -35,9 +35,7 @@ use crate::model_catalog::CognitiveModelCatalog;
 use crate::provider_dispatch::{DispatchOutcome, ProviderDispatcher};
 use crate::router::ModelRouter;
 use crate::router_state::RouterState;
-use crate::routing::{
-    BackendHealthEntry, ProviderClass, RoutingDecision, RoutingInputs,
-};
+use crate::routing::{BackendHealthEntry, ProviderClass, RoutingDecision, RoutingInputs};
 use crate::translator::{TranslationProvenance, TranslationResult};
 use crate::translator_engine::TranslatorEngine;
 
@@ -131,13 +129,11 @@ impl ProductionCognitiveCore {
     pub fn with_evidence_emitter(mut self, emitter: Arc<CognitiveEvidenceEmitter>) -> Self {
         // Also wire the evidence emitter into the adapters for MODEL_CALL evidence.
         if let Some(ref oa) = self.ollama_adapter {
-            let new_oa = (**oa).clone()
-                .with_evidence_emitter(Arc::clone(&emitter));
+            let new_oa = (**oa).clone().with_evidence_emitter(Arc::clone(&emitter));
             self.ollama_adapter = Some(Arc::new(new_oa));
         }
         if let Some(ref va) = self.vllm_adapter {
-            let new_va = (**va).clone()
-                .with_evidence_emitter(Arc::clone(&emitter));
+            let new_va = (**va).clone().with_evidence_emitter(Arc::clone(&emitter));
             self.vllm_adapter = Some(Arc::new(new_va));
         }
         self.evidence_emitter = Some(emitter);
@@ -288,11 +284,8 @@ impl ProductionCognitiveCore {
 
         // ── Step 1: Classify latency tier ──
         let classifier = LatencyClassifier::new_with_defaults();
-        let latency_tier = classifier.classify(
-            intent,
-            &format!("{:?}", intent.privacy_class),
-            false,
-        );
+        let latency_tier =
+            classifier.classify(intent, &format!("{:?}", intent.privacy_class), false);
 
         // ── Step 2: Route ──
         let decision = self.route_intent(intent, latency_tier).await?;
@@ -306,7 +299,8 @@ impl ProductionCognitiveCore {
             Ok(ticket) => ticket,
             Err(err) => {
                 if let Some(ref emitter) = self.evidence_emitter {
-                    if let Some(breaker) = self.breaker_registry.get(decision.chosen_backend).await {
+                    if let Some(breaker) = self.breaker_registry.get(decision.chosen_backend).await
+                    {
                         let stats = breaker.current_stats().await;
                         let _ = emitter
                             .emit_circuit_breaker_tripped(
@@ -333,9 +327,7 @@ impl ProductionCognitiveCore {
             .await?;
 
         // ── Step 5: Parse LLM JSON → structured action ──
-        let parsed = self
-            .translator_engine
-            .parse_json_response(&response_text)?;
+        let parsed = self.translator_engine.parse_json_response(&response_text)?;
 
         let clamped_confidence = parsed.confidence.clamp(0.0, 1.0);
         if clamped_confidence < self.translator_engine.min_confidence() {
@@ -353,11 +345,7 @@ impl ProductionCognitiveCore {
                 &parsed.action_name,
                 serde_json::to_value(&parsed.parameters).unwrap_or_default(),
             ),
-            Trace::new(
-                "00000000000000000000000000000000",
-                "0000000000000000",
-                None,
-            ),
+            Trace::new("00000000000000000000000000000000", "0000000000000000", None),
         );
 
         if let Some(target) = envelope.request.target.as_object_mut() {
@@ -491,12 +479,11 @@ impl ProductionCognitiveCore {
     ) -> Result<(String, u32, u32, u64), CognitiveError> {
         match decision.provider_class {
             ProviderClass::Ollama => {
-                let adapter = self
-                    .ollama_adapter
-                    .as_ref()
-                    .ok_or_else(|| CognitiveError::Internal(
+                let adapter = self.ollama_adapter.as_ref().ok_or_else(|| {
+                    CognitiveError::Internal(
                         "Ollama provider selected but no OllamaAdapter configured".into(),
-                    ))?;
+                    )
+                })?;
 
                 let request = OllamaGenerateRequest::new(
                     self.ollama_model_name(decision).await,
@@ -506,26 +493,21 @@ impl ProductionCognitiveCore {
 
                 match adapter.generate(request).await {
                     Ok(response) => {
-                        let tokens_in =
-                            u32::try_from(response.prompt_eval_count.unwrap_or(0))
-                                .unwrap_or(u32::MAX);
-                        let tokens_out =
-                            u32::try_from(response.eval_count.unwrap_or(0))
-                                .unwrap_or(u32::MAX);
+                        let tokens_in = response.prompt_eval_count.unwrap_or(0);
+                        let tokens_out = response.eval_count.unwrap_or(0);
                         let latency_ns = response.total_duration.unwrap_or(0);
-                        let latency_ms = (latency_ns / 1_000_000).min(u64::MAX as u64);
+                        let latency_ms = latency_ns / 1_000_000;
                         Ok((response.response, tokens_in, tokens_out, latency_ms))
                     }
                     Err(err) => Err(map_ollama_error(err)),
                 }
             }
             ProviderClass::Vllm => {
-                let adapter = self
-                    .vllm_adapter
-                    .as_ref()
-                    .ok_or_else(|| CognitiveError::Internal(
+                let adapter = self.vllm_adapter.as_ref().ok_or_else(|| {
+                    CognitiveError::Internal(
                         "vLLM provider selected but no VllmAdapter configured".into(),
-                    ))?;
+                    )
+                })?;
 
                 let request = VllmCompletionRequest::new(
                     self.vllm_model_name(decision).await,
@@ -550,7 +532,9 @@ impl ProductionCognitiveCore {
                     Err(err) => Err(map_vllm_error(err)),
                 }
             }
-            ProviderClass::Anthropic | ProviderClass::Openai | ProviderClass::OtherVaultBrokered => {
+            ProviderClass::Anthropic
+            | ProviderClass::Openai
+            | ProviderClass::OtherVaultBrokered => {
                 self.dispatch_via_dispatcher(decision, combined_prompt)
                     .await
             }
@@ -571,45 +555,35 @@ impl ProductionCognitiveCore {
 
         match decision.provider_class {
             ProviderClass::Ollama => {
-                let adapter = self
-                    .ollama_adapter
-                    .as_ref()
-                    .ok_or_else(|| CognitiveError::Internal(
+                let adapter = self.ollama_adapter.as_ref().ok_or_else(|| {
+                    CognitiveError::Internal(
                         "Ollama provider selected but no OllamaAdapter configured".into(),
-                    ))?;
+                    )
+                })?;
 
-                let request = OllamaGenerateRequest::new(
-                    self.ollama_model_name(decision).await,
-                    prompt,
-                );
+                let request =
+                    OllamaGenerateRequest::new(self.ollama_model_name(decision).await, prompt);
 
                 match adapter.generate(request).await {
                     Ok(response) => {
-                        let tokens_in =
-                            u32::try_from(response.prompt_eval_count.unwrap_or(0))
-                                .unwrap_or(u32::MAX);
-                        let tokens_out =
-                            u32::try_from(response.eval_count.unwrap_or(0))
-                                .unwrap_or(u32::MAX);
+                        let tokens_in = response.prompt_eval_count.unwrap_or(0);
+                        let tokens_out = response.eval_count.unwrap_or(0);
                         let latency_ns = response.total_duration.unwrap_or(0);
-                        let latency_ms = (latency_ns / 1_000_000).min(u64::MAX as u64);
+                        let latency_ms = latency_ns / 1_000_000;
                         Ok((response.response, tokens_in, tokens_out, latency_ms))
                     }
                     Err(err) => Err(map_ollama_error(err)),
                 }
             }
             ProviderClass::Vllm => {
-                let adapter = self
-                    .vllm_adapter
-                    .as_ref()
-                    .ok_or_else(|| CognitiveError::Internal(
+                let adapter = self.vllm_adapter.as_ref().ok_or_else(|| {
+                    CognitiveError::Internal(
                         "vLLM provider selected but no VllmAdapter configured".into(),
-                    ))?;
+                    )
+                })?;
 
-                let request = VllmCompletionRequest::new(
-                    self.vllm_model_name(decision).await,
-                    prompt,
-                );
+                let request =
+                    VllmCompletionRequest::new(self.vllm_model_name(decision).await, prompt);
 
                 match adapter.complete(request).await {
                     Ok(response) => {
@@ -627,8 +601,11 @@ impl ProductionCognitiveCore {
                     Err(err) => Err(map_vllm_error(err)),
                 }
             }
-            ProviderClass::Anthropic | ProviderClass::Openai | ProviderClass::OtherVaultBrokered => {
-                self.dispatch_via_dispatcher(decision, &intent.natural_language).await
+            ProviderClass::Anthropic
+            | ProviderClass::Openai
+            | ProviderClass::OtherVaultBrokered => {
+                self.dispatch_via_dispatcher(decision, &intent.natural_language)
+                    .await
             }
         }
     }
@@ -682,7 +659,12 @@ impl ProductionCognitiveCore {
                 tokens_out,
                 latency_ms,
                 ..
-            } => Ok(("[vault-brokered response]".into(), tokens_in, tokens_out, latency_ms)),
+            } => Ok((
+                "[vault-brokered response]".into(),
+                tokens_in,
+                tokens_out,
+                latency_ms,
+            )),
             DispatchOutcome::Denied { reason, .. } => Err(CognitiveError::TranslationRefused(
                 format!("dispatch denied: {reason}"),
             )),
@@ -745,11 +727,7 @@ impl ProductionCognitiveCore {
                     "natural_language": intent.natural_language,
                 }),
             ),
-            Trace::new(
-                "00000000000000000000000000000000",
-                "0000000000000000",
-                None,
-            ),
+            Trace::new("00000000000000000000000000000000", "0000000000000000", None),
         );
 
         if let Some(target) = envelope.request.target.as_object_mut() {
@@ -826,10 +804,7 @@ impl CognitiveCore for ProductionCognitiveCore {
             .get(intent_id)
             .cloned()
             .ok_or_else(|| {
-                CognitiveError::NoMatchingCapability(format!(
-                    "intent not found: {}",
-                    intent_id.0
-                ))
+                CognitiveError::NoMatchingCapability(format!("intent not found: {}", intent_id.0))
             })
     }
 }
@@ -843,9 +818,7 @@ fn map_ollama_error(err: OllamaError) -> CognitiveError {
         OllamaError::ModelNotFound(msg) => {
             CognitiveError::NoMatchingCapability(format!("ollama model not found: {msg}"))
         }
-        OllamaError::Timeout => {
-            CognitiveError::Internal("ollama request timed out".into())
-        }
+        OllamaError::Timeout => CognitiveError::Internal("ollama request timed out".into()),
         OllamaError::ParseError(msg) => {
             CognitiveError::ModelResponseInvalid(format!("ollama parse error: {msg}"))
         }
@@ -858,9 +831,7 @@ fn map_vllm_error(err: VllmError) -> CognitiveError {
         VllmError::ModelNotFound(msg) => {
             CognitiveError::NoMatchingCapability(format!("vllm model not found: {msg}"))
         }
-        VllmError::Timeout => {
-            CognitiveError::Internal("vllm request timed out".into())
-        }
+        VllmError::Timeout => CognitiveError::Internal("vllm request timed out".into()),
         VllmError::ParseError(msg) => {
             CognitiveError::ModelResponseInvalid(format!("vllm parse error: {msg}"))
         }
@@ -988,7 +959,10 @@ mod tests {
         let core = make_core();
         // Set LocalGpu as healthy.
         core.router_state
-            .set_health(ModelBackendKind::LocalGpu, crate::routing::BackendHealthState::Healthy)
+            .set_health(
+                ModelBackendKind::LocalGpu,
+                crate::routing::BackendHealthState::Healthy,
+            )
             .await;
 
         // Use a T3-worthy intent.
@@ -1059,7 +1033,10 @@ mod tests {
         let core = make_core();
         // Set LocalGpu healthy for routing, but open the breaker.
         core.router_state
-            .set_health(ModelBackendKind::LocalGpu, crate::routing::BackendHealthState::Healthy)
+            .set_health(
+                ModelBackendKind::LocalGpu,
+                crate::routing::BackendHealthState::Healthy,
+            )
             .await;
 
         for _ in 0..10 {
@@ -1089,7 +1066,9 @@ mod tests {
         let intents = core.list_supported_intents();
         assert_eq!(intents.len(), 3);
         assert!(intents.iter().any(|c| c.intent_kind == "service.restart"));
-        assert!(intents.iter().any(|c| c.intent_kind == "cognitive.translate"));
+        assert!(intents
+            .iter()
+            .any(|c| c.intent_kind == "cognitive.translate"));
         assert!(intents.iter().any(|c| c.intent_kind == "model.invoke"));
     }
 

@@ -222,11 +222,7 @@ impl AutonomousFailoverEngine {
     /// The urgency is computed by inverting the health and resource scores
     /// (what is broken), adding cognitive load, and weighting by trend.
     #[must_use]
-    pub fn evaluate_host_health(
-        &mut self,
-        host_id: &str,
-        health: HealthState,
-    ) -> FailoverScore {
+    pub fn evaluate_host_health(&mut self, host_id: &str, health: HealthState) -> FailoverScore {
         let (health_score, resource_score, cognitive_load_score) =
             Self::health_state_to_scores(health);
 
@@ -244,8 +240,7 @@ impl AutonomousFailoverEngine {
             HealthTrend::Improving => 0.7,
         };
 
-        let urgency_score =
-            ((base_urgency as f64) * trend_multiplier).min(100.0) as u32;
+        let urgency_score = ((base_urgency as f64) * trend_multiplier).min(100.0) as u32;
 
         let components = FailoverScoring {
             urgency_score,
@@ -257,12 +252,8 @@ impl AutonomousFailoverEngine {
 
         let recommendation = match urgency_score {
             0..=24 => FailoverDecision::NoAction,
-            25..=49 => {
-                FailoverDecision::WarmStandby(Self::derive_target_host(host_id))
-            }
-            50..=74 => {
-                FailoverDecision::ActiveFailover(Self::derive_target_host(host_id))
-            }
+            25..=49 => FailoverDecision::WarmStandby(Self::derive_target_host(host_id)),
+            50..=74 => FailoverDecision::ActiveFailover(Self::derive_target_host(host_id)),
             _ => FailoverDecision::FullPromote(Self::derive_target_host(host_id)),
         };
 
@@ -279,11 +270,7 @@ impl AutonomousFailoverEngine {
     ///
     /// Returns `None` only if the recommendation is already `NoAction`.
     #[must_use]
-    pub fn decide_failover(
-        &self,
-        host_id: &str,
-        score: FailoverScore,
-    ) -> Option<FailoverDecision> {
+    pub fn decide_failover(&self, host_id: &str, score: FailoverScore) -> Option<FailoverDecision> {
         if score.score < 25 {
             return Some(FailoverDecision::NoAction);
         }
@@ -379,10 +366,7 @@ impl AutonomousFailoverEngine {
     ///
     /// Returns [`AutonomousError::CoordinatorPromotionFailed`] if the
     /// coordinator name is empty.
-    pub fn promote_coordinator(
-        &mut self,
-        new_coordinator: &str,
-    ) -> Result<(), AutonomousError> {
+    pub fn promote_coordinator(&mut self, new_coordinator: &str) -> Result<(), AutonomousError> {
         if new_coordinator.is_empty() {
             return Err(AutonomousError::CoordinatorPromotionFailed(
                 "coordinator name cannot be empty".into(),
@@ -391,12 +375,8 @@ impl AutonomousFailoverEngine {
 
         let failover_id = Ulid::new().to_string();
         let started_at = Utc::now();
-        let _evidence_hash = Self::compute_evidence_hash(
-            "fleet-coordinator",
-            new_coordinator,
-            &started_at,
-            &[],
-        );
+        let _evidence_hash =
+            Self::compute_evidence_hash("fleet-coordinator", new_coordinator, &started_at, &[]);
 
         let mut record = FailoverRecord::new(
             failover_id,
@@ -533,8 +513,11 @@ mod tests {
         let mut engine = AutonomousFailoverEngine::new();
         let score = engine.evaluate_host_health("host-1", HealthState::Unknown);
         // Inverted: (100-40)/3=20, (100-40)/3=20, 40/3≈13 → 53 × 1.0 = 53
-        assert!(score.score >= 40 && score.score <= 60,
-            "unknown host score={}", score.score);
+        assert!(
+            score.score >= 40 && score.score <= 60,
+            "unknown host score={}",
+            score.score
+        );
     }
 
     // ── Decision thresholds ────────────────────────────────────────────
@@ -572,7 +555,10 @@ mod tests {
             recommendation: FailoverDecision::NoAction,
         };
         let decision = engine.decide_failover("host-1", score);
-        assert!(matches!(decision, Some(FailoverDecision::ActiveFailover(_))));
+        assert!(matches!(
+            decision,
+            Some(FailoverDecision::ActiveFailover(_))
+        ));
     }
 
     #[test]
@@ -619,8 +605,7 @@ mod tests {
             .execute_failover(FailoverDecision::ActiveFailover("t-2".into()))
             .unwrap();
 
-        let result =
-            engine.execute_failover(FailoverDecision::WarmStandby("t-3".into()));
+        let result = engine.execute_failover(FailoverDecision::WarmStandby("t-3".into()));
         assert!(result.is_err());
         match result.unwrap_err() {
             AutonomousError::FailoverLimitExceeded { max, current } => {
@@ -710,7 +695,9 @@ mod tests {
         engine.promote_coordinator("host-alpha").unwrap();
 
         let history = engine.get_failover_history();
-        let promo = history.iter().find(|r| r.source_host == "fleet-coordinator");
+        let promo = history
+            .iter()
+            .find(|r| r.source_host == "fleet-coordinator");
         assert!(promo.is_some(), "promotion should appear in history");
         assert_eq!(promo.unwrap().target_host, "host-alpha");
         assert!(promo.unwrap().success);
@@ -824,13 +811,13 @@ mod tests {
         let score = engine.evaluate_host_health("host-critical", HealthState::Failed);
         assert!(score.score > 50);
 
-        let decision = engine
-            .decide_failover("host-critical", score)
-            .unwrap();
+        let decision = engine.decide_failover("host-critical", score).unwrap();
         assert!(matches!(decision, FailoverDecision::FullPromote(_)));
 
         let af = engine.execute_failover(decision).unwrap();
-        assert!(af.source_host.contains("fleet-coordinator")
-            || af.source_host.contains("auto-detected"));
+        assert!(
+            af.source_host.contains("fleet-coordinator")
+                || af.source_host.contains("auto-detected")
+        );
     }
 }

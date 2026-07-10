@@ -13,9 +13,7 @@ use strum_macros::{EnumCount, EnumIter};
 /// These 14 variants extend the single-host `RecordType` vocabulary (427 entries)
 /// with fleet/cluster lifecycle events. They are serialized as standalone
 /// `SCREAMING_SNAKE_CASE` strings compatible with the S3.1 evidence log wire format.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FleetRecordType {
     /// A host has been enrolled into the fleet cluster.
@@ -255,8 +253,10 @@ mod tests {
     #[test]
     fn serde_payload_roundtrips() {
         let p = FleetHostEnrolledPayload {
-            host_id: "h1".into(), cluster_id: "c1".into(),
-            membership_id: "m1".into(), authorized_by: "op1".into(),
+            host_id: "h1".into(),
+            cluster_id: "c1".into(),
+            membership_id: "m1".into(),
+            authorized_by: "op1".into(),
         };
         let json = serde_json::to_string(&p).expect("ser");
         let back: FleetHostEnrolledPayload = serde_json::from_str(&json).expect("de");
@@ -279,8 +279,10 @@ mod tests {
     #[test]
     fn serde_host_policy_override_denied_roundtrip() {
         let p = HostPolicyOverrideDeniedPayload {
-            host_id: "h1".into(), cluster_id: "c1".into(),
-            denied_action: "SUSPEND".into(), reason: "INV-026".into(),
+            host_id: "h1".into(),
+            cluster_id: "c1".into(),
+            denied_action: "SUSPEND".into(),
+            reason: "INV-026".into(),
         };
         let json = serde_json::to_string(&p).expect("ser");
         let back: HostPolicyOverrideDeniedPayload = serde_json::from_str(&json).expect("de");

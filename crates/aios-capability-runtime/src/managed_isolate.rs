@@ -138,11 +138,7 @@ pub struct ManagedIsolate {
 impl ManagedIsolate {
     /// Create a new isolate with a given mechanism.
     #[must_use]
-    pub fn new(
-        capsule_id: u64,
-        mechanism: IsolationMechanism,
-        channels: Vec<String>,
-    ) -> Self {
+    pub fn new(capsule_id: u64, mechanism: IsolationMechanism, channels: Vec<String>) -> Self {
         Self {
             capsule_id,
             mechanism,
@@ -265,7 +261,9 @@ mod tests {
     fn can_downgrade_only_to_weaker_or_equal() {
         // HardwareVM can downgrade to anything (it's the strongest).
         assert!(IsolationMechanism::HardwareVM.can_downgrade_to(IsolationMechanism::HardwareVM));
-        assert!(IsolationMechanism::HardwareVM.can_downgrade_to(IsolationMechanism::HardwareProcess));
+        assert!(
+            IsolationMechanism::HardwareVM.can_downgrade_to(IsolationMechanism::HardwareProcess)
+        );
         assert!(IsolationMechanism::HardwareVM.can_downgrade_to(IsolationMechanism::WasmBytecode));
         assert!(IsolationMechanism::HardwareVM.can_downgrade_to(IsolationMechanism::TypeSafe));
 
@@ -328,7 +326,11 @@ mod tests {
     fn registry_register_and_lookup() {
         let mut reg = IsolationRegistry::new();
         reg.register(ManagedIsolate::new(1, IsolationMechanism::TypeSafe, vec![]));
-        reg.register(ManagedIsolate::new(2, IsolationMechanism::HardwareProcess, vec![]));
+        reg.register(ManagedIsolate::new(
+            2,
+            IsolationMechanism::HardwareProcess,
+            vec![],
+        ));
 
         assert_eq!(reg.len(), 2);
         assert!(reg.get(1).is_some());
@@ -341,7 +343,11 @@ mod tests {
         let mut reg = IsolationRegistry::new();
         reg.register(ManagedIsolate::new(1, IsolationMechanism::TypeSafe, vec![]));
         reg.register(ManagedIsolate::new(2, IsolationMechanism::TypeSafe, vec![]));
-        reg.register(ManagedIsolate::new(3, IsolationMechanism::HardwareVM, vec![]));
+        reg.register(ManagedIsolate::new(
+            3,
+            IsolationMechanism::HardwareVM,
+            vec![],
+        ));
 
         assert_eq!(reg.count_by_mechanism(IsolationMechanism::TypeSafe), 2);
         assert_eq!(reg.count_by_mechanism(IsolationMechanism::HardwareVM), 1);

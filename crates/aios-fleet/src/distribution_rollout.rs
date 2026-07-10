@@ -22,7 +22,6 @@
 
 use std::collections::HashMap;
 
-use blake3::Hash as Blake3Hash;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -41,9 +40,7 @@ pub enum RolloutError {
     #[error("host not in rollout: {host_id}")]
     HostNotInRollout { host_id: String },
 
-    #[error(
-        "canary failed: {successes}/{total} hosts succeeded, need {required}%"
-    )]
+    #[error("canary failed: {successes}/{total} hosts succeeded, need {required}%")]
     CanaryThresholdNotMet {
         successes: u32,
         total: u32,
@@ -204,12 +201,7 @@ pub struct PackageRef {
 
 impl PackageRef {
     #[must_use]
-    pub fn new(
-        name: String,
-        version: String,
-        digest: Hash,
-        source: DistributionSource,
-    ) -> Self {
+    pub fn new(name: String, version: String, digest: Hash, source: DistributionSource) -> Self {
         Self {
             name,
             version,
@@ -284,20 +276,13 @@ impl FleetRolloutRecordType {
             Self::FleetRolloutPhaseFailed => "FLEET_ROLLOUT_PHASE_FAILED",
             Self::FleetRolloutAborted => "FLEET_ROLLOUT_ABORTED",
             Self::FleetRolloutComplete => "FLEET_ROLLOUT_COMPLETE",
-            Self::FleetRolloutHostStatusChanged => {
-                "FLEET_ROLLOUT_HOST_STATUS_CHANGED"
-            }
+            Self::FleetRolloutHostStatusChanged => "FLEET_ROLLOUT_HOST_STATUS_CHANGED",
         }
     }
 }
 
 pub trait FleetRolloutEvidenceEmitter: Send + Sync {
-    fn emit_rollout_phase_started(
-        &self,
-        rollout_id: &Ulid,
-        phase_id: &Ulid,
-        host_count: usize,
-    );
+    fn emit_rollout_phase_started(&self, rollout_id: &Ulid, phase_id: &Ulid, host_count: usize);
 
     fn emit_rollout_phase_completed(
         &self,
@@ -368,10 +353,8 @@ impl FleetDistributionRollout {
     }
 
     pub fn set_canary_threshold(&mut self, percentage: f64) -> Result<(), RolloutError> {
-        if percentage < 1.0 || percentage > 99.0 {
-            return Err(RolloutError::InvalidCanaryPercentage {
-                percentage,
-            });
+        if !(1.0..=99.0).contains(&percentage) {
+            return Err(RolloutError::InvalidCanaryPercentage { percentage });
         }
         self.canary_success_threshold = percentage;
         Ok(())
@@ -386,18 +369,12 @@ impl FleetDistributionRollout {
             RolloutStrategy::AllAtOnce => {
                 vec![RolloutPhase::new(self.target_hosts.clone())]
             }
-            RolloutStrategy::Canary { percentage } => {
-                self.canary_phases(*percentage)
-            }
+            RolloutStrategy::Canary { percentage } => self.canary_phases(*percentage),
             RolloutStrategy::Rolling {
                 batch_size,
                 pause_seconds: _,
-            } => {
-                self.rolling_phases(*batch_size)?
-            }
-            RolloutStrategy::BlueGreen => {
-                self.blue_green_phases()
-            }
+            } => self.rolling_phases(*batch_size)?,
+            RolloutStrategy::BlueGreen => self.blue_green_phases(),
         };
 
         self.phases = phases.clone();
@@ -405,15 +382,19 @@ impl FleetDistributionRollout {
     }
 
     fn canary_phases(&self, percentage: f64) -> Vec<RolloutPhase> {
-        let canary_count = ((self.target_hosts.len() as f64) * (percentage / 100.0))
-            .ceil() as usize;
+        let canary_count =
+            ((self.target_hosts.len() as f64) * (percentage / 100.0)).ceil() as usize;
         let canary_count = canary_count.max(1).min(self.target_hosts.len());
 
         let mut phases = Vec::new();
 
         if canary_count < self.target_hosts.len() {
-            let canary_hosts: Vec<String> =
-                self.target_hosts.iter().take(canary_count).cloned().collect();
+            let canary_hosts: Vec<String> = self
+                .target_hosts
+                .iter()
+                .take(canary_count)
+                .cloned()
+                .collect();
             phases.push(RolloutPhase::new(canary_hosts));
 
             let remaining: Vec<String> = self
@@ -430,10 +411,7 @@ impl FleetDistributionRollout {
         phases
     }
 
-    fn rolling_phases(
-        &self,
-        batch_size: u32,
-    ) -> Result<Vec<RolloutPhase>, RolloutError> {
+    fn rolling_phases(&self, batch_size: u32) -> Result<Vec<RolloutPhase>, RolloutError> {
         if batch_size == 0 {
             return Err(RolloutError::InvalidBatchSize {
                 batch_size,
@@ -503,11 +481,7 @@ impl FleetDistributionRollout {
         }
 
         if let Some(emitter) = &self.evidence_emitter {
-            emitter.emit_rollout_phase_started(
-                &self.rollout_id,
-                phase_id,
-                phase.hosts.len(),
-            );
+            emitter.emit_rollout_phase_started(&self.rollout_id, phase_id, phase.hosts.len());
         }
 
         Ok(())
@@ -529,33 +503,21 @@ impl FleetDistributionRollout {
 
         if status.is_failure() {
             state.attempt += 1;
-            state.error_message = Some(format!(
-                "install failed with status {:?}",
-                status
-            ));
+            state.error_message = Some(format!("install failed with status {:?}", status));
         }
 
         state.install_status = status;
         state.last_update = Utc::now();
 
         if let Some(emitter) = &self.evidence_emitter {
-            emitter.emit_host_status_changed(
-                &self.rollout_id,
-                host_id,
-                old_status,
-                status,
-            );
+            emitter.emit_host_status_changed(&self.rollout_id, host_id, old_status, status);
         }
 
         self.auto_complete_phases();
         Ok(())
     }
 
-    pub fn report_host_error(
-        &mut self,
-        host_id: &str,
-        error: &str,
-    ) -> Result<(), RolloutError> {
+    pub fn report_host_error(&mut self, host_id: &str, error: &str) -> Result<(), RolloutError> {
         let state = self
             .host_states
             .get_mut(host_id)
@@ -593,14 +555,11 @@ impl FleetDistributionRollout {
             return false;
         };
 
-        phase
-            .hosts
-            .iter()
-            .all(|h| {
-                self.host_states
-                    .get(h.as_str())
-                    .map_or(false, |s| s.install_status.is_terminal())
-            })
+        phase.hosts.iter().all(|h| {
+            self.host_states
+                .get(h.as_str())
+                .is_some_and(|s| s.install_status.is_terminal())
+        })
     }
 
     pub fn can_proceed_to_next_phase(&self, phase_id: &Ulid) -> bool {
@@ -623,7 +582,7 @@ impl FleetDistributionRollout {
             .filter(|h| {
                 self.host_states
                     .get(*h)
-                    .map_or(false, |s| s.install_status.is_success())
+                    .is_some_and(|s| s.install_status.is_success())
             })
             .count() as u32;
 
@@ -708,9 +667,7 @@ impl FleetDistributionRollout {
         for state in self.host_states.values() {
             match state.install_status {
                 HostInstallStatus::Activated => completed += 1,
-                HostInstallStatus::Failed | HostInstallStatus::RolledBack => {
-                    failed += 1
-                }
+                HostInstallStatus::Failed | HostInstallStatus::RolledBack => failed += 1,
                 HostInstallStatus::Pending => pending += 1,
                 _ => in_progress += 1,
             }
@@ -750,9 +707,9 @@ impl FleetDistributionRollout {
             }
 
             let all_terminal = phase.hosts.iter().all(|h| {
-                        self.host_states
-                            .get(h.as_str())
-                            .map_or(false, |s| s.install_status.is_terminal())
+                self.host_states
+                    .get(h.as_str())
+                    .is_some_and(|s| s.install_status.is_terminal())
             });
 
             if all_terminal {
@@ -762,7 +719,7 @@ impl FleetDistributionRollout {
                     .filter(|h| {
                         self.host_states
                             .get(h.as_str())
-                            .map_or(false, |s| s.install_status.is_success())
+                            .is_some_and(|s| s.install_status.is_success())
                     })
                     .count() as u32;
 
@@ -772,7 +729,7 @@ impl FleetDistributionRollout {
                     .filter(|h| {
                         self.host_states
                             .get(*h)
-                            .map_or(false, |s| s.install_status.is_failure())
+                            .is_some_and(|s| s.install_status.is_failure())
                     })
                     .count() as u32;
 
@@ -864,9 +821,7 @@ mod tests {
 
     #[test]
     fn canary_100_percent_single_phase() {
-        let mut rollout = mk_rollout(RolloutStrategy::Canary {
-            percentage: 100.0,
-        });
+        let mut rollout = mk_rollout(RolloutStrategy::Canary { percentage: 100.0 });
         let phases = rollout.plan_phases().expect("plan");
         assert_eq!(phases.len(), 1);
         assert_eq!(phases[0].hosts.len(), 10);
@@ -923,7 +878,9 @@ mod tests {
         let canary_id = phases[0].phase_id;
         rollout.start_phase(&canary_id).expect("start");
         for host in &phases[0].hosts {
-            rollout.report_host_status(host, HostInstallStatus::Activated).expect("ok");
+            rollout
+                .report_host_status(host, HostInstallStatus::Activated)
+                .expect("ok");
         }
         // 100% success passes 80% threshold
         assert!(rollout.can_proceed_to_next_phase(&canary_id));
@@ -1092,11 +1049,8 @@ mod tests {
 
     #[test]
     fn empty_target_hosts_no_phases() {
-        let mut rollout = FleetDistributionRollout::new(
-            mk_package(),
-            vec![],
-            RolloutStrategy::AllAtOnce,
-        );
+        let mut rollout =
+            FleetDistributionRollout::new(mk_package(), vec![], RolloutStrategy::AllAtOnce);
         let result = rollout.plan_phases();
         assert!(result.is_err());
         match result {

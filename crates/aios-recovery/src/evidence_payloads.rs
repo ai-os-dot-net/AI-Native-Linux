@@ -8,10 +8,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::self_healing::{ComponentHealthState, HealActionKind, PanicSeverity};
 use crate::{BootId, CandidateId, FirstBootPhase, RecoveryMode, RecoveryMutableScope};
-use crate::self_healing::{
-    ComponentHealthState, HealActionKind, PanicSeverity,
-};
 
 /// Payload for recovery entry evidence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

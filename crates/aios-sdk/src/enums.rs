@@ -119,7 +119,11 @@ mod tests {
 
     #[test]
     fn sdk_target_variant_count_is_nine() {
-        assert_eq!(SdkTarget::COUNT, 9, "SdkTarget must have exactly 9 variants");
+        assert_eq!(
+            SdkTarget::COUNT,
+            9,
+            "SdkTarget must have exactly 9 variants"
+        );
     }
 
     #[test]
@@ -143,7 +147,10 @@ mod tests {
     #[test]
     fn sdk_target_serde_screaming_snake_case() {
         let json = serde_json::to_string(&SdkTarget::ContainerImage).expect("serialize");
-        assert!(json.contains("CONTAINER_IMAGE"), "expected SCREAMING_SNAKE_CASE, got {json}");
+        assert!(
+            json.contains("CONTAINER_IMAGE"),
+            "expected SCREAMING_SNAKE_CASE, got {json}"
+        );
     }
 
     #[test]
@@ -181,8 +188,8 @@ mod tests {
 
     #[test]
     fn capability_format_serde_screaming_snake_case() {
-        let json = serde_json::to_string(&CapabilityDeclarationFormat::TomlManifest)
-            .expect("serialize");
+        let json =
+            serde_json::to_string(&CapabilityDeclarationFormat::TomlManifest).expect("serialize");
         assert!(
             json.contains("TOML_MANIFEST"),
             "expected SCREAMING_SNAKE_CASE, got {json}"
@@ -218,9 +225,11 @@ mod tests {
 
     #[test]
     fn sdk_command_serde_screaming_snake_case() {
-        let json =
-            serde_json::to_string(&SdkCommand::Build).expect("serialize");
-        assert!(json.contains("BUILD"), "expected SCREAMING_SNAKE_CASE, got {json}");
+        let json = serde_json::to_string(&SdkCommand::Build).expect("serialize");
+        assert!(
+            json.contains("BUILD"),
+            "expected SCREAMING_SNAKE_CASE, got {json}"
+        );
     }
 
     #[test]

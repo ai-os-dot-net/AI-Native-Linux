@@ -96,10 +96,7 @@ impl WaydroidError {
     }
 
     #[must_use]
-    pub fn already_running(
-        capsule_id: impl Into<String>,
-        state: WaydroidContainerState,
-    ) -> Self {
+    pub fn already_running(capsule_id: impl Into<String>, state: WaydroidContainerState) -> Self {
         Self::AlreadyRunning {
             capsule_id: capsule_id.into(),
             state,

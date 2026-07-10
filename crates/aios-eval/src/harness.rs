@@ -37,7 +37,10 @@ impl AIEvaluationHarness {
     /// Callers MUST call [`validate`](Self::validate) after construction to
     /// enforce the harness safety invariants.
     #[must_use]
-    pub fn new(model_under_test_id: impl Into<String>, benchmark_digest: impl Into<String>) -> Self {
+    pub fn new(
+        model_under_test_id: impl Into<String>,
+        benchmark_digest: impl Into<String>,
+    ) -> Self {
         Self {
             harness_id: format!("evalh_{}", Ulid::new()),
             harness_version: "2026.05.rev3".into(),
@@ -63,12 +66,13 @@ impl AIEvaluationHarness {
     pub fn validate(&self) -> Result<(), String> {
         if self.evaluator_subject_is_ai {
             return Err(
-                "evaluator_subject_is_ai must be false — evaluator is always SYSTEM_SERVICE"
-                    .into(),
+                "evaluator_subject_is_ai must be false — evaluator is always SYSTEM_SERVICE".into(),
             );
         }
         if !self.benchmark_frozen {
-            return Err("benchmark_frozen must be true — unfrozen benchmarks are not admissible".into());
+            return Err(
+                "benchmark_frozen must be true — unfrozen benchmarks are not admissible".into(),
+            );
         }
         if !self.off_active_path {
             return Err(

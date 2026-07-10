@@ -518,12 +518,7 @@ mod tests {
     fn multi_capsule_workload() {
         let mut store = SnapshotStore::new();
         for c in 0..5u64 {
-            store.freeze(
-                CapsuleId(c),
-                format!("snap-c{}", c),
-                100,
-                snapshot_state(),
-            );
+            store.freeze(CapsuleId(c), format!("snap-c{}", c), 100, snapshot_state());
         }
         assert_eq!(store.capsule_count(), 5);
         assert_eq!(store.total_snapshot_count(), 5);

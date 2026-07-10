@@ -8,11 +8,12 @@ use strum_macros::{EnumCount, EnumIter};
 
 /// Voice surface lifecycle state.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum VoiceSurfaceState {
     /// Surface created but not yet configured.
+    #[default]
     Unconfigured,
     /// Surface is capturing audio from PipeWire.
     Listening,
@@ -26,16 +27,8 @@ pub enum VoiceSurfaceState {
     Error,
 }
 
-impl Default for VoiceSurfaceState {
-    fn default() -> Self {
-        Self::Unconfigured
-    }
-}
-
 /// STT provider enumeration — closed vocabulary.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SttProvider {
     /// OpenAI Whisper.cpp — local on-device STT.
@@ -47,9 +40,7 @@ pub enum SttProvider {
 }
 
 /// TTS provider enumeration — closed vocabulary.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TtsProvider {
     /// Piper TTS — local on-device synthesis.
@@ -61,9 +52,7 @@ pub enum TtsProvider {
 }
 
 /// Voice approval session state — 7-state FSM.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum VoiceApprovalState {
     /// Session created, awaiting audio capture.
@@ -107,9 +96,7 @@ impl VoiceApprovalState {
 }
 
 /// Voice intent lifecycle — 4-state pipeline.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum VoiceIntent {
     /// Raw audio has been received.
@@ -123,9 +110,7 @@ pub enum VoiceIntent {
 }
 
 /// Risk classification for voice-originated intents.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum VoiceRiskClass {
     /// Read-only or trivially reversible intent.
@@ -229,8 +214,7 @@ mod tests {
     fn approval_fsm_invalid_transitions() {
         assert!(!VoiceApprovalState::Listening.can_transition_to(VoiceApprovalState::Confirmed));
         assert!(!VoiceApprovalState::Transcribing.can_transition_to(VoiceApprovalState::Confirming));
-        assert!(!VoiceApprovalState::Confirmed
-            .can_transition_to(VoiceApprovalState::Listening));
+        assert!(!VoiceApprovalState::Confirmed.can_transition_to(VoiceApprovalState::Listening));
     }
 
     #[test]

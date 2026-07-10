@@ -58,7 +58,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
-use strum_macros::{EnumCount, EnumIter};
 
 // ---------------------------------------------------------------------------
 // ImaMeasurement — single file-integrity measurement
@@ -136,17 +135,20 @@ impl ImaMeasurement {
     /// Whether this measurement carries a valid hash (INV-IMA-002).
     #[must_use]
     pub fn has_valid_hash(&self) -> bool {
-        self.hash_digest.len() == Self::EXPECTED_HASH_LEN && !self.hash_digest.iter().all(|b| *b == 0)
+        self.hash_digest.len() == Self::EXPECTED_HASH_LEN
+            && !self.hash_digest.iter().all(|b| *b == 0)
     }
 
     /// The hash digest as a hex-encoded string for logging and evidence.
     #[must_use]
     pub fn hash_hex(&self) -> String {
-        self.hash_digest.iter().fold(String::with_capacity(64), |mut s, b| {
-            use std::fmt::Write;
-            let _ = write!(s, "{b:02x}");
-            s
-        })
+        self.hash_digest
+            .iter()
+            .fold(String::with_capacity(64), |mut s, b| {
+                use std::fmt::Write;
+                let _ = write!(s, "{b:02x}");
+                s
+            })
     }
 }
 
@@ -226,20 +228,13 @@ impl ImaMeasurementList {
     /// Look up the most recent measurement for a given file path.
     #[must_use]
     pub fn latest_for(&self, file_path: &str) -> Option<&ImaMeasurement> {
-        self.entries
-            .iter()
-            .rev()
-            .find(|m| m.file_path == file_path)
+        self.entries.iter().rev().find(|m| m.file_path == file_path)
     }
 
     /// All unique file paths present in the log.
     #[must_use]
     pub fn unique_paths(&self) -> Vec<&str> {
-        let mut paths: Vec<&str> = self
-            .entries
-            .iter()
-            .map(|m| m.file_path.as_str())
-            .collect();
+        let mut paths: Vec<&str> = self.entries.iter().map(|m| m.file_path.as_str()).collect();
         paths.sort_unstable();
         paths.dedup();
         paths
@@ -457,9 +452,7 @@ impl ImaPolicy {
                 // Also try matching zero characters
                 Self::glob_match_impl(&pat[1..], path)
             }
-            (Some(a), Some(b)) if a == b => {
-                Self::glob_match_impl(&pat[1..], &path[1..])
-            }
+            (Some(a), Some(b)) if a == b => Self::glob_match_impl(&pat[1..], &path[1..]),
             _ => false,
         }
     }
@@ -526,11 +519,13 @@ impl IntegrityViolation {
     /// Hex-encode a byte slice for display.
     #[must_use]
     fn hex(bytes: &[u8]) -> String {
-        bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
-            use std::fmt::Write;
-            let _ = write!(s, "{b:02x}");
-            s
-        })
+        bytes
+            .iter()
+            .fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+                use std::fmt::Write;
+                let _ = write!(s, "{b:02x}");
+                s
+            })
     }
 }
 
@@ -670,8 +665,7 @@ mod tests {
 
     #[test]
     fn measurement_with_timestamp_stores_explicit_time() {
-        let m = ImaMeasurement::with_timestamp("/etc/passwd", hash_from_seed(42), 999_000)
-            .unwrap();
+        let m = ImaMeasurement::with_timestamp("/etc/passwd", hash_from_seed(42), 999_000).unwrap();
         assert_eq!(m.timestamp_ns, 999_000);
         assert_eq!(m.file_path, "/etc/passwd");
         assert_eq!(m.hash_digest, hash_from_seed(42));
@@ -1010,20 +1004,36 @@ mod tests {
         let expected = hash_from_seed(2);
 
         assert!(IntegrityViolation::new(
-            "/f", measured.clone(), expected.clone(), ImaAppraisalState::Untrusted
-        ).is_some());
+            "/f",
+            measured.clone(),
+            expected.clone(),
+            ImaAppraisalState::Untrusted
+        )
+        .is_some());
 
         assert!(IntegrityViolation::new(
-            "/f", measured.clone(), expected.clone(), ImaAppraisalState::Trusted
-        ).is_none());
+            "/f",
+            measured.clone(),
+            expected.clone(),
+            ImaAppraisalState::Trusted
+        )
+        .is_none());
 
         assert!(IntegrityViolation::new(
-            "/f", measured.clone(), expected.clone(), ImaAppraisalState::Unknown
-        ).is_none());
+            "/f",
+            measured.clone(),
+            expected.clone(),
+            ImaAppraisalState::Unknown
+        )
+        .is_none());
 
         assert!(IntegrityViolation::new(
-            "/f", measured.clone(), expected.clone(), ImaAppraisalState::Exempt
-        ).is_none());
+            "/f",
+            measured.clone(),
+            expected.clone(),
+            ImaAppraisalState::Exempt
+        )
+        .is_none());
     }
 
     #[test]

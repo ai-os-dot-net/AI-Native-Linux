@@ -5,8 +5,13 @@ use serde::{Deserialize, Serialize};
 use strum_macros::{EnumCount, EnumIter};
 
 use crate::builder::CapsuleBuilder;
-use crate::manifest::ManifestValidator;
 use crate::manifest::ManifestValidationError;
+use crate::manifest::ManifestValidator;
+
+type PublishStep = (
+    &'static str,
+    fn(&mut PublishPipeline) -> Result<(), PublishError>,
+);
 
 /// The eight-phase publish state machine.
 ///
@@ -101,10 +106,7 @@ pub struct PublishPipeline {
 impl PublishPipeline {
     /// Create a new publish pipeline.
     #[must_use]
-    pub fn new(
-        builder: CapsuleBuilder,
-        endpoint: RegistryEndpoint,
-    ) -> Self {
+    pub fn new(builder: CapsuleBuilder, endpoint: RegistryEndpoint) -> Self {
         Self {
             state: PublishState::NotPublished,
             builder,
@@ -126,15 +128,24 @@ impl PublishPipeline {
         &self.endpoint
     }
 
+    /// Return when the publish pipeline was created.
+    #[must_use]
+    pub const fn started_at(&self) -> DateTime<Utc> {
+        self.started_at
+    }
+
+    /// Return when the publish pipeline finished, if it has reached a terminal state.
+    #[must_use]
+    pub const fn finished_at(&self) -> Option<DateTime<Utc>> {
+        self.finished_at
+    }
+
     /// Verify the manifest attached to the builder.
     ///
     /// Runs [`ManifestValidator::validate`], then [`ManifestValidator::check_completeness`],
     /// then [`ManifestValidator::detect_missing_evidence`]. All three must pass.
     pub fn verify_manifest(&self) -> Result<(), PublishError> {
-        let manifest = self
-            .builder
-            .manifest()
-            .ok_or(PublishError::NoManifest)?;
+        let manifest = self.builder.manifest().ok_or(PublishError::NoManifest)?;
         let validator = ManifestValidator::new();
 
         validator
@@ -203,10 +214,7 @@ impl PublishPipeline {
                 "registry endpoint URL is empty".into(),
             ));
         }
-        let manifest = self
-            .builder
-            .manifest()
-            .ok_or(PublishError::NoManifest)?;
+        let manifest = self.builder.manifest().ok_or(PublishError::NoManifest)?;
         let validator = ManifestValidator::new();
         if !validator.has_signature(manifest) {
             return Err(PublishError::UploadFailed(
@@ -234,7 +242,7 @@ impl PublishPipeline {
     /// Transitions through each state and returns the final state.
     /// On error, transitions to `Failed` and returns the error.
     pub fn publish(&mut self) -> Result<PublishState, PublishError> {
-        let steps: Vec<(&str, fn(&mut Self) -> Result<(), PublishError>)> = vec![
+        let steps: [PublishStep; 5] = [
             ("verify_manifest", |s| s.verify_manifest()),
             ("run_tests", |s| s.run_tests()),
             ("build_artifact", |s| s.build_artifact()),
@@ -243,10 +251,9 @@ impl PublishPipeline {
         ];
 
         for (_step_name, step_fn) in &steps {
-            let _ = step_fn(self).map_err(|e| {
+            step_fn(self).inspect_err(|_| {
                 self.state = PublishState::Failed;
                 self.finished_at = Some(Utc::now());
-                e
             })?;
         }
 
@@ -260,16 +267,16 @@ impl PublishPipeline {
     /// Returns `Ok(new_state)` on success, or `Err(PublishError::InvalidStateTransition)`
     /// when the transition is not allowed.
     pub fn transition_to(&mut self, next: PublishState) -> Result<PublishState, PublishError> {
-        let valid = match (self.state, next) {
+        let valid = matches!(
+            (self.state, next),
             (PublishState::NotPublished, PublishState::Building)
-            | (PublishState::Building, PublishState::Testing)
-            | (PublishState::Testing, PublishState::Signing)
-            | (PublishState::Signing, PublishState::Uploading)
-            | (PublishState::Uploading, PublishState::Published)
-            | (PublishState::Uploading, PublishState::Rejected) => true,
-            (_, PublishState::Failed) => true,
-            _ => false,
-        };
+                | (PublishState::Building, PublishState::Testing)
+                | (PublishState::Testing, PublishState::Signing)
+                | (PublishState::Signing, PublishState::Uploading)
+                | (PublishState::Uploading, PublishState::Published)
+                | (PublishState::Uploading, PublishState::Rejected)
+                | (_, PublishState::Failed)
+        );
 
         if !valid {
             return Err(PublishError::InvalidStateTransition {
@@ -279,8 +286,10 @@ impl PublishPipeline {
         }
 
         self.state = next;
-        if matches!(self.state, PublishState::Published | PublishState::Rejected | PublishState::Failed)
-        {
+        if matches!(
+            self.state,
+            PublishState::Published | PublishState::Rejected | PublishState::Failed
+        ) {
             self.finished_at = Some(Utc::now());
         }
         Ok(self.state)
@@ -458,8 +467,12 @@ mod tests {
     fn publish_pipeline_any_state_can_transition_to_failed() {
         let builder = make_builder_with_signed_manifest();
         let mut pipeline = PublishPipeline::new(builder, make_endpoint());
-        pipeline.transition_to(PublishState::Building).expect("to building");
-        let state = pipeline.transition_to(PublishState::Failed).expect("to failed");
+        pipeline
+            .transition_to(PublishState::Building)
+            .expect("to building");
+        let state = pipeline
+            .transition_to(PublishState::Failed)
+            .expect("to failed");
         assert_eq!(state, PublishState::Failed);
     }
 

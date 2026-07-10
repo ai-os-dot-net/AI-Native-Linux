@@ -206,10 +206,7 @@ impl CapsuleEvidence {
     /// ```
     #[must_use]
     pub fn summary(&self) -> String {
-        format!(
-            "[{}] {} @ {}",
-            self.capsule_id, self.event, self.timestamp
-        )
+        format!("[{}] {} @ {}", self.capsule_id, self.event, self.timestamp)
     }
 }
 
@@ -272,8 +269,7 @@ impl EvidenceChain {
         let evidence = CapsuleEvidence::new(capsule_id, event, timestamp);
         let list = self.events.entry(capsule_id).or_default();
         list.push(evidence);
-        // SAFETY: we just pushed the element — last() is always Some
-        list.last().expect("just-pushed element must exist")
+        &list[list.len() - 1]
     }
 
     /// Record a lifecycle event with pre-built metadata.
@@ -288,7 +284,7 @@ impl EvidenceChain {
         let evidence = CapsuleEvidence::with_metadata(capsule_id, event, timestamp, metadata);
         let list = self.events.entry(capsule_id).or_default();
         list.push(evidence);
-        list.last().expect("just-pushed element must exist")
+        &list[list.len() - 1]
     }
 
     /// Return the complete ordered audit trail for `capsule_id`.
@@ -310,9 +306,7 @@ impl EvidenceChain {
     /// Return the total number of events recorded for `capsule_id`.
     #[must_use]
     pub fn count_for(&self, capsule_id: CapsuleId) -> usize {
-        self.events
-            .get(&capsule_id)
-            .map_or(0, Vec::len)
+        self.events.get(&capsule_id).map_or(0, Vec::len)
     }
 
     /// Return the total number of events across all capsules.
@@ -507,15 +501,25 @@ mod tests {
     fn evidence_with_metadata_preserves_all_entries() {
         let ts = fixed_now();
         let mut meta = HashMap::new();
-        meta.insert("snapshot_id".into(), "snap_01HX0000000000000000000000".into());
+        meta.insert(
+            "snapshot_id".into(),
+            "snap_01HX0000000000000000000000".into(),
+        );
         meta.insert("sandbox_level".into(), "3".into());
 
-        let ev = CapsuleEvidence::with_metadata(CapsuleId(42), CapsuleEvent::SnapshotTaken, ts, meta);
+        let ev =
+            CapsuleEvidence::with_metadata(CapsuleId(42), CapsuleEvent::SnapshotTaken, ts, meta);
 
         assert_eq!(ev.capsule_id.raw(), 42);
         assert_eq!(ev.event, CapsuleEvent::SnapshotTaken);
-        assert_eq!(ev.metadata.get("snapshot_id").map(String::as_str), Some("snap_01HX0000000000000000000000"));
-        assert_eq!(ev.metadata.get("sandbox_level").map(String::as_str), Some("3"));
+        assert_eq!(
+            ev.metadata.get("snapshot_id").map(String::as_str),
+            Some("snap_01HX0000000000000000000000")
+        );
+        assert_eq!(
+            ev.metadata.get("sandbox_level").map(String::as_str),
+            Some("3")
+        );
         assert_eq!(ev.metadata.len(), 2);
     }
 
@@ -577,12 +581,18 @@ mod tests {
 
         let mut meta = HashMap::new();
         meta.insert("signal_number".into(), "11".into());
-        meta.insert("reason".into(), "SIGSEGV — sandbox memory access violation".into());
+        meta.insert(
+            "reason".into(),
+            "SIGSEGV — sandbox memory access violation".into(),
+        );
 
         let ev = chain.record_with_metadata(id, CapsuleEvent::Crashed, ts, meta);
         assert!(ev.event.is_exceptional());
         assert!(ev.event.is_terminal());
-        assert_eq!(ev.metadata.get("signal_number").map(String::as_str), Some("11"));
+        assert_eq!(
+            ev.metadata.get("signal_number").map(String::as_str),
+            Some("11")
+        );
 
         let ev2 = chain.record(id, CapsuleEvent::RolledBack, ts);
         assert!(ev2.event.is_exceptional());

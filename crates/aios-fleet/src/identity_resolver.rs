@@ -243,7 +243,10 @@ impl FederatedIdentityResolver {
     ) -> Result<RealmDescriptor, IdentityResolverError> {
         if self.realm_registry.contains_key(&realm) {
             return Err(IdentityResolverError::RealmNotRegistered {
-                realm: format!("realm '{}' already registered — use update_realm to modify", realm),
+                realm: format!(
+                    "realm '{}' already registered — use update_realm to modify",
+                    realm
+                ),
             });
         }
 
@@ -253,40 +256,29 @@ impl FederatedIdentityResolver {
     }
 
     /// Suspends a realm (temporary).
-    pub fn suspend_realm(
-        &mut self,
-        realm: &str,
-    ) -> Result<(), IdentityResolverError> {
-        let descriptor = self
-            .realm_registry
-            .get_mut(realm)
-            .ok_or_else(|| IdentityResolverError::RealmNotRegistered {
+    pub fn suspend_realm(&mut self, realm: &str) -> Result<(), IdentityResolverError> {
+        let descriptor = self.realm_registry.get_mut(realm).ok_or_else(|| {
+            IdentityResolverError::RealmNotRegistered {
                 realm: realm.to_string(),
-            })?;
+            }
+        })?;
         descriptor.suspend();
         Ok(())
     }
 
     /// Revokes a realm permanently.
-    pub fn revoke_realm(
-        &mut self,
-        realm: &str,
-    ) -> Result<(), IdentityResolverError> {
-        let descriptor = self
-            .realm_registry
-            .get_mut(realm)
-            .ok_or_else(|| IdentityResolverError::RealmNotRegistered {
+    pub fn revoke_realm(&mut self, realm: &str) -> Result<(), IdentityResolverError> {
+        let descriptor = self.realm_registry.get_mut(realm).ok_or_else(|| {
+            IdentityResolverError::RealmNotRegistered {
                 realm: realm.to_string(),
-            })?;
+            }
+        })?;
         descriptor.revoke();
         Ok(())
     }
 
     /// Registers a cross-org trust delegation.
-    pub fn register_delegation(
-        &mut self,
-        delegation: CrossOrgTrustDelegation,
-    ) -> Ulid {
+    pub fn register_delegation(&mut self, delegation: CrossOrgTrustDelegation) -> Ulid {
         let id = Ulid::new();
         self.delegations.insert(id, delegation);
         id
@@ -448,10 +440,7 @@ impl FederatedIdentityResolver {
     }
 
     /// Finds the delegation that covers the given target realm.
-    fn find_delegation_for_realm(
-        &self,
-        target_realm: &str,
-    ) -> Option<&CrossOrgTrustDelegation> {
+    fn find_delegation_for_realm(&self, target_realm: &str) -> Option<&CrossOrgTrustDelegation> {
         self.delegations
             .values()
             .find(|d| d.to_realm == target_realm || d.from_realm == target_realm)

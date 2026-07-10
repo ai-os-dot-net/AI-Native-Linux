@@ -43,12 +43,10 @@ pub use mode_switch::{
     TerminalModeSwitch,
 };
 pub use proposal::{
-    ApprovalScope, ProposalRiskClass, ProposalValidation, ProposalValidationError,
-    AIActionProposal, MIN_HIGH_RISK_CONFIDENCE, MIN_PROPOSAL_CONFIDENCE,
+    AIActionProposal, ApprovalScope, ProposalRiskClass, ProposalValidation,
+    ProposalValidationError, MIN_HIGH_RISK_CONFIDENCE, MIN_PROPOSAL_CONFIDENCE,
 };
-pub use safety::{
-    ProhibitedPattern, PromptSafetyClassifier, SafetyResult, SafetyVerdict,
-};
+pub use safety::{ProhibitedPattern, PromptSafetyClassifier, SafetyResult, SafetyVerdict};
 pub use terminal_fabric::{
     ExecutionResult, FabricContext, FabricEvent, FabricEventRecord, SubmissionResult,
     TerminalFabric,

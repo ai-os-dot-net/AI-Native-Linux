@@ -121,7 +121,10 @@ impl HealCommandChannel {
     /// Used by the self-healing driver when it creates the channel internally
     /// and hands the receiver to the component while keeping the sender.
     #[must_use]
-    pub const fn from_raw(tx: mpsc::Sender<CommandEnvelope>, rx: mpsc::Receiver<CommandEnvelope>) -> Self {
+    pub const fn from_raw(
+        tx: mpsc::Sender<CommandEnvelope>,
+        rx: mpsc::Receiver<CommandEnvelope>,
+    ) -> Self {
         Self { tx, rx }
     }
 
@@ -129,10 +132,7 @@ impl HealCommandChannel {
     ///
     /// Returns `None` if the component's receiver has been dropped
     /// (component exited or channel closed).
-    pub async fn send_command(
-        &self,
-        command: HealCommand,
-    ) -> Option<HealCommandResponse> {
+    pub async fn send_command(&self, command: HealCommand) -> Option<HealCommandResponse> {
         let (response_tx, response_rx) = oneshot::channel();
         self.tx.send((command, response_tx)).await.ok()?;
         response_rx.await.ok()
@@ -236,10 +236,7 @@ mod tests {
 
     #[test]
     fn heal_command_response_default_is_timeout() {
-        assert_eq!(
-            HealCommandResponse::default(),
-            HealCommandResponse::Timeout
-        );
+        assert_eq!(HealCommandResponse::default(), HealCommandResponse::Timeout);
     }
 
     #[test]
@@ -317,16 +314,14 @@ mod tests {
     async fn send_command_returns_none_when_receiver_dropped() {
         let channel = HealCommandChannel::new(4);
         drop(channel); // drops both tx and rx
-        // We need a new channel to test with a dropped rx
+                       // We need a new channel to test with a dropped rx
         let (tx, rx) = mpsc::channel::<CommandEnvelope>(1);
         drop(rx);
         let channel = HealCommandChannel {
             tx,
             rx: mpsc::channel::<CommandEnvelope>(1).1, // placeholder
         };
-        let result = channel
-            .send_command(HealCommand::RestartInstant)
-            .await;
+        let result = channel.send_command(HealCommand::RestartInstant).await;
         assert!(result.is_none(), "send should fail when rx is dropped");
     }
 }

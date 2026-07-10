@@ -32,14 +32,13 @@ impl CapsuleExport {
     pub fn is_compatible_with_profile(&self, target_profile: &str) -> bool {
         match self.profile_floor.as_str() {
             "DEV_RELAXED" => true,
-            "SECURE_DEFAULT" => match target_profile {
-                "SECURE_DEFAULT" | "STIG_ALIGNED" | "AIRGAP_HIGH" => true,
-                _ => false,
-            },
-            "STIG_ALIGNED" => match target_profile {
-                "STIG_ALIGNED" | "AIRGAP_HIGH" => true,
-                _ => false,
-            },
+            "SECURE_DEFAULT" => {
+                matches!(
+                    target_profile,
+                    "SECURE_DEFAULT" | "STIG_ALIGNED" | "AIRGAP_HIGH"
+                )
+            }
+            "STIG_ALIGNED" => matches!(target_profile, "STIG_ALIGNED" | "AIRGAP_HIGH"),
             "AIRGAP_HIGH" => target_profile == "AIRGAP_HIGH",
             _ => false,
         }
@@ -72,12 +71,14 @@ impl CapsuleImport {
         }
     }
 
-    pub fn decide_import(
-        export: &CapsuleExport,
-        target_profile: &str,
-    ) -> CapsuleImportDecision {
-        if !["DEV_RELAXED", "SECURE_DEFAULT", "STIG_ALIGNED", "AIRGAP_HIGH"]
-            .contains(&target_profile)
+    pub fn decide_import(export: &CapsuleExport, target_profile: &str) -> CapsuleImportDecision {
+        if ![
+            "DEV_RELAXED",
+            "SECURE_DEFAULT",
+            "STIG_ALIGNED",
+            "AIRGAP_HIGH",
+        ]
+        .contains(&target_profile)
         {
             return CapsuleImportDecision::Quarantine;
         }

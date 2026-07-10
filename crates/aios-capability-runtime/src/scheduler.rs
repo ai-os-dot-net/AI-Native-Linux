@@ -501,7 +501,10 @@ impl PartitionScheduler {
 
         if ready {
             // Transition: not-ready → ready.
-            self.ready_queue.entry(pri).or_default().push_back(capsule_id);
+            self.ready_queue
+                .entry(pri)
+                .or_default()
+                .push_back(capsule_id);
             if let Some(p) = self.partitions.get_mut(&partition_name) {
                 p.ready_count += 1;
             }
@@ -726,16 +729,34 @@ mod tests {
 
     #[test]
     fn priority_bands_are_correct() {
-        assert_eq!(CapsulePriority::new(0).unwrap().band(), PriorityBand::RealTime);
-        assert_eq!(CapsulePriority::new(9).unwrap().band(), PriorityBand::RealTime);
+        assert_eq!(
+            CapsulePriority::new(0).unwrap().band(),
+            PriorityBand::RealTime
+        );
+        assert_eq!(
+            CapsulePriority::new(9).unwrap().band(),
+            PriorityBand::RealTime
+        );
         assert_eq!(CapsulePriority::new(10).unwrap().band(), PriorityBand::High);
         assert_eq!(CapsulePriority::new(29).unwrap().band(), PriorityBand::High);
-        assert_eq!(CapsulePriority::new(30).unwrap().band(), PriorityBand::Normal);
-        assert_eq!(CapsulePriority::new(69).unwrap().band(), PriorityBand::Normal);
+        assert_eq!(
+            CapsulePriority::new(30).unwrap().band(),
+            PriorityBand::Normal
+        );
+        assert_eq!(
+            CapsulePriority::new(69).unwrap().band(),
+            PriorityBand::Normal
+        );
         assert_eq!(CapsulePriority::new(70).unwrap().band(), PriorityBand::Low);
         assert_eq!(CapsulePriority::new(99).unwrap().band(), PriorityBand::Low);
-        assert_eq!(CapsulePriority::new(100).unwrap().band(), PriorityBand::Idle);
-        assert_eq!(CapsulePriority::new(119).unwrap().band(), PriorityBand::Idle);
+        assert_eq!(
+            CapsulePriority::new(100).unwrap().band(),
+            PriorityBand::Idle
+        );
+        assert_eq!(
+            CapsulePriority::new(119).unwrap().band(),
+            PriorityBand::Idle
+        );
     }
 
     #[test]
@@ -1090,7 +1111,7 @@ mod tests {
     #[test]
     fn all_ready_capsules_eventually_scheduled() {
         let mut s = setup_scheduler();
-        let ids: Vec<CapsuleId> = (1u64..=5).map(|i| CapsuleId(i)).collect();
+        let ids: Vec<CapsuleId> = (1u64..=5).map(CapsuleId).collect();
 
         for &id in &ids {
             s.register_capsule(CapsuleSchedulingEntity::new(

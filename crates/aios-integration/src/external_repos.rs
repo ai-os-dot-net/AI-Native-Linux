@@ -344,9 +344,8 @@ impl RepoHealthCheck {
         sync_interval: Duration,
         now: DateTime<Utc>,
     ) -> Result<bool, IntegrationError> {
-        let last = last_synced.ok_or_else(|| {
-            IntegrationError::Internal("index never synced".into())
-        })?;
+        let last =
+            last_synced.ok_or_else(|| IntegrationError::Internal("index never synced".into()))?;
         Ok(now <= last + sync_interval)
     }
 }
@@ -450,9 +449,7 @@ impl ExternalRepoRegistry {
                     .filter(|pkg| pkg.source_kind == kind)
                     .filter(|pkg| {
                         if let Some(q) = query {
-                            pkg.original_name
-                                .to_lowercase()
-                                .contains(&q.to_lowercase())
+                            pkg.original_name.to_lowercase().contains(&q.to_lowercase())
                                 || pkg.package_id.to_lowercase().contains(&q.to_lowercase())
                         } else {
                             true
@@ -470,10 +467,7 @@ impl ExternalRepoRegistry {
     ///
     /// Returns `Internal` if a lock is poisoned.
     #[allow(clippy::unused_async)]
-    pub async fn store_package(
-        &self,
-        package: ExternalPackage,
-    ) -> Result<(), IntegrationError> {
+    pub async fn store_package(&self, package: ExternalPackage) -> Result<(), IntegrationError> {
         let mut packages = self.packages.write().map_err(|_| lock_poisoned())?;
         packages.push(package);
         drop(packages);
@@ -524,10 +518,7 @@ impl ExternalRepoRegistry {
     /// version map from the previous sync.
     #[must_use]
     #[allow(clippy::unused_async)]
-    pub async fn monitor_updates(
-        &self,
-        kind: ExternalRepoKind,
-    ) -> Vec<ExternalPackage> {
+    pub async fn monitor_updates(&self, kind: ExternalRepoKind) -> Vec<ExternalPackage> {
         let packages = self.packages.read().ok();
         packages
             .map(|p| {
@@ -568,10 +559,7 @@ impl ExternalRepoRegistry {
     /// Returns the bridge associated with the given id.
     #[must_use]
     #[allow(clippy::unused_async)]
-    pub async fn get_bridge(
-        &self,
-        bridge_id: &ExternalRepoBridgeId,
-    ) -> Option<ExternalRepoBridge> {
+    pub async fn get_bridge(&self, bridge_id: &ExternalRepoBridgeId) -> Option<ExternalRepoBridge> {
         let bridges = self.bridges.read().ok()?;
         bridges.get(bridge_id).cloned()
     }
@@ -589,10 +577,7 @@ impl ExternalRepoRegistry {
     /// Lists all known external packages, optionally filtered by source kind.
     #[must_use]
     #[allow(clippy::unused_async)]
-    pub async fn list_packages(
-        &self,
-        kind: Option<ExternalRepoKind>,
-    ) -> Vec<ExternalPackage> {
+    pub async fn list_packages(&self, kind: Option<ExternalRepoKind>) -> Vec<ExternalPackage> {
         let packages = self.packages.read().ok();
         packages
             .map(|p| {
@@ -748,9 +733,18 @@ mod tests {
 
     #[test]
     fn repo_kind_permitted_under_stig() {
-        assert!(!repo_kind_permitted(ExternalRepoKind::Flathub, SecurityProfile::StigAligned));
-        assert!(!repo_kind_permitted(ExternalRepoKind::DockerHub, SecurityProfile::AirgapHigh));
-        assert!(repo_kind_permitted(ExternalRepoKind::Winget, SecurityProfile::Standard));
+        assert!(!repo_kind_permitted(
+            ExternalRepoKind::Flathub,
+            SecurityProfile::StigAligned
+        ));
+        assert!(!repo_kind_permitted(
+            ExternalRepoKind::DockerHub,
+            SecurityProfile::AirgapHigh
+        ));
+        assert!(repo_kind_permitted(
+            ExternalRepoKind::Winget,
+            SecurityProfile::Standard
+        ));
     }
 
     // ------------------------------------------------------------------
@@ -824,7 +818,10 @@ mod tests {
         let reg = ExternalRepoRegistry::new();
         let pkg = make_test_package();
         let translated = reg.translate_package(&pkg).await.expect("translate");
-        assert_eq!(translated.translated_format.as_deref(), Some("aios-capsule-v1"));
+        assert_eq!(
+            translated.translated_format.as_deref(),
+            Some("aios-capsule-v1")
+        );
         assert!(translated
             .capsule_candidate
             .as_deref()
@@ -859,7 +856,9 @@ mod tests {
             false,
         );
         reg.store_package(sandboxed).await.expect("store sandboxed");
-        reg.store_package(unsandboxed).await.expect("store unsandboxed");
+        reg.store_package(unsandboxed)
+            .await
+            .expect("store unsandboxed");
         let alerts = reg.vulnerability_watch().await;
         assert_eq!(alerts.len(), 1);
         assert!(alerts[0].contains("GIMP"));
@@ -949,10 +948,7 @@ mod tests {
     fn package_with_translation() {
         let pkg = make_test_package()
             .with_translation("aios-capsule-v1".into(), "capsule:flathub:gimp".into());
-        assert_eq!(
-            pkg.translated_format.as_deref(),
-            Some("aios-capsule-v1")
-        );
+        assert_eq!(pkg.translated_format.as_deref(), Some("aios-capsule-v1"));
         assert_eq!(
             pkg.capsule_candidate.as_deref(),
             Some("capsule:flathub:gimp")
@@ -982,9 +978,6 @@ mod tests {
     async fn default_registry_is_empty() {
         let reg = ExternalRepoRegistry::default();
         assert!(reg.list_bridges().await.is_empty());
-        assert!(reg
-            .list_packages(None)
-            .await
-            .is_empty());
+        assert!(reg.list_packages(None).await.is_empty());
     }
 }

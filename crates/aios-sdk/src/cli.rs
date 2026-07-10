@@ -76,8 +76,7 @@ impl SdkEnvironment {
         env.check_dependencies();
 
         if env.available_targets.is_empty() {
-            env.warnings
-                .push("no AIOS SDK toolchains detected".into());
+            env.warnings.push("no AIOS SDK toolchains detected".into());
         }
 
         env

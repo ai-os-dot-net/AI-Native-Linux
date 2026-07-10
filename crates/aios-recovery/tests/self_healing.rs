@@ -14,9 +14,8 @@ use std::sync::Arc;
 use aios_recovery::{
     ComponentHealingConfig, ComponentHealthState, ComponentIsolationLevel, ComponentRegistry,
     ComponentSnapshot, HealAction, HealActionKind, HealCommand, HealCommandChannel,
-    HealCommandResponse, HealingCapability, InMemoryRecoveryBoundary,
-    InMemorySelfHealingDriver, PanicSeverity,
-    RecoveryBoundary, RecoveryEvidenceEmitter, RecoveryMode, RecoveryMutableScope,
+    HealCommandResponse, HealingCapability, InMemoryRecoveryBoundary, InMemorySelfHealingDriver,
+    PanicSeverity, RecoveryBoundary, RecoveryEvidenceEmitter, RecoveryMode, RecoveryMutableScope,
     RecoverySubjectRef, RegistryEntry, RestartBoundary, RestartPolicy, SelfHealingDriver,
     SelfHealingPolicy, WatchdogPolicy,
 };
@@ -29,9 +28,7 @@ fn test_signing_key() -> ed25519_dalek::SigningKey {
     ed25519_dalek::SigningKey::from_bytes(&[42_u8; 32])
 }
 
-fn make_emitter(
-    log: Arc<aios_recovery::InMemoryRecoveryEvidenceLog>,
-) -> RecoveryEvidenceEmitter {
+fn make_emitter(log: Arc<aios_recovery::InMemoryRecoveryEvidenceLog>) -> RecoveryEvidenceEmitter {
     RecoveryEvidenceEmitter::new(
         log,
         test_signing_key(),
@@ -152,7 +149,7 @@ fn minix_style_zero_backoff() {
     assert_eq!(p.backoff_for_attempt(1), Some(0.0));
     assert_eq!(p.backoff_for_attempt(3), Some(0.0));
     assert_eq!(p.backoff_for_attempt(5), Some(0.0)); // 5 <= 5 → still within budget
-    assert_eq!(p.backoff_for_attempt(6), None);      // 6 > 5 → escalate
+    assert_eq!(p.backoff_for_attempt(6), None); // 6 > 5 → escalate
 }
 
 #[test]
@@ -191,7 +188,10 @@ async fn disabled_driver_evaluates_to_empty_actions() {
         .expect("observe should succeed");
 
     let actions = driver.evaluate().await.expect("evaluate should succeed");
-    assert!(actions.is_empty(), "disabled policy must produce zero actions");
+    assert!(
+        actions.is_empty(),
+        "disabled policy must produce zero actions"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +202,10 @@ async fn disabled_driver_evaluates_to_empty_actions() {
 async fn heal_denied_when_recovery_not_active() {
     let boundary = Arc::new(InMemoryRecoveryBoundary::new());
     let driver = InMemorySelfHealingDriver::new(boundary);
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     driver
         .observe_health("aios-network-manager", ComponentHealthState::Failed)
@@ -220,7 +223,10 @@ async fn heal_denied_when_recovery_not_active() {
         sequence: 1,
     };
 
-    let result = driver.execute_heal(&action).await.expect("execute should succeed");
+    let result = driver
+        .execute_heal(&action)
+        .await
+        .expect("execute should succeed");
     assert!(!result.success, "must fail when recovery not active");
     assert!(
         result.detail.contains("INV-012"),
@@ -240,7 +246,10 @@ async fn full_cycle_in_recovery_produces_actions() {
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary.clone()).with_evidence_emitter(emitter);
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     // Enter recovery mode first
     boundary
@@ -270,7 +279,11 @@ async fn full_cycle_in_recovery_produces_actions() {
     // Execute both
     for action in &actions {
         let result = driver.execute_heal(action).await.expect("execute heal");
-        assert!(result.success, "{} must succeed: {}", action.component_id, result.detail);
+        assert!(
+            result.success,
+            "{} must succeed: {}",
+            action.component_id, result.detail
+        );
         assert!(
             result.receipt_id.is_some(),
             "{} must emit evidence",
@@ -300,7 +313,10 @@ async fn healthy_observation_resets_retry_counter() {
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary.clone()).with_evidence_emitter(emitter);
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     boundary
         .enter_recovery(aios_recovery::EnterRecoveryRequest {
@@ -361,8 +377,7 @@ fn healing_payload_round_trips_through_serde_json() {
     };
 
     let json = serde_json::to_value(&original).expect("serialize");
-    let round_tripped: HealingAttemptedPayload =
-        serde_json::from_value(json).expect("deserialize");
+    let round_tripped: HealingAttemptedPayload = serde_json::from_value(json).expect("deserialize");
 
     assert_eq!(round_tripped.component_id, original.component_id);
     assert_eq!(round_tripped.observed_state, original.observed_state);
@@ -377,7 +392,10 @@ fn healing_payload_round_trips_through_serde_json() {
 #[test]
 fn self_healing_subject_is_well_formed_system_subject() {
     assert!(aios_recovery::SELF_HEALING_SUBJECT.starts_with("_system:service:"));
-    assert_eq!(aios_recovery::SELF_HEALING_SUBJECT, "_system:service:self-healing");
+    assert_eq!(
+        aios_recovery::SELF_HEALING_SUBJECT,
+        "_system:service:self-healing"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -387,7 +405,10 @@ fn self_healing_subject_is_well_formed_system_subject() {
 #[test]
 fn recovery_mutable_scope_has_all_expected_variants() {
     // Verify expected variants exist and default is ProcessLifecycle
-    assert_eq!(RecoveryMutableScope::default(), RecoveryMutableScope::ProcessLifecycle);
+    assert_eq!(
+        RecoveryMutableScope::default(),
+        RecoveryMutableScope::ProcessLifecycle
+    );
     // Spot-check key variants are accessible (compile-time verification)
     let _ = RecoveryMutableScope::NetworkReconfig;
     let _ = RecoveryMutableScope::FilesystemMutation;
@@ -480,7 +501,10 @@ fn panic_context_round_trips_through_serde_json() {
     assert_eq!(round_tripped.severity, original.severity);
     assert_eq!(round_tripped.message, original.message);
     assert_eq!(round_tripped.line, Some(247));
-    assert_eq!(round_tripped.core_dump_ref.as_deref(), Some("/var/crashes/dns-1673289123.core"));
+    assert_eq!(
+        round_tripped.core_dump_ref.as_deref(),
+        Some("/var/crashes/dns-1673289123.core")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -560,7 +584,10 @@ async fn observe_panic_emits_evidence_immediately() {
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary).with_evidence_emitter(emitter);
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     let ctx = aios_recovery::PanicContext {
         component_id: "aios-network-manager".to_owned(),
@@ -574,7 +601,10 @@ async fn observe_panic_emits_evidence_immediately() {
         consecutive_panics: 1,
     };
 
-    let receipt = driver.observe_panic(ctx).await.expect("observe_panic succeeds");
+    let receipt = driver
+        .observe_panic(ctx)
+        .await
+        .expect("observe_panic succeeds");
 
     // Must return a receipt id (evidence was emitted)
     assert!(!receipt.is_empty(), "panic must produce evidence receipt");
@@ -593,7 +623,10 @@ async fn observe_oom_panic_emits_with_escalation_flag() {
     let log = Arc::new(aios_recovery::InMemoryRecoveryEvidenceLog::new());
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary).with_evidence_emitter(emitter);
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     // Fire 4 panics to accumulate the tracker counter
     for i in 1..=4 {
@@ -608,7 +641,10 @@ async fn observe_oom_panic_emits_with_escalation_flag() {
             observed_at: chrono::Utc::now(),
             consecutive_panics: i,
         };
-        driver.observe_panic(ctx).await.expect("OOM panic emits evidence");
+        driver
+            .observe_panic(ctx)
+            .await
+            .expect("OOM panic emits evidence");
     }
 
     // Tracker should show 4 accumulated panics
@@ -644,7 +680,10 @@ async fn watchdog_register_adds_component_to_timer() {
         .with_evidence_emitter(emitter)
         .with_watchdog_policy(enabled_watchdog_policy());
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     // Register a component — deadline should be set
     driver.register_watchdog("aios-network-manager").await;
@@ -671,7 +710,10 @@ async fn ping_resets_watchdog_timer() {
         .with_evidence_emitter(emitter)
         .with_watchdog_policy(enabled_watchdog_policy());
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     // Register and immediately ping to set initial deadline
     driver.register_watchdog("aios-network-manager").await;
@@ -705,7 +747,10 @@ async fn watchdog_timeout_triggers_degraded_observation() {
         .with_evidence_emitter(emitter)
         .with_watchdog_policy(enabled_watchdog_policy());
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     // Register and set deadline
     driver.register_watchdog("aios-network-manager").await;
@@ -741,7 +786,10 @@ async fn disabled_watchdog_does_not_auto_flag() {
         .with_evidence_emitter(emitter)
         .with_watchdog_policy(disabled_watchdog_policy());
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     // Register component even though watchdog is disabled
     driver.register_watchdog("aios-network-manager").await;
@@ -772,7 +820,10 @@ fn tracker_checkpoint_sets_hash_and_timestamp() {
 
     let mut t = ComponentHealingTracker::default();
     assert!(t.checkpoint_hash.is_none(), "no hash before checkpoint");
-    assert!(t.checkpoint_timestamp.is_none(), "no timestamp before checkpoint");
+    assert!(
+        t.checkpoint_timestamp.is_none(),
+        "no timestamp before checkpoint"
+    );
 
     t.checkpoint("abc123def456");
 
@@ -781,10 +832,7 @@ fn tracker_checkpoint_sets_hash_and_timestamp() {
         Some("abc123def456"),
         "hash must match argument"
     );
-    assert!(
-        t.checkpoint_timestamp.is_some(),
-        "timestamp must be set"
-    );
+    assert!(t.checkpoint_timestamp.is_some(), "timestamp must be set");
 }
 
 #[test]
@@ -824,8 +872,7 @@ fn component_snapshot_round_trips_through_serde_json() {
     };
 
     let json = serde_json::to_value(&original).expect("serialize");
-    let round_tripped: ComponentSnapshot =
-        serde_json::from_value(json).expect("deserialize");
+    let round_tripped: ComponentSnapshot = serde_json::from_value(json).expect("deserialize");
 
     assert_eq!(round_tripped.component_id, original.component_id);
     assert_eq!(round_tripped.checkpoint_hash, original.checkpoint_hash);
@@ -848,7 +895,10 @@ async fn driver_take_snapshot_returns_valid_snapshot() {
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary).with_evidence_emitter(emitter);
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     let config_blob = b"{\"host\":\"nm1\",\"port\":8080}";
     let snapshot = driver
@@ -857,7 +907,10 @@ async fn driver_take_snapshot_returns_valid_snapshot() {
         .expect("take_snapshot should succeed");
 
     assert_eq!(snapshot.component_id, "aios-network-manager");
-    assert!(!snapshot.checkpoint_hash.is_empty(), "hash must be non-empty");
+    assert!(
+        !snapshot.checkpoint_hash.is_empty(),
+        "hash must be non-empty"
+    );
     assert!(
         !snapshot.config_blob_hex.is_empty(),
         "config_blob_hex must be non-empty"
@@ -870,7 +923,10 @@ async fn driver_take_snapshot_returns_valid_snapshot() {
         "BLAKE3 hex hash is always 64 characters"
     );
     assert!(
-        snapshot.checkpoint_hash.chars().all(|c| c.is_ascii_hexdigit()),
+        snapshot
+            .checkpoint_hash
+            .chars()
+            .all(|c| c.is_ascii_hexdigit()),
         "hash must be hex chars only"
     );
 
@@ -898,7 +954,10 @@ async fn driver_take_snapshot_different_blobs_produce_different_hashes() {
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary).with_evidence_emitter(emitter);
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     let snap1 = driver
         .take_snapshot("aios-dns-resolver", b"config-a")
@@ -930,7 +989,10 @@ async fn restore_snapshot_updates_existing_tracker() {
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary).with_evidence_emitter(emitter);
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     // First, observe a component so it exists in the tracker
     driver
@@ -977,7 +1039,10 @@ async fn restore_snapshot_creates_tracker_if_missing() {
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary).with_evidence_emitter(emitter);
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     let snapshot = ComponentSnapshot {
         component_id: "aios-new-component".to_owned(),
@@ -1033,7 +1098,9 @@ fn registry_register_and_resolve_round_trip() {
     assert_eq!(registry.len(), 1);
     assert!(!registry.is_empty());
 
-    let resolved = registry.resolve("aios-dns-resolver").expect("resolve must succeed");
+    let resolved = registry
+        .resolve("aios-dns-resolver")
+        .expect("resolve must succeed");
     assert_eq!(resolved.component_id, entry.component_id);
     assert_eq!(resolved.display_name, entry.display_name);
     assert_eq!(resolved.component_type.as_deref(), Some("infrastructure"));
@@ -1073,11 +1140,10 @@ fn registry_deregister_unknown_returns_none() {
 fn registry_dependencies_of_returns_declared_deps() {
     let mut registry = ComponentRegistry::new();
     registry.register(
-        RegistryEntry::new("aios-api-gateway", "API Gateway")
-            .with_dependencies(vec![
-                "aios-network-manager".to_owned(),
-                "aios-dns-resolver".to_owned(),
-            ]),
+        RegistryEntry::new("aios-api-gateway", "API Gateway").with_dependencies(vec![
+            "aios-network-manager".to_owned(),
+            "aios-dns-resolver".to_owned(),
+        ]),
     );
 
     let deps = registry.dependencies_of("aios-api-gateway");
@@ -1095,16 +1161,16 @@ fn registry_dependencies_of_unknown_returns_empty() {
 #[test]
 fn registry_dependents_of_resolves_reverse_deps() {
     let mut registry = ComponentRegistry::new();
-    registry.register(
-        RegistryEntry::new("aios-kernel", "Kernel"),
-    );
+    registry.register(RegistryEntry::new("aios-kernel", "Kernel"));
     registry.register(
         RegistryEntry::new("aios-dns-resolver", "DNS Resolver")
             .with_dependencies(vec!["aios-kernel".to_owned()]),
     );
     registry.register(
-        RegistryEntry::new("aios-api-gateway", "API Gateway")
-            .with_dependencies(vec!["aios-kernel".to_owned(), "aios-dns-resolver".to_owned()]),
+        RegistryEntry::new("aios-api-gateway", "API Gateway").with_dependencies(vec![
+            "aios-kernel".to_owned(),
+            "aios-dns-resolver".to_owned(),
+        ]),
     );
 
     let dependents = registry.dependents_of("aios-kernel");
@@ -1345,7 +1411,12 @@ async fn channel_send_receive_round_trip() {
     let handle = tokio::spawn(async move {
         let (resp_tx, resp_rx) = oneshot::channel();
         sender
-            .send((HealCommand::Shutdown { grace_period_seconds: 10 }, resp_tx))
+            .send((
+                HealCommand::Shutdown {
+                    grace_period_seconds: 10,
+                },
+                resp_tx,
+            ))
             .await
             .expect("send succeeds");
         resp_rx.await.expect("response received")
@@ -1460,8 +1531,8 @@ fn heal_command_response_timeout_round_trips() {
 #[test]
 fn heal_command_response_serde_screaming_snake_case() {
     // Ack is a newtype variant → serialized as {"ACK": "ok"}
-    let ack_json = serde_json::to_value(HealCommandResponse::Ack("ok".to_owned()))
-        .expect("serialize");
+    let ack_json =
+        serde_json::to_value(HealCommandResponse::Ack("ok".to_owned())).expect("serialize");
     assert!(
         ack_json.as_object().unwrap().contains_key("ACK"),
         "Ack variant key must be ACK"
@@ -1478,8 +1549,7 @@ fn heal_command_response_serde_screaming_snake_case() {
     );
 
     // Timeout is a unit variant → serialized as "TIMEOUT"
-    let timeout_json =
-        serde_json::to_value(HealCommandResponse::Timeout).expect("serialize");
+    let timeout_json = serde_json::to_value(HealCommandResponse::Timeout).expect("serialize");
     assert_eq!(timeout_json.as_str().unwrap(), "TIMEOUT");
 }
 
@@ -1494,7 +1564,10 @@ async fn driver_registers_and_delivers_command_through_channel() {
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary).with_evidence_emitter(emitter);
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     // Register a command channel for aios-network-manager
     let mut channel = driver
@@ -1507,7 +1580,9 @@ async fn driver_registers_and_delivers_command_through_channel() {
         match cmd {
             HealCommand::Shutdown { .. } => {
                 response_tx
-                    .send(HealCommandResponse::Ack("graceful shutdown complete".to_owned()))
+                    .send(HealCommandResponse::Ack(
+                        "graceful shutdown complete".to_owned(),
+                    ))
                     .expect("send ack");
             }
             _ => {
@@ -1551,7 +1626,10 @@ async fn no_channel_falls_back_to_direct_restart_no_crash() {
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary.clone()).with_evidence_emitter(emitter);
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     boundary
         .enter_recovery(aios_recovery::EnterRecoveryRequest {
@@ -1574,7 +1652,10 @@ async fn no_channel_falls_back_to_direct_restart_no_crash() {
         sequence: 1,
     };
 
-    let result = driver.execute_heal(&action).await.expect("execute succeeds");
+    let result = driver
+        .execute_heal(&action)
+        .await
+        .expect("execute succeeds");
     assert!(result.success, "restart must succeed even without channel");
     assert!(
         result.receipt_id.is_some(),
@@ -1593,13 +1674,13 @@ async fn deliver_heal_command_to_unknown_component_returns_none() {
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary).with_evidence_emitter(emitter);
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     let response = driver
-        .deliver_heal_command(
-            "nonexistent-component",
-            HealCommand::RestartInstant,
-        )
+        .deliver_heal_command("nonexistent-component", HealCommand::RestartInstant)
         .await;
 
     assert!(
@@ -1619,7 +1700,10 @@ async fn second_registration_replaces_first_channel() {
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary).with_evidence_emitter(emitter);
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     let first_channel = driver
         .register_command_channel("aios-dns-resolver", 4)
@@ -1647,10 +1731,7 @@ async fn second_registration_replaces_first_channel() {
 
     // Now deliver — the receiver handle is gone, so response_rx will error
     let response = driver
-        .deliver_heal_command(
-            "aios-dns-resolver",
-            HealCommand::RestartInstant,
-        )
+        .deliver_heal_command("aios-dns-resolver", HealCommand::RestartInstant)
         .await;
     assert!(response.is_none(), "orphaned channel returns None");
 }
@@ -1673,7 +1754,7 @@ async fn close_channel_stops_send_and_receive() {
     let ch2 = HealCommandChannel::new(1);
     let s2 = ch2.sender();
     drop(ch2); // drops original tx/rx, but s2 clone keeps it alive
-    drop(s2);  // now fully closed
+    drop(s2); // now fully closed
 }
 
 // ---------------------------------------------------------------------------
@@ -1700,7 +1781,10 @@ fn restart_boundary_serde_round_trip() {
     for boundary in &boundaries {
         let json = serde_json::to_value(boundary).expect("serialize");
         let rt: RestartBoundary = serde_json::from_value(json).expect("deserialize");
-        assert_eq!(&rt, boundary, "RestartBoundary {boundary:?} must round-trip");
+        assert_eq!(
+            &rt, boundary,
+            "RestartBoundary {boundary:?} must round-trip"
+        );
     }
 }
 
@@ -1949,7 +2033,7 @@ fn isolation_level_ordering() {
     assert!(ComponentIsolationLevel::Critical >= ComponentIsolationLevel::Important);
     assert!(ComponentIsolationLevel::Important >= ComponentIsolationLevel::Important);
     assert!(ComponentIsolationLevel::Replaceable >= ComponentIsolationLevel::Replaceable);
-    assert!(!(ComponentIsolationLevel::Replaceable >= ComponentIsolationLevel::Important));
+    assert!(ComponentIsolationLevel::Replaceable < ComponentIsolationLevel::Important);
 }
 
 // ---------------------------------------------------------------------------
@@ -1986,15 +2070,14 @@ fn healing_capability_maps_to_correct_scope() {
 
 #[test]
 fn can_restart_process_is_subset_of_process_lifecycle() {
-    assert!(HealingCapability::CanRestartProcess.is_subset_of(
-        RecoveryMutableScope::ProcessLifecycle,
-    ));
-    assert!(!HealingCapability::CanRestartProcess.is_subset_of(
-        RecoveryMutableScope::NetworkReconfig,
-    ));
-    assert!(!HealingCapability::CanRestartProcess.is_subset_of(
-        RecoveryMutableScope::FilesystemMutation,
-    ));
+    assert!(
+        HealingCapability::CanRestartProcess.is_subset_of(RecoveryMutableScope::ProcessLifecycle,)
+    );
+    assert!(
+        !HealingCapability::CanRestartProcess.is_subset_of(RecoveryMutableScope::NetworkReconfig,)
+    );
+    assert!(!HealingCapability::CanRestartProcess
+        .is_subset_of(RecoveryMutableScope::FilesystemMutation,));
 }
 
 #[test]
@@ -2045,8 +2128,7 @@ fn healing_capability_serde_round_trip() {
 
 #[test]
 fn healing_capability_serde_is_screaming_snake_case() {
-    let json =
-        serde_json::to_value(HealingCapability::CanRestartProcess).expect("serialize");
+    let json = serde_json::to_value(HealingCapability::CanRestartProcess).expect("serialize");
     assert_eq!(
         json,
         serde_json::Value::String("CAN_RESTART_PROCESS".to_owned()),
@@ -2058,15 +2140,13 @@ fn healing_capability_serde_is_screaming_snake_case() {
         serde_json::Value::String("CAN_RECONFIGURE_DNS".to_owned()),
     );
 
-    let json =
-        serde_json::to_value(HealingCapability::CanIsolateMeshNode).expect("serialize");
+    let json = serde_json::to_value(HealingCapability::CanIsolateMeshNode).expect("serialize");
     assert_eq!(
         json,
         serde_json::Value::String("CAN_ISOLATE_MESH_NODE".to_owned()),
     );
 
-    let json =
-        serde_json::to_value(HealingCapability::CanEscalateToOperator).expect("serialize");
+    let json = serde_json::to_value(HealingCapability::CanEscalateToOperator).expect("serialize");
     assert_eq!(
         json,
         serde_json::Value::String("CAN_ESCALATE_TO_OPERATOR".to_owned()),
@@ -2114,16 +2194,16 @@ fn healing_capability_is_subset_of_matches_required_scope() {
 
 #[test]
 fn crosstalk_dns_capability_not_subset_of_process_lifecycle() {
-    assert!(!HealingCapability::CanReconfigureDNS.is_subset_of(
-        RecoveryMutableScope::ProcessLifecycle,
-    ));
+    assert!(
+        !HealingCapability::CanReconfigureDNS.is_subset_of(RecoveryMutableScope::ProcessLifecycle,)
+    );
 }
 
 #[test]
 fn crosstalk_isolate_not_subset_of_network_reconfig() {
-    assert!(!HealingCapability::CanIsolateMeshNode.is_subset_of(
-        RecoveryMutableScope::NetworkReconfig,
-    ));
+    assert!(
+        !HealingCapability::CanIsolateMeshNode.is_subset_of(RecoveryMutableScope::NetworkReconfig,)
+    );
 }
 
 #[test]
@@ -2147,8 +2227,14 @@ fn component_config_with_capabilities_deserializes_from_json() {
 
     assert_eq!(config.display_name, "DNS Resolver");
     assert_eq!(config.allowed_capabilities.len(), 2);
-    assert_eq!(config.allowed_capabilities[0], HealingCapability::CanRestartProcess);
-    assert_eq!(config.allowed_capabilities[1], HealingCapability::CanReconfigureDNS);
+    assert_eq!(
+        config.allowed_capabilities[0],
+        HealingCapability::CanRestartProcess
+    );
+    assert_eq!(
+        config.allowed_capabilities[1],
+        HealingCapability::CanReconfigureDNS
+    );
 }
 
 #[test]
@@ -2266,7 +2352,10 @@ fn recovery_sub_boundary_serde_round_trip() {
     for b in &boundaries {
         let json = serde_json::to_value(b).expect("serialize");
         let rt: RecoverySubBoundary = serde_json::from_value(json).expect("deserialize");
-        assert_eq!(&rt, b, "RecoverySubBoundary {b:?} must round-trip through serde");
+        assert_eq!(
+            &rt, b,
+            "RecoverySubBoundary {b:?} must round-trip through serde"
+        );
     }
 }
 
@@ -2379,7 +2468,10 @@ async fn in_memory_boundary_exit_non_active_sub_boundary_errors() {
     let result = boundary
         .exit_sub_boundary(aios_recovery::RecoverySubBoundary::Compute)
         .await;
-    assert!(result.is_err(), "exiting non-active sub-boundary must error");
+    assert!(
+        result.is_err(),
+        "exiting non-active sub-boundary must error"
+    );
 }
 
 #[tokio::test]
@@ -2508,7 +2600,10 @@ async fn heal_allowed_in_network_sub_boundary_without_full_recovery() {
         component_policies,
         default_policy: RestartPolicy::conservative(2),
     };
-    driver.set_policy(network_policy).await.expect("valid policy");
+    driver
+        .set_policy(network_policy)
+        .await
+        .expect("valid policy");
 
     // Activate only the Network sub-boundary (no full recovery)
     boundary
@@ -2527,10 +2622,7 @@ async fn heal_allowed_in_network_sub_boundary_without_full_recovery() {
     assert_eq!(actions.len(), 1, "network-only component must be evaluated");
 
     let action = &actions[0];
-    let result = driver
-        .execute_heal(action)
-        .await
-        .expect("execute heal");
+    let result = driver.execute_heal(action).await.expect("execute heal");
     assert!(
         result.success,
         "healing must succeed when Network sub-boundary is active: {}",
@@ -2553,9 +2645,7 @@ async fn heal_denied_when_sub_boundary_not_active() {
         ComponentHealingConfig {
             display_name: "Network Manager".to_owned(),
             restart_policy: RestartPolicy::minix_style(3),
-            allowed_scopes: vec![
-                RecoveryMutableScope::NetworkReconfig,
-            ],
+            allowed_scopes: vec![RecoveryMutableScope::NetworkReconfig],
             allowed_capabilities: vec![],
             isolation_level: ComponentIsolationLevel::Replaceable,
             restart_boundary: RestartBoundary::ProcessLocal,
@@ -2568,7 +2658,10 @@ async fn heal_denied_when_sub_boundary_not_active() {
         component_policies,
         default_policy: RestartPolicy::conservative(2),
     };
-    driver.set_policy(network_only_policy).await.expect("valid policy");
+    driver
+        .set_policy(network_only_policy)
+        .await
+        .expect("valid policy");
 
     // Only Compute sub-boundary is active — Network is NOT
     boundary
@@ -2600,7 +2693,10 @@ async fn heal_denied_when_sub_boundary_not_active() {
         sequence: 1,
     };
     let result = driver.execute_heal(&action).await.expect("execute heal");
-    assert!(!result.success, "must fail when Network sub-boundary not active");
+    assert!(
+        !result.success,
+        "must fail when Network sub-boundary not active"
+    );
     assert!(
         result.detail.contains("INV-012"),
         "detail should mention INV-012"
@@ -2614,7 +2710,10 @@ async fn compute_sub_boundary_allows_process_healing() {
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary.clone()).with_evidence_emitter(emitter);
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     // Activate only Compute sub-boundary
     boundary
@@ -2629,13 +2728,14 @@ async fn compute_sub_boundary_allows_process_healing() {
         .expect("observe dns");
 
     let actions = driver.evaluate().await.expect("evaluate");
-    assert_eq!(actions.len(), 1, "dns component with ProcessLifecycle → Compute must be evaluated");
+    assert_eq!(
+        actions.len(),
+        1,
+        "dns component with ProcessLifecycle → Compute must be evaluated"
+    );
 
     let action = &actions[0];
-    let result = driver
-        .execute_heal(action)
-        .await
-        .expect("execute heal");
+    let result = driver.execute_heal(action).await.expect("execute heal");
     assert!(
         result.success,
         "Compute sub-boundary must allow ProcessLifecycle healing: {}",
@@ -2652,7 +2752,10 @@ async fn healing_in_full_recovery_still_works_with_sub_boundary_impl() {
     let emitter = Arc::new(make_emitter(log.clone()));
     let driver = InMemorySelfHealingDriver::new(boundary.clone()).with_evidence_emitter(emitter);
 
-    driver.set_policy(minix_policy()).await.expect("valid policy");
+    driver
+        .set_policy(minix_policy())
+        .await
+        .expect("valid policy");
 
     boundary
         .enter_recovery(aios_recovery::EnterRecoveryRequest {
@@ -2674,11 +2777,19 @@ async fn healing_in_full_recovery_still_works_with_sub_boundary_impl() {
         .expect("observe dns");
 
     let actions = driver.evaluate().await.expect("evaluate");
-    assert_eq!(actions.len(), 2, "both components still evaluated under SystemFull");
+    assert_eq!(
+        actions.len(),
+        2,
+        "both components still evaluated under SystemFull"
+    );
 
     for action in &actions {
         let result = driver.execute_heal(action).await.expect("execute heal");
-        assert!(result.success, "{} must succeed: {}", action.component_id, result.detail);
+        assert!(
+            result.success,
+            "{} must succeed: {}",
+            action.component_id, result.detail
+        );
     }
 }
 
@@ -2701,12 +2812,12 @@ async fn exit_system_full_exit_token_clears_active_sub_boundaries() {
         .await
         .expect("must have exit token");
 
-    boundary
-        .exit_recovery(&token)
-        .await
-        .expect("exit recovery");
+    boundary.exit_recovery(&token).await.expect("exit recovery");
 
     let state = boundary.current_state().await;
-    assert!(state.active_sub_boundaries.is_empty(), "exit recovery clears sub-boundaries");
+    assert!(
+        state.active_sub_boundaries.is_empty(),
+        "exit recovery clears sub-boundaries"
+    );
     assert_eq!(state.mode, aios_recovery::RecoveryMode::Normal);
 }

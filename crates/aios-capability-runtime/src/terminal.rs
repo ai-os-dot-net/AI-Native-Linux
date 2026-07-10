@@ -68,18 +68,7 @@ use super::capsule_namespace::CapsuleId;
 /// | `Lx`  | No           | No              | No           |
 /// | `Mix`  | Yes          | Yes             | No           |
 /// | `Ai`   | Yes          | No              | Yes          |
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    EnumIter,
-    EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TerminalMode {
     /// Pure shell — no AI involvement.  Commands execute in the calling
@@ -108,18 +97,7 @@ pub enum TerminalMode {
 ///    │
 ///    └────────► TimedOut    (terminal)
 /// ```
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    EnumIter,
-    EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ApprovalStatus {
     /// Proposal emitted; awaiting human decision.  Only `Pending`
@@ -506,10 +484,6 @@ mod tests {
         TerminalDispatcher::new(Duration::from_secs(300))
     }
 
-    fn new_dispatcher_zero_timeout() -> TerminalDispatcher {
-        TerminalDispatcher::new(Duration::from_secs(0))
-    }
-
     // -----------------------------------------------------------------------
     // INV-TERM-001: LX auto-execute
     // -----------------------------------------------------------------------
@@ -531,7 +505,9 @@ mod tests {
         let proposal = d
             .propose_action(&session.session_id, "ls -la".into())
             .expect("LX proposal should succeed");
-        let result = d.execute(&proposal.proposal_id).expect("LX execution should succeed");
+        let result = d
+            .execute(&proposal.proposal_id)
+            .expect("LX execution should succeed");
         assert!(result.contains("ls -la"));
     }
 
@@ -573,7 +549,9 @@ mod tests {
 
         // Approve then execute.
         assert!(d.approve(&proposal.proposal_id));
-        let result = d.execute(&proposal.proposal_id).expect("execution after approval should succeed");
+        let result = d
+            .execute(&proposal.proposal_id)
+            .expect("execution after approval should succeed");
         assert!(result.contains("systemctl restart"));
     }
 
@@ -602,9 +580,7 @@ mod tests {
         let session = d.new_session(TerminalMode::Ai, CapsuleId(3));
         let result = d.propose_action(&session.session_id, "deploy model".into());
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("no active policy grant"));
+        assert!(result.unwrap_err().contains("no active policy grant"));
     }
 
     #[test]
@@ -619,7 +595,9 @@ mod tests {
 
         // Still requires approval in AI mode.
         assert!(d.approve(&proposal.proposal_id));
-        let result = d.execute(&proposal.proposal_id).expect("AI execution should succeed");
+        let result = d
+            .execute(&proposal.proposal_id)
+            .expect("AI execution should succeed");
         assert!(result.contains("deploy model"));
     }
 
@@ -637,7 +615,9 @@ mod tests {
         d.set_policy_ai_allowed(false);
         assert!(!d.is_ai_allowed());
         // New proposals from the same session are now blocked.
-        assert!(d.propose_action(&session.session_id, "cmd2".into()).is_err());
+        assert!(d
+            .propose_action(&session.session_id, "cmd2".into())
+            .is_err());
     }
 
     // -----------------------------------------------------------------------
@@ -705,9 +685,7 @@ mod tests {
         let session = d.new_session(TerminalMode::Mix, CapsuleId(1));
         assert!(d.close_session(&session.session_id));
         assert!(d.reopen_session(&session.session_id));
-        assert!(d
-            .propose_action(&session.session_id, "cmd".into())
-            .is_ok());
+        assert!(d.propose_action(&session.session_id, "cmd".into()).is_ok());
     }
 
     #[test]
@@ -824,7 +802,9 @@ mod tests {
     fn get_session_returns_correct_data() {
         let mut d = new_dispatcher();
         let session = d.new_session(TerminalMode::Ai, CapsuleId(42));
-        let fetched = d.get_session(&session.session_id).expect("session should exist");
+        let fetched = d
+            .get_session(&session.session_id)
+            .expect("session should exist");
         assert_eq!(fetched.mode, TerminalMode::Ai);
         assert_eq!(fetched.capsule_id, CapsuleId(42));
         assert!(fetched.active);

@@ -275,16 +275,12 @@ impl KdeRenderer for InMemoryKdeRenderer {
         // Create real Wayland surface if a compositor is attached.
         if let Some(ref compositor) = self.compositor {
             let wayland_client = compositor.lock().map_err(|e| {
-                KdeRendererError::Internal(format!(
-                    "wayland compositor mutex poisoned: {e}"
-                ))
+                KdeRendererError::Internal(format!("wayland compositor mutex poisoned: {e}"))
             })?;
             wayland_client
                 .create_surface_for_zone(desc.id.clone(), req.zone)
                 .map_err(|e| {
-                    KdeRendererError::Internal(format!(
-                        "wayland surface creation failed: {e}"
-                    ))
+                    KdeRendererError::Internal(format!("wayland surface creation failed: {e}"))
                 })?;
         }
 

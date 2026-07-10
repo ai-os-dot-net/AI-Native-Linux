@@ -190,7 +190,10 @@ mod tests {
         sync.register_host("host-01", "initial");
         let result = sync.push_evidence("host-01", "updated-hash");
         assert!(result.is_ok());
-        assert_eq!(sync.pull_evidence("host-01").as_deref(), Some("updated-hash"));
+        assert_eq!(
+            sync.pull_evidence("host-01").as_deref(),
+            Some("updated-hash")
+        );
     }
 
     #[test]

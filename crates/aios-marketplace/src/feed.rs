@@ -1,7 +1,7 @@
-use chrono::{DateTime, Duration, Utc};
-use ulid::Ulid;
 use crate::enums::{FeedKind, MarketplaceCategory};
 use crate::error::MarketplaceError;
+use chrono::{DateTime, Duration, Utc};
+use ulid::Ulid;
 
 /// A curated feed of marketplace listings (S11.2 §3.4).
 #[derive(Debug, Clone)]
@@ -94,10 +94,7 @@ impl FeedGenerator {
             .collect()
     }
 
-    pub fn get_feed_entries(
-        &self,
-        kind: FeedKind,
-    ) -> Result<&[String], MarketplaceError> {
+    pub fn get_feed_entries(&self, kind: FeedKind) -> Result<&[String], MarketplaceError> {
         self.feeds
             .iter()
             .find(|f| f.kind == kind)
@@ -194,7 +191,10 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap().entry_count(), 1);
 
-        let result = gen.refresh_feed(FeedKind::CuratedStable, vec!["lst-2".into(), "lst-3".into()]);
+        let result = gen.refresh_feed(
+            FeedKind::CuratedStable,
+            vec!["lst-2".into(), "lst-3".into()],
+        );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().entry_count(), 2);
         assert_eq!(gen.len(), 1);

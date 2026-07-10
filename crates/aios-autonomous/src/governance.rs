@@ -164,11 +164,11 @@ impl FleetConstitution {
         &self,
         amendment: &ConstitutionalAmendment,
     ) -> Result<(), AutonomousError> {
-        let clause = self
-            .find_clause(&amendment.clause_id)
-            .ok_or_else(|| AutonomousError::ClauseNotFound {
+        let clause = self.find_clause(&amendment.clause_id).ok_or_else(|| {
+            AutonomousError::ClauseNotFound {
                 clause_id: amendment.clause_id.clone(),
-            })?;
+            }
+        })?;
 
         if clause.immutable {
             return Err(AutonomousError::ImmutableClause {
@@ -241,29 +241,23 @@ impl FleetConstitution {
                     }
                 }
                 ClauseCategory::Autonomy => {
-                    if context.autonomy_level == AutonomyLevel::Advisory
-                        && !action.is_suggestion()
+                    if context.autonomy_level == AutonomyLevel::Advisory && !action.is_suggestion()
                     {
                         return Err(AutonomousError::ConstitutionalViolation {
                             clause_title: clause.title.clone(),
-                            detail:
-                                "Advisory autonomy forbids non-suggestion actions"
-                                    .to_owned(),
+                            detail: "Advisory autonomy forbids non-suggestion actions".to_owned(),
                         });
                     }
                 }
                 ClauseCategory::Recovery => {
                     if matches!(
                         action,
-                        AutonomousAction::RestartRemote
-                            | AutonomousAction::MigrateWorkload
+                        AutonomousAction::RestartRemote | AutonomousAction::MigrateWorkload
                     ) && !context.autonomy_level.permits_self_action()
                     {
                         return Err(AutonomousError::ConstitutionalViolation {
                             clause_title: clause.title.clone(),
-                            detail:
-                                "heal actions require at least AutonomousRecovery"
-                                    .to_owned(),
+                            detail: "heal actions require at least AutonomousRecovery".to_owned(),
                         });
                     }
                 }
@@ -415,13 +409,22 @@ mod tests {
     fn test_add_multiple_clauses() {
         let mut fc = FleetConstitution::new("Test");
         fc.add_clause(ConstitutionalClause::new(
-            "A", "a", ClauseCategory::Security, 1,
+            "A",
+            "a",
+            ClauseCategory::Security,
+            1,
         ));
         fc.add_clause(ConstitutionalClause::new(
-            "B", "b", ClauseCategory::Policy, 1,
+            "B",
+            "b",
+            ClauseCategory::Policy,
+            1,
         ));
         fc.add_clause(ConstitutionalClause::new(
-            "C", "c", ClauseCategory::Recovery, 1,
+            "C",
+            "c",
+            ClauseCategory::Recovery,
+            1,
         ));
         assert_eq!(fc.clauses.len(), 3);
     }
@@ -446,13 +449,11 @@ mod tests {
     #[test]
     fn test_validate_amendment_succeeds() {
         let mut fc = FleetConstitution::new("Test");
-        let clause = ConstitutionalClause::new(
-            "Clause", "Original text", ClauseCategory::Policy, 1,
-        );
+        let clause =
+            ConstitutionalClause::new("Clause", "Original text", ClauseCategory::Policy, 1);
         let clause_id = clause.clause_id.clone();
         fc.add_clause(clause);
-        let mut amendment =
-            ConstitutionalAmendment::new(&clause_id, "New text", "host-01");
+        let mut amendment = ConstitutionalAmendment::new(&clause_id, "New text", "host-01");
         amendment.quorum_met = true;
         amendment.add_signature("deadbeef");
         assert!(fc.validate_amendment(&amendment).is_ok());
@@ -469,13 +470,10 @@ mod tests {
     #[test]
     fn test_validate_amendment_quorum_not_met() {
         let mut fc = FleetConstitution::new("Test");
-        let clause = ConstitutionalClause::new(
-            "Clause", "Original", ClauseCategory::Policy, 1,
-        );
+        let clause = ConstitutionalClause::new("Clause", "Original", ClauseCategory::Policy, 1);
         let clause_id = clause.clause_id.clone();
         fc.add_clause(clause);
-        let mut amendment =
-            ConstitutionalAmendment::new(&clause_id, "New", "host-01");
+        let mut amendment = ConstitutionalAmendment::new(&clause_id, "New", "host-01");
         amendment.quorum_met = false;
         amendment.add_signature("sig");
         let err = fc.validate_amendment(&amendment).unwrap_err();
@@ -485,16 +483,16 @@ mod tests {
     #[test]
     fn test_validate_amendment_no_signatures() {
         let mut fc = FleetConstitution::new("Test");
-        let clause = ConstitutionalClause::new(
-            "Clause", "Original", ClauseCategory::Policy, 1,
-        );
+        let clause = ConstitutionalClause::new("Clause", "Original", ClauseCategory::Policy, 1);
         let clause_id = clause.clause_id.clone();
         fc.add_clause(clause);
-        let mut amendment =
-            ConstitutionalAmendment::new(&clause_id, "New", "host-01");
+        let mut amendment = ConstitutionalAmendment::new(&clause_id, "New", "host-01");
         amendment.quorum_met = true;
         let err = fc.validate_amendment(&amendment).unwrap_err();
-        assert!(matches!(err, AutonomousError::InsufficientSignatures { .. }));
+        assert!(matches!(
+            err,
+            AutonomousError::InsufficientSignatures { .. }
+        ));
     }
 
     #[test]
@@ -509,8 +507,7 @@ mod tests {
         .with_immutable(true);
         let clause_id = clause.clause_id.clone();
         fc.add_clause(clause);
-        let mut amendment =
-            ConstitutionalAmendment::new(&clause_id, "New", "host-01");
+        let mut amendment = ConstitutionalAmendment::new(&clause_id, "New", "host-01");
         amendment.quorum_met = true;
         amendment.add_signature("sig");
         let err = fc.validate_amendment(&amendment).unwrap_err();
@@ -520,13 +517,10 @@ mod tests {
     #[test]
     fn test_apply_amendment_increments_version() {
         let mut fc = FleetConstitution::new("Test");
-        let clause = ConstitutionalClause::new(
-            "Clause", "Original", ClauseCategory::Policy, 1,
-        );
+        let clause = ConstitutionalClause::new("Clause", "Original", ClauseCategory::Policy, 1);
         let clause_id = clause.clause_id.clone();
         fc.add_clause(clause);
-        let mut amendment =
-            ConstitutionalAmendment::new(&clause_id, "Updated text", "host-01");
+        let mut amendment = ConstitutionalAmendment::new(&clause_id, "Updated text", "host-01");
         amendment.quorum_met = true;
         amendment.add_signature("sig1");
         amendment.add_signature("sig2");
@@ -619,10 +613,7 @@ mod tests {
 
     #[test]
     fn test_policy_federation_ack_tracking() {
-        let mut fed = PolicyFederation::new(vec![
-            "host-a".to_owned(),
-            "host-b".to_owned(),
-        ]);
+        let mut fed = PolicyFederation::new(vec!["host-a".to_owned(), "host-b".to_owned()]);
         let _ = fed.push_policy_update("hash-xyz");
         assert!(fed.has_acknowledged("host-a"));
         assert!(fed.has_acknowledged("host-b"));
@@ -649,10 +640,7 @@ mod tests {
             .iter()
             .find(|c| c.clause_id == clause_id)
             .unwrap();
-        assert_eq!(
-            updated.text,
-            "Healing actions require FullyAutonomous."
-        );
+        assert_eq!(updated.text, "Healing actions require FullyAutonomous.");
         assert_eq!(fc.version, 2);
         assert!(fc.signatures.len() >= 3);
     }
@@ -667,10 +655,8 @@ mod tests {
 
     #[test]
     fn test_clause_immutable_builder() {
-        let clause = ConstitutionalClause::new(
-            "Title", "Text", ClauseCategory::Security, 1,
-        )
-        .with_immutable(true);
+        let clause = ConstitutionalClause::new("Title", "Text", ClauseCategory::Security, 1)
+            .with_immutable(true);
         assert!(clause.immutable);
         assert_eq!(clause.title, "Title");
     }

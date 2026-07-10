@@ -397,9 +397,8 @@ impl MessageRouter {
     pub fn unregister(&mut self, capsule_id: CapsuleId) -> usize {
         let removed_addr = self.address_book.remove(&capsule_id).is_some();
         let pending_before = self.pending.len();
-        self.pending.retain(|_k, v| {
-            v.sender != capsule_id && v.receiver != capsule_id
-        });
+        self.pending
+            .retain(|_k, v| v.sender != capsule_id && v.receiver != capsule_id);
         let removed_pending = pending_before - self.pending.len();
         if removed_addr {
             1 + removed_pending
@@ -447,11 +446,7 @@ impl MessageRouter {
     /// - The request doesn't exist.
     /// - The request was already replied to.
     /// - The reply source doesn't match the expected receiver.
-    pub fn mark_replied(
-        &mut self,
-        reply_to: MsgId,
-        replier: CapsuleId,
-    ) -> bool {
+    pub fn mark_replied(&mut self, reply_to: MsgId, replier: CapsuleId) -> bool {
         match self.pending.get_mut(&reply_to) {
             Some(entry) if !entry.replied && entry.receiver == replier => {
                 entry.replied = true;
@@ -569,10 +564,16 @@ mod tests {
         let req = CapsuleMessage::request(CapsuleId(1), CapsuleId(2), vec![], Some(ns.clone()));
 
         let reply = CapsuleMessage::reply_to(&req, vec![]);
-        assert_eq!(reply.namespace.as_ref().map(|p| p.as_str()), Some("/ml/inference/gpt4"));
+        assert_eq!(
+            reply.namespace.as_ref().map(|p| p.as_str()),
+            Some("/ml/inference/gpt4")
+        );
 
         let err = CapsuleMessage::error_to(&req, vec![]);
-        assert_eq!(err.namespace.as_ref().map(|p| p.as_str()), Some("/ml/inference/gpt4"));
+        assert_eq!(
+            err.namespace.as_ref().map(|p| p.as_str()),
+            Some("/ml/inference/gpt4")
+        );
     }
 
     // -----------------------------------------------------------------------

@@ -710,8 +710,7 @@ impl RosettaSolver {
                 "Target runtime {} is not available in this environment",
                 target
             ));
-            score
-                .add_recommendation(format!("Install the {} runtime adapter first", target));
+            score.add_recommendation(format!("Install the {} runtime adapter first", target));
             return score;
         }
 
@@ -865,7 +864,10 @@ mod tests {
         );
         assert_eq!(passport.passport_id, "pkgpass_01J");
         assert_eq!(passport.original_format, PackageFormat::Deb);
-        assert_eq!(passport.target_runtime, EcosystemRuntime::RuntimeLinuxNative);
+        assert_eq!(
+            passport.target_runtime,
+            EcosystemRuntime::RuntimeLinuxNative
+        );
         assert_eq!(passport.schema, "aios.passport.v1alpha1");
         assert!(!passport.has_provenance());
         assert!(!passport.hash_known());
@@ -1110,10 +1112,8 @@ mod tests {
     #[test]
     fn rosetta_solver_validate_native_compatibility() {
         let solver = RosettaSolver::new();
-        let score = solver.validate_compatibility(
-            PackageFormat::Deb,
-            EcosystemRuntime::RuntimeLinuxNative,
-        );
+        let score =
+            solver.validate_compatibility(PackageFormat::Deb, EcosystemRuntime::RuntimeLinuxNative);
         assert_eq!(score.score, 100);
         assert!(!score.is_blocked());
         assert!(score.is_viable());
@@ -1126,10 +1126,8 @@ mod tests {
     #[test]
     fn rosetta_solver_validate_windows_to_linux() {
         let solver = RosettaSolver::new();
-        let score = solver.validate_compatibility(
-            PackageFormat::Exe,
-            EcosystemRuntime::RuntimeLinuxNative,
-        );
+        let score =
+            solver.validate_compatibility(PackageFormat::Exe, EcosystemRuntime::RuntimeLinuxNative);
         assert!(score.score < 100, "Exe→LinuxNative should not score 100");
         assert!(score.score > 0, "Windows should not be blocked");
         assert!(!score.warnings.is_empty());
@@ -1145,10 +1143,8 @@ mod tests {
         let solver = RosettaSolver::with_runtimes(limited);
         assert_eq!(solver.available_runtimes().len(), 1);
 
-        let score = solver.validate_compatibility(
-            PackageFormat::Oci,
-            EcosystemRuntime::RuntimeFlatpak,
-        );
+        let score =
+            solver.validate_compatibility(PackageFormat::Oci, EcosystemRuntime::RuntimeFlatpak);
         assert!(score.is_blocked());
         assert!(score
             .blocking_issues

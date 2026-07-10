@@ -47,12 +47,15 @@ use aios_action::ActionId;
 /// |                  | capabilities require human approval; others bypass.    |
 /// | [`Delegated`]    | Pre-approved scope: the gate auto-approves requests    |
 /// |                  | whose `delegated_scope_tag` matches the configured tag.|
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
+#[derive(
+    Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ApprovalPolicy {
     /// All AI-proposed actions are denied unconditionally.
     AutoDeny,
     /// Every AI-proposed action requires explicit human approval.
+    #[default]
     HumanRequired,
     /// Only actions targeting classified / sensitive capabilities
     /// require human approval; others are auto-approved.
@@ -77,12 +80,6 @@ impl ApprovalPolicy {
     #[must_use]
     pub const fn is_human_required(&self) -> bool {
         matches!(self, Self::HumanRequired)
-    }
-}
-
-impl Default for ApprovalPolicy {
-    fn default() -> Self {
-        Self::HumanRequired
     }
 }
 
@@ -526,8 +523,7 @@ impl ApprovalGate {
         let mut pending = self.pending.write().await;
         for (id, request) in &expired_requests {
             pending.remove(id);
-            let decision =
-                ApprovalDecision::Denied("pending timeout expired".to_string());
+            let decision = ApprovalDecision::Denied("pending timeout expired".to_string());
             let entry = GateAuditEntry {
                 evidence_hash: GateAuditEntry::compute_evidence_hash(request, &decision, &now),
                 request: request.clone(),
@@ -613,9 +609,7 @@ mod tests {
         assert!(decision.is_pending(), "HumanRequired must park as pending");
         assert_eq!(gate.pending_count().await, 1);
 
-        let ok = gate
-            .approve_manually(&action_id, "human:lucky")
-            .await;
+        let ok = gate.approve_manually(&action_id, "human:lucky").await;
         assert!(ok, "human approver must succeed");
         assert_eq!(gate.pending_count().await, 0);
         assert_eq!(gate.audit_trail_len().await, 2);
@@ -632,9 +626,7 @@ mod tests {
         let action_id = req.action_id.to_string();
         gate.evaluate(req).await;
 
-        let ok = gate
-            .approve_manually(&action_id, "ai:rogue-agent")
-            .await;
+        let ok = gate.approve_manually(&action_id, "ai:rogue-agent").await;
         assert!(!ok, "AI must not self-approve");
         assert_eq!(gate.pending_count().await, 1, "request still pending");
     }
@@ -711,7 +703,8 @@ mod tests {
 
         // Approve one, deny one, escalate one.
         gate.approve_manually(&a1, "human:alice").await;
-        gate.deny_manually(&a2, "classified not allowed", "human:bob").await;
+        gate.deny_manually(&a2, "classified not allowed", "human:bob")
+            .await;
         gate.escalate(&a3, "human:admin", "escalation test").await;
 
         let trail = gate.audit_trail().await;
@@ -720,8 +713,15 @@ mod tests {
 
         // Every entry must have a non-empty evidence hash.
         for entry in &trail {
-            assert!(!entry.evidence_hash.is_empty(), "evidence hash must not be empty");
-            assert_eq!(entry.evidence_hash.len(), 32, "evidence hash must be 32 hex chars");
+            assert!(
+                !entry.evidence_hash.is_empty(),
+                "evidence hash must not be empty"
+            );
+            assert_eq!(
+                entry.evidence_hash.len(),
+                32,
+                "evidence hash must be 32 hex chars"
+            );
         }
     }
 
@@ -744,7 +744,11 @@ mod tests {
         let expired = gate.expire_stale_pending().await;
         // In test conditions, 0 stale entries is expected.
         assert_eq!(expired, 0);
-        assert_eq!(gate.pending_count().await, 1, "non-expired request stays pending");
+        assert_eq!(
+            gate.pending_count().await,
+            1,
+            "non-expired request stays pending"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -762,7 +766,10 @@ mod tests {
 
         let classified = fixture_classified_request();
         let decision = gate.evaluate(classified).await;
-        assert!(decision.is_pending(), "classified must require manual approval");
+        assert!(
+            decision.is_pending(),
+            "classified must require manual approval"
+        );
         assert_eq!(gate.pending_count().await, 1);
     }
 
@@ -797,7 +804,10 @@ mod tests {
         // No tag → pending.
         let no_tag = fixture_request();
         let decision = gate.evaluate(no_tag).await;
-        assert!(decision.is_pending(), "missing scope tag must require approval");
+        assert!(
+            decision.is_pending(),
+            "missing scope tag must require approval"
+        );
         assert_eq!(gate.pending_count().await, 2);
     }
 
@@ -815,7 +825,10 @@ mod tests {
 
         let req = fixture_request();
         let decision = gate.evaluate(req).await;
-        assert!(decision.is_pending(), "new policy must take effect immediately");
+        assert!(
+            decision.is_pending(),
+            "new policy must take effect immediately"
+        );
     }
 
     // ------------------------------------------------------------------

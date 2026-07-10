@@ -452,7 +452,8 @@ impl CapsuleNamespace {
             return false;
         }
 
-        let binding = NamespaceBinding::new(source, target.clone(), flag, self.capsule_id, access_rights);
+        let binding =
+            NamespaceBinding::new(source, target.clone(), flag, self.capsule_id, access_rights);
 
         match flag {
             MountFlag::Replace => {
@@ -769,7 +770,13 @@ mod tests {
         let src = NamespacePath::new("/ml/models/gpt4").unwrap();
         let tgt = NamespacePath::new("/models/gpt4").unwrap();
         let rights = CapRights::full();
-        let b = NamespaceBinding::new(src, tgt.clone(), MountFlag::Regular, next_capsule_id(), rights.clone());
+        let b = NamespaceBinding::new(
+            src,
+            tgt.clone(),
+            MountFlag::Regular,
+            next_capsule_id(),
+            rights.clone(),
+        );
         assert!(b.targets(&tgt));
         assert!(!b.targets(&NamespacePath::new("/other").unwrap()));
         assert_eq!(b.access_rights, rights);
@@ -806,9 +813,19 @@ mod tests {
         let mut ns = CapsuleNamespace::new(next_capsule_id());
         let src = NamespacePath::new("/ml").unwrap();
         // Root target is forbidden.
-        assert!(!ns.bind(src.clone(), NamespacePath::new("/").unwrap(), MountFlag::Regular, CapRights::full()));
+        assert!(!ns.bind(
+            src.clone(),
+            NamespacePath::new("/").unwrap(),
+            MountFlag::Regular,
+            CapRights::full()
+        ));
         // Root source is also forbidden.
-        assert!(!ns.bind(NamespacePath::new("/").unwrap(), NamespacePath::new("/models").unwrap(), MountFlag::Regular, CapRights::full()));
+        assert!(!ns.bind(
+            NamespacePath::new("/").unwrap(),
+            NamespacePath::new("/models").unwrap(),
+            MountFlag::Regular,
+            CapRights::full()
+        ));
         // But binding non-root paths should still work:
         assert!(ns.bind(
             NamespacePath::new("/ml/models").unwrap(),
@@ -843,7 +860,12 @@ mod tests {
         let tgt = NamespacePath::new("/models/llm").unwrap();
         let rights = CapRights::full();
 
-        assert!(ns.bind(NamespacePath::new("/old").unwrap(), tgt.clone(), MountFlag::Regular, rights.clone()));
+        assert!(ns.bind(
+            NamespacePath::new("/old").unwrap(),
+            tgt.clone(),
+            MountFlag::Regular,
+            rights.clone()
+        ));
         assert_eq!(ns.binding_count(), 1);
 
         // Replace should remove the old binding.
@@ -948,9 +970,11 @@ mod tests {
         let removed = ns.unbind(&NamespacePath::new("/models").unwrap());
         assert_eq!(removed, 1);
         assert_eq!(ns.binding_count(), 1);
-        assert!(ns
-            .exact_resolve(&NamespacePath::new("/data").unwrap())
-            .len() == 1);
+        assert!(
+            ns.exact_resolve(&NamespacePath::new("/data").unwrap())
+                .len()
+                == 1
+        );
     }
 
     #[test]

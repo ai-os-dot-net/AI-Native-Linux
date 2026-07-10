@@ -3,9 +3,7 @@ use strum_macros::{EnumCount, EnumIter};
 
 use crate::AutonomousError;
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RiskLevel {
     Low,
@@ -24,7 +22,7 @@ impl RiskLevel {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_label(s: &str) -> Option<Self> {
         match s.to_uppercase().as_str() {
             "LOW" => Some(Self::Low),
             "MEDIUM" => Some(Self::Medium),
@@ -153,10 +151,7 @@ impl FleetCognitionBridge {
         } else {
             0.0
         };
-        prompt.push_str(&format!(
-            "\nFleet health: {:.1}% healthy\n",
-            health_pct
-        ));
+        prompt.push_str(&format!("\nFleet health: {:.1}% healthy\n", health_pct));
 
         prompt.push_str(
             "\nBased on this fleet state, provide a JSON array of suggested actions. \
@@ -188,11 +183,10 @@ impl FleetCognitionBridge {
             }
         };
 
-        let parsed: Vec<serde_json::Value> = serde_json::from_str(json_str).map_err(|e| {
-            AutonomousError::InvalidAiResponse {
+        let parsed: Vec<serde_json::Value> =
+            serde_json::from_str(json_str).map_err(|e| AutonomousError::InvalidAiResponse {
                 detail: format!("JSON parse error: {}", e),
-            }
-        })?;
+            })?;
 
         let mut actions = Vec::with_capacity(parsed.len());
         for (idx, entry) in parsed.iter().enumerate() {
@@ -211,7 +205,7 @@ impl FleetCognitionBridge {
                     detail: format!("action[{}]: missing or invalid 'confidence' field", idx),
                 })?;
 
-            if confidence < 0.0 || confidence > 1.0 {
+            if !(0.0..=1.0).contains(&confidence) {
                 return Err(AutonomousError::InvalidAiResponse {
                     detail: format!(
                         "action[{}]: confidence {} out of range [0.0, 1.0]",
@@ -235,7 +229,7 @@ impl FleetCognitionBridge {
                     detail: format!("action[{}]: missing or invalid 'risk_level' field", idx),
                 })?;
 
-            let risk_level = RiskLevel::from_str(risk_str).ok_or_else(|| {
+            let risk_level = RiskLevel::parse_label(risk_str).ok_or_else(|| {
                 AutonomousError::InvalidAiResponse {
                     detail: format!(
                         "action[{}]: unknown risk_level '{}' (expected LOW/MEDIUM/HIGH/CRITICAL)",
@@ -487,8 +481,7 @@ mod tests {
     #[test]
     fn parse_rejects_unknown_risk_level() {
         let bridge = FleetCognitionBridge::new();
-        let response =
-            r#"[{"action": "reboot", "confidence": 0.5, "reasoning": "Test", "risk_level": "NUCLEAR"}]"#;
+        let response = r#"[{"action": "reboot", "confidence": 0.5, "reasoning": "Test", "risk_level": "NUCLEAR"}]"#;
         let result = bridge.interpret_ai_response(response);
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -502,7 +495,9 @@ mod tests {
         let result = bridge.interpret_ai_response(response);
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("missing or invalid 'action' field"));
+        assert!(err
+            .to_string()
+            .contains("missing or invalid 'action' field"));
     }
 
     #[test]
@@ -565,7 +560,12 @@ mod tests {
     #[test]
     fn validate_returns_empty_on_all_invalid() {
         let bridge = FleetCognitionBridge::new();
-        let actions = vec![SuggestedAction::new(String::new(), 0.9, String::new(), RiskLevel::Low)];
+        let actions = vec![SuggestedAction::new(
+            String::new(),
+            0.9,
+            String::new(),
+            RiskLevel::Low,
+        )];
         let validated = bridge.validate_actions(&actions);
         assert!(validated.is_empty());
     }
@@ -607,16 +607,19 @@ mod tests {
 
     #[test]
     fn risk_level_from_str_valid() {
-        assert_eq!(RiskLevel::from_str("LOW"), Some(RiskLevel::Low));
-        assert_eq!(RiskLevel::from_str("medium"), Some(RiskLevel::Medium));
-        assert_eq!(RiskLevel::from_str("HIGH"), Some(RiskLevel::High));
-        assert_eq!(RiskLevel::from_str("Critical"), Some(RiskLevel::Critical));
+        assert_eq!(RiskLevel::parse_label("LOW"), Some(RiskLevel::Low));
+        assert_eq!(RiskLevel::parse_label("medium"), Some(RiskLevel::Medium));
+        assert_eq!(RiskLevel::parse_label("HIGH"), Some(RiskLevel::High));
+        assert_eq!(
+            RiskLevel::parse_label("Critical"),
+            Some(RiskLevel::Critical)
+        );
     }
 
     #[test]
     fn risk_level_from_str_invalid() {
-        assert_eq!(RiskLevel::from_str("UNKNOWN"), None);
-        assert_eq!(RiskLevel::from_str(""), None);
+        assert_eq!(RiskLevel::parse_label("UNKNOWN"), None);
+        assert_eq!(RiskLevel::parse_label(""), None);
     }
 
     #[test]

@@ -88,9 +88,7 @@ impl fmt::Display for ZeroTrustCheck {
 /// yields `Quarantined < Untrusted < ConditionalTrust < Trusted`.
 ///
 /// NIST 800-207: tiers are continuously re-evaluated; no standing trust.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TrustLevel {
     /// FAIL signal or posture expired; deny all but recovery.
@@ -298,10 +296,7 @@ impl PostureDrift {
     ///
     /// Returns `None` when the posture is stable or has improved.
     #[must_use]
-    pub fn detect(
-        previous: &ZeroTrustPosture,
-        current: &ZeroTrustPosture,
-    ) -> Option<Self> {
+    pub fn detect(previous: &ZeroTrustPosture, current: &ZeroTrustPosture) -> Option<Self> {
         let prev_score = previous.aggregate_score();
         let curr_score = current.aggregate_score();
 
@@ -438,12 +433,7 @@ impl ZeroTrustPolicy {
 
         let total: u16 = results.iter().map(|r| u16::from(r.score)).sum();
         let count = results.len() as u16;
-        let avg: u8 = if count == 0 {
-            0
-        } else {
-            let a = total / count;
-            if a > 255 { 0 } else { a as u8 }
-        };
+        let avg = u8::try_from(total / count).unwrap_or(0);
 
         if avg < self.quarantine_threshold {
             TrustLevel::Quarantined
@@ -460,11 +450,9 @@ impl ZeroTrustPolicy {
     /// and passed in the given results.
     #[must_use]
     pub fn all_mandatory_passed(&self, results: &[ZeroTrustCheckResult]) -> bool {
-        self.mandatory_checks.iter().all(|required| {
-            results
-                .iter()
-                .any(|r| r.check == *required && r.passed)
-        })
+        self.mandatory_checks
+            .iter()
+            .all(|required| results.iter().any(|r| r.check == *required && r.passed))
     }
 }
 
@@ -626,8 +614,7 @@ impl ZeroTrustEngine {
 
     /// Record or update a host's posture in the engine state.
     pub fn set_posture(&mut self, posture: ZeroTrustPosture) {
-        self.posture_state
-            .insert(posture.host_id.clone(), posture);
+        self.posture_state.insert(posture.host_id.clone(), posture);
     }
 
     /// Look up a host's posture.
@@ -718,9 +705,7 @@ impl ZeroTrustEngine {
             .get(&host_id)
             .and_then(|prev| PostureDrift::detect(prev, &posture));
 
-        let new_level = self
-            .policy
-            .compute_trust_level(&posture.per_check_results);
+        let new_level = self.policy.compute_trust_level(&posture.per_check_results);
         let score = posture.aggregate_score();
 
         if let Some(d) = drift {
@@ -798,8 +783,7 @@ impl ZeroTrustEngine {
         loop {
             interval.tick().await;
 
-            let host_ids: Vec<String> =
-                self.posture_state.keys().cloned().collect();
+            let host_ids: Vec<String> = self.posture_state.keys().cloned().collect();
 
             for host_id in host_ids {
                 let posture = match self.posture_state.get(&host_id) {
@@ -960,18 +944,12 @@ mod tests {
 
     #[test]
     fn zero_trust_check_label_is_stable() {
-        assert_eq!(
-            ZeroTrustCheck::TpmAttestation.label(),
-            "TPM_ATTESTATION"
-        );
+        assert_eq!(ZeroTrustCheck::TpmAttestation.label(), "TPM_ATTESTATION");
         assert_eq!(
             ZeroTrustCheck::SelinuxEnforcing.label(),
             "SELINUX_ENFORCING"
         );
-        assert_eq!(
-            ZeroTrustCheck::ImaAppraisal.label(),
-            "IMA_APPRAISAL"
-        );
+        assert_eq!(ZeroTrustCheck::ImaAppraisal.label(), "IMA_APPRAISAL");
         assert_eq!(
             ZeroTrustCheck::DmVerityIntegrity.label(),
             "DM_VERITY_INTEGRITY"
@@ -1006,10 +984,8 @@ mod tests {
 
     #[test]
     fn check_result_passed_has_score_100() {
-        let result = ZeroTrustCheckResult::passed(
-            ZeroTrustCheck::TpmAttestation,
-            "all PCRs match".into(),
-        );
+        let result =
+            ZeroTrustCheckResult::passed(ZeroTrustCheck::TpmAttestation, "all PCRs match".into());
         assert!(result.passed);
         assert_eq!(result.score, 100);
     }
@@ -1027,10 +1003,8 @@ mod tests {
 
     #[test]
     fn check_result_evidence_emitted_flag() {
-        let mut result = ZeroTrustCheckResult::passed(
-            ZeroTrustCheck::DmVerityIntegrity,
-            "ok".into(),
-        );
+        let mut result =
+            ZeroTrustCheckResult::passed(ZeroTrustCheck::DmVerityIntegrity, "ok".into());
         assert!(!result.evidence_emitted);
         result.mark_evidence_emitted();
         assert!(result.evidence_emitted);
@@ -1140,14 +1114,10 @@ mod tests {
 
     #[test]
     fn posture_drift_not_detected_when_improved() {
-        let prev_results = vec![
-            mk_failing_result(ZeroTrustCheck::TpmAttestation, 50),
-        ];
+        let prev_results = vec![mk_failing_result(ZeroTrustCheck::TpmAttestation, 50)];
         let prev = mk_posture(&mk_host_id(1), prev_results);
 
-        let curr_results = vec![
-            mk_passing_result(ZeroTrustCheck::TpmAttestation),
-        ];
+        let curr_results = vec![mk_passing_result(ZeroTrustCheck::TpmAttestation)];
         let curr = mk_posture(&mk_host_id(1), curr_results);
 
         let drift = PostureDrift::detect(&prev, &curr);
@@ -1178,10 +1148,7 @@ mod tests {
     #[test]
     fn policy_compute_trust_level_empty_results() {
         let policy = ZeroTrustPolicy::secure_default();
-        assert_eq!(
-            policy.compute_trust_level(&[]),
-            TrustLevel::Untrusted
-        );
+        assert_eq!(policy.compute_trust_level(&[]), TrustLevel::Untrusted);
     }
 
     #[test]
@@ -1217,10 +1184,7 @@ mod tests {
             mk_passing_result(ZeroTrustCheck::NetworkPostureValid),
             mk_passing_result(ZeroTrustCheck::CryptoBoundaryIntact),
         ];
-        assert_eq!(
-            policy.compute_trust_level(&results),
-            TrustLevel::Trusted
-        );
+        assert_eq!(policy.compute_trust_level(&results), TrustLevel::Trusted);
     }
 
     #[test]
@@ -1370,13 +1334,13 @@ mod tests {
 
         assert_eq!(level, TrustLevel::Trusted);
         assert!(!evidence.is_empty());
-        assert!(evidence.iter().any(
-            |e| e.kind == ZeroTrustEvidenceKind::ZeroTrustPostureEvaluated
-        ));
+        assert!(evidence
+            .iter()
+            .any(|e| e.kind == ZeroTrustEvidenceKind::ZeroTrustPostureEvaluated));
         // From Untrusted to Trusted should trigger trust_restored
-        assert!(evidence.iter().any(
-            |e| e.kind == ZeroTrustEvidenceKind::HostTrustRestored
-        ));
+        assert!(evidence
+            .iter()
+            .any(|e| e.kind == ZeroTrustEvidenceKind::HostTrustRestored));
     }
 
     #[test]
@@ -1402,12 +1366,12 @@ mod tests {
         let posture = mk_posture(&mk_host_id(1), bad_results);
         let (_level, evidence) = engine.update_posture(posture);
 
-        assert!(evidence.iter().any(
-            |e| e.kind == ZeroTrustEvidenceKind::HostQuarantined
-        ));
-        assert!(evidence.iter().any(
-            |e| e.kind == ZeroTrustEvidenceKind::PostureDriftDetected
-        ));
+        assert!(evidence
+            .iter()
+            .any(|e| e.kind == ZeroTrustEvidenceKind::HostQuarantined));
+        assert!(evidence
+            .iter()
+            .any(|e| e.kind == ZeroTrustEvidenceKind::PostureDriftDetected));
     }
 
     #[test]
@@ -1425,10 +1389,7 @@ mod tests {
 
         let stored = engine.get_posture(&mk_host_id(1));
         assert!(stored.is_some());
-        assert_eq!(
-            stored.unwrap().overall_trust_level,
-            TrustLevel::Trusted
-        );
+        assert_eq!(stored.unwrap().overall_trust_level, TrustLevel::Trusted);
     }
 
     #[test]

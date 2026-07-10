@@ -91,6 +91,7 @@ impl ContainerQuarantinedPayload {
 }
 
 /// Encode an admission decision into the appropriate evidence payload.
+#[allow(clippy::too_many_arguments)]
 pub fn encode_admission_evidence(
     passport_id: &str,
     workload_id: &str,
@@ -115,18 +116,15 @@ pub fn encode_admission_evidence(
             serde_json::to_vec(&payload)
         }
         ContainerAdmissionDecision::Blocked => {
-            let payload =
-                ContainerBlockedPayload::new(passport_id, workload_id, reason, source);
+            let payload = ContainerBlockedPayload::new(passport_id, workload_id, reason, source);
             serde_json::to_vec(&payload)
         }
         ContainerAdmissionDecision::Quarantined => {
-            let payload =
-                ContainerQuarantinedPayload::new(passport_id, workload_id, reason);
+            let payload = ContainerQuarantinedPayload::new(passport_id, workload_id, reason);
             serde_json::to_vec(&payload)
         }
         ContainerAdmissionDecision::RequiresHumanApproval => {
-            let payload =
-                ContainerBlockedPayload::new(passport_id, workload_id, reason, source);
+            let payload = ContainerBlockedPayload::new(passport_id, workload_id, reason, source);
             serde_json::to_vec(&payload)
         }
     }
@@ -172,11 +170,8 @@ mod tests {
 
     #[test]
     fn quarantined_payload_serializes() {
-        let payload = ContainerQuarantinedPayload::new(
-            "cnp_003",
-            "wl_003",
-            "airgap policy violation",
-        );
+        let payload =
+            ContainerQuarantinedPayload::new("cnp_003", "wl_003", "airgap policy violation");
         let json = serde_json::to_string(&payload).unwrap();
         assert!(json.contains("cnp_003"));
         assert!(json.contains("airgap policy violation"));

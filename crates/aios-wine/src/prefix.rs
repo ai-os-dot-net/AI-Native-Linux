@@ -5,7 +5,9 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use ulid::Ulid;
 
-use crate::enums::{CapsuleWineAppState, WineAppSource, WineDxvkMode, WineGPUClass, WinePrefixState};
+use crate::enums::{
+    CapsuleWineAppState, WineAppSource, WineDxvkMode, WineGPUClass, WinePrefixState,
+};
 use crate::error::WineError;
 use crate::evidence::WineEvidenceEmitter;
 use crate::sandbox_profile::generate_wine_sandbox_profile;
@@ -91,11 +93,8 @@ impl WinePrefixManager {
     pub fn create_prefix(&mut self) -> Result<(), WineError> {
         self.validate_state(WinePrefixState::Creating)?;
 
-        let sandbox = generate_wine_sandbox_profile(
-            &self.prefix_path,
-            self.capsule_id.to_string(),
-            false,
-        );
+        let sandbox =
+            generate_wine_sandbox_profile(&self.prefix_path, self.capsule_id.to_string(), false);
 
         let _evidence = self
             .evidence
@@ -138,6 +137,9 @@ impl WinePrefixManager {
             source,
         };
 
+        let source_json = serde_json::to_value(source)
+            .map_err(|e| WineError::install_failed(self.prefix_id.to_string(), e.to_string()))?;
+
         let _evidence = self
             .evidence
             .emit(
@@ -146,7 +148,7 @@ impl WinePrefixManager {
                     "event": "WineAppInstalled",
                     "prefix_id": self.prefix_id.to_string(),
                     "app_name": app_name,
-                    "source": serde_json::to_value(source).expect("serialize"),
+                    "source": source_json,
                     "installer_path": installer_path.to_string_lossy(),
                 }),
             )
@@ -160,25 +162,19 @@ impl WinePrefixManager {
         Ok(())
     }
 
-    pub fn run_app(
-        &mut self,
-        exe_path: PathBuf,
-        _args: Vec<String>,
-    ) -> Result<(), WineError> {
+    pub fn run_app(&mut self, exe_path: PathBuf, _args: Vec<String>) -> Result<(), WineError> {
         self.validate_state(WinePrefixState::Active)?;
 
-        let matching = self.app_list.iter().find(|(_, state)| {
+        let Some((app_name, _)) = self.app_list.iter().find(|(_, state)| {
             *state == CapsuleWineAppState::Installed || *state == CapsuleWineAppState::Suspended
-        });
-
-        if matching.is_none() {
+        }) else {
             return Err(WineError::app_not_found(
                 self.prefix_id.to_string(),
                 exe_path.to_string_lossy().to_string(),
             ));
-        }
+        };
 
-        let app_name = matching.expect("checked").0.clone();
+        let app_name = app_name.clone();
         for (name, state) in &mut self.app_list {
             if *name == app_name {
                 *state = CapsuleWineAppState::Running;

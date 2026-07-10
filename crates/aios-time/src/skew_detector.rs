@@ -58,8 +58,7 @@ mod tests {
     #[test]
     fn within_budget_skew() {
         let budget = secure_budget();
-        let mut detector =
-            ClockSkewDetector::new(TrustedTimeSource::NtpAuthenticated, budget);
+        let mut detector = ClockSkewDetector::new(TrustedTimeSource::NtpAuthenticated, budget);
         detector.update_skew(500);
         assert_eq!(detector.state, SkewClassification::WithinBudget);
     }
@@ -67,8 +66,7 @@ mod tests {
     #[test]
     fn soft_exceeded_skew() {
         let budget = secure_budget();
-        let mut detector =
-            ClockSkewDetector::new(TrustedTimeSource::NtpAuthenticated, budget);
+        let mut detector = ClockSkewDetector::new(TrustedTimeSource::NtpAuthenticated, budget);
         detector.update_skew(2000);
         assert_eq!(detector.state, SkewClassification::SoftExceeded);
     }
@@ -76,8 +74,7 @@ mod tests {
     #[test]
     fn hard_exceeded_skew() {
         let budget = secure_budget();
-        let mut detector =
-            ClockSkewDetector::new(TrustedTimeSource::NtpAuthenticated, budget);
+        let mut detector = ClockSkewDetector::new(TrustedTimeSource::NtpAuthenticated, budget);
         detector.update_skew(6000);
         assert_eq!(detector.state, SkewClassification::HardExceeded);
     }
@@ -85,8 +82,7 @@ mod tests {
     #[test]
     fn monotonic_violation_backward_jump() {
         let budget = secure_budget();
-        let mut detector =
-            ClockSkewDetector::new(TrustedTimeSource::NtpAuthenticated, budget);
+        let mut detector = ClockSkewDetector::new(TrustedTimeSource::NtpAuthenticated, budget);
         detector.update_skew(-10000);
         assert_eq!(detector.state, SkewClassification::MonotonicViolation);
     }
@@ -94,16 +90,14 @@ mod tests {
     #[test]
     fn zero_skew_is_within_budget() {
         let budget = secure_budget();
-        let detector =
-            ClockSkewDetector::new(TrustedTimeSource::NtpAuthenticated, budget);
+        let detector = ClockSkewDetector::new(TrustedTimeSource::NtpAuthenticated, budget);
         assert_eq!(detector.classify_skew(), SkewClassification::WithinBudget);
     }
 
     #[test]
     fn negative_skew_within_tolerance() {
         let budget = secure_budget();
-        let mut detector =
-            ClockSkewDetector::new(TrustedTimeSource::NtpAuthenticated, budget);
+        let mut detector = ClockSkewDetector::new(TrustedTimeSource::NtpAuthenticated, budget);
         detector.update_skew(-500);
         assert_eq!(detector.state, SkewClassification::WithinBudget);
     }

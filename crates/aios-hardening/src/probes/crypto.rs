@@ -39,14 +39,7 @@ const FIPS_APPROVED_HASHES: &[&str] = &[
 
 /// Known weak or deprecated algorithms.
 const WEAK_ALGORITHMS: &[&str] = &[
-    "md5",
-    "sha1",
-    "sha-1",
-    "rc4",
-    "des",
-    "3des",
-    "blowfish",
-    "ecb",
+    "md5", "sha1", "sha-1", "rc4", "des", "3des", "blowfish", "ecb",
 ];
 
 /// Cryptographic posture probe.
@@ -135,10 +128,7 @@ impl CryptoProbe {
             .map(|s| s.to_lowercase())
             .collect();
 
-        let weak_norm: Vec<String> = WEAK_ALGORITHMS
-            .iter()
-            .map(|s| s.to_lowercase())
-            .collect();
+        let weak_norm: Vec<String> = WEAK_ALGORITHMS.iter().map(|s| s.to_lowercase()).collect();
 
         let mut weak_found = Vec::new();
         let mut unknown_found = Vec::new();
@@ -228,7 +218,9 @@ impl CryptoProbe {
                 probe_class: ProbeClass::CryptoPosture,
                 check_id: "aios.check.crypto.openssl_fips".into(),
                 status: HardeningProbeStatus::Failed,
-                observed: format!("OpenSSL config found at {path} but FIPS provider not configured"),
+                observed: format!(
+                    "OpenSSL config found at {path} but FIPS provider not configured"
+                ),
                 expected: "OpenSSL FIPS provider enabled".into(),
                 remediation_hint: Some(
                     "Configure OpenSSL FIPS provider: add 'fips = fips_sect' to openssl.cnf".into(),
@@ -275,10 +267,8 @@ mod tests {
     #[test]
     fn check_algorithm_compliance_with_fips_approved() {
         let probe = CryptoProbe::new();
-        let result = probe.check_algorithm_compliance(&[
-            "aes-256-gcm".to_string(),
-            "sha-384".to_string(),
-        ]);
+        let result =
+            probe.check_algorithm_compliance(&["aes-256-gcm".to_string(), "sha-384".to_string()]);
         assert!(result.is_ok());
         let r = result.unwrap();
         assert_eq!(r.status, HardeningProbeStatus::Passed);
@@ -287,10 +277,8 @@ mod tests {
     #[test]
     fn check_algorithm_compliance_with_weak_algos() {
         let probe = CryptoProbe::new();
-        let result = probe.check_algorithm_compliance(&[
-            "md5".to_string(),
-            "aes-256-gcm".to_string(),
-        ]);
+        let result =
+            probe.check_algorithm_compliance(&["md5".to_string(), "aes-256-gcm".to_string()]);
         assert!(result.is_ok());
         let r = result.unwrap();
         assert_eq!(r.status, HardeningProbeStatus::Failed);

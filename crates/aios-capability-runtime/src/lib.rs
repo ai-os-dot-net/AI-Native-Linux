@@ -40,6 +40,8 @@
 
 #![forbid(unsafe_code)]
 
+/// R3-W3 Step 3.2 — Typed-action fabric: intent → translate → typed action → dispatch.
+pub mod action_fabric;
 pub mod adapter_handle;
 pub mod adapter_manifest;
 pub mod adapter_registry;
@@ -49,78 +51,76 @@ pub mod approval;
 pub mod approval_gate;
 /// T-034 — Approval binding sink (S10.1 ↔ S5.3 Approval Mechanics).
 pub mod approval_sink;
+/// S16.4 — Measured Boot Attestation Chain: TPM quote → measured boot log →
+/// IMA appraisal → dm-verity root hash assembled into a single attestation report.
+pub mod boot_attestation;
+/// R3-W2: Capsule evidence trail for every lifecycle event.
+pub mod capsule_evidence;
+/// R3-W2: Capsule lifecycle manager integrating sandbox/isolation/namespace/snapshot.
+pub mod capsule_lifecycle;
+/// OS-RESEARCH: Plan 9/Inferno-inspired per-capsule namespace model.
+pub mod capsule_namespace;
+/// R3-W2: cgroups v2 resource quotas (CPU / memory / I/O) per capsule.
+pub mod cgroups;
 pub mod context;
 pub mod dispatch;
 pub mod dispatch_queue;
 pub mod dispatcher;
+/// R3-W4.1: Driver capsule template — signed, canary-booted, rollbackable driver sandbox.
+pub mod driver_capsule;
 pub mod error;
 pub mod evidence_emit;
 pub mod evidence_payloads;
 pub mod failure;
+/// R3-W1 Step 1.6: FIPS 140-3 crypto boundary — CMVP-validated provider routing
+/// and compliance-sensitive operation validation (S16.5).
+pub mod fips;
+/// R3-W1: GDPR crypto-shred module for personal data classification and RTBF erasure (S16.9).
+pub mod gdpr;
+/// OS-RESEARCH: Linux IMA/EVM integrity measurement and appraisal (S16.4).
+pub mod ima;
+/// R3-W5.1: Kernel personality and portability — Linux gold path, capability matrix, canary boot.
+pub mod kernel_personality;
+/// OS-RESEARCH: Singularity/Midori-inspired managed-code isolation boundary.
+pub mod managed_isolate;
+/// R3-W6.1: Package Rosetta — universal intake across deb/rpm/flatpak/snap/appimage/nix/oci/source.
+pub mod package_rosetta;
 pub mod pipeline;
+/// OS-RESEARCH: Genode/seL4-inspired recursive sandbox hierarchy.
+pub mod recursive_sandbox;
 pub mod rollback;
 pub mod rollback_engine;
 pub mod rollback_strategy;
 pub mod runtime;
+/// R3-W1: SBOM provenance and SLSA supply-chain evidence.
+pub mod sbom;
+/// OS-RESEARCH: BeOS/QNX-inspired adaptive partition scheduler.
+pub mod scheduler;
+/// Security Profile Matrix — Rev.3 S16.1 four-profile model with 14 dimensions.
+pub mod security_profile;
+/// OS-RESEARCH: seL4-inspired capability token model with formal invariants.
+pub mod sel4_cap_model;
+/// OS-RESEARCH: NSA SELinux/Flask-inspired mandatory access control policy plane (S16.2).
+pub mod selinux;
 /// T-033 — gRPC `CapabilityRuntime` service surface
 /// (`aios.runtime.v1alpha1`, S10.1 §5).
 pub mod service;
-pub mod status;
-/// OS-RESEARCH: Plan 9/Inferno-inspired per-capsule namespace model.
-pub mod capsule_namespace;
-/// OS-RESEARCH: seL4-inspired capability token model with formal invariants.
-pub mod sel4_cap_model;
-/// OS-RESEARCH: QNX/Plan 9-inspired transparent distributed IPC model.
-pub mod transparent_ipc;
-/// OS-RESEARCH: BeOS/QNX-inspired adaptive partition scheduler.
-pub mod scheduler;
-/// OS-RESEARCH: Genode/seL4-inspired recursive sandbox hierarchy.
-pub mod recursive_sandbox;
-/// OS-RESEARCH: Plan 9 Fossil/Singularity-inspired capsule snapshot & restore.
-pub mod snapshot;
-/// OS-RESEARCH: Singularity/Midori-inspired managed-code isolation boundary.
-pub mod managed_isolate;
-/// OS-RESEARCH: TCG TPM 2.0 dual-chain attestation root (S16.4).
-pub mod tpm;
-/// OS-RESEARCH: NSA SELinux/Flask-inspired mandatory access control policy plane (S16.2).
-pub mod selinux;
-/// Security Profile Matrix — Rev.3 S16.1 four-profile model with 14 dimensions.
-pub mod security_profile;
 /// Service Hardening Score Gates — S16.7 measurable, scored, gated
 /// hardening posture for AIOS systemd services.
 pub mod service_hardening;
-/// OS-RESEARCH: Linux IMA/EVM integrity measurement and appraisal (S16.4).
-pub mod ima;
-/// R3-W1: dm-verity / IPE immutable root filesystem integrity.
-pub mod verity;
-/// R3-W1: SBOM provenance and SLSA supply-chain evidence.
-pub mod sbom;
-/// R3-W1 Step 1.6: FIPS 140-3 crypto boundary — CMVP-validated provider routing
-/// and compliance-sensitive operation validation (S16.5).
-pub mod fips;
-/// R3-W2: Capsule lifecycle manager integrating sandbox/isolation/namespace/snapshot.
-pub mod capsule_lifecycle;
-/// R3-W2: Capsule evidence trail for every lifecycle event.
-pub mod capsule_evidence;
-/// R3-W2: cgroups v2 resource quotas (CPU / memory / I/O) per capsule.
-pub mod cgroups;
+/// OS-RESEARCH: Plan 9 Fossil/Singularity-inspired capsule snapshot & restore.
+pub mod snapshot;
 /// R3-W2: Per-capsule filesystem isolation sandbox enforcing state-root boundaries.
 pub mod state_sandbox;
-/// R3-W4.1: Driver capsule template — signed, canary-booted, rollbackable driver sandbox.
-pub mod driver_capsule;
+pub mod status;
 /// R3-W3 Step 3.1 — Terminal mode dispatcher (Lx / Mix / Ai).
 pub mod terminal;
-/// R3-W3 Step 3.2 — Typed-action fabric: intent → translate → typed action → dispatch.
-pub mod action_fabric;
-/// R3-W1: GDPR crypto-shred module for personal data classification and RTBF erasure (S16.9).
-pub mod gdpr;
-/// R3-W5.1: Kernel personality and portability — Linux gold path, capability matrix, canary boot.
-pub mod kernel_personality;
-/// R3-W6.1: Package Rosetta — universal intake across deb/rpm/flatpak/snap/appimage/nix/oci/source.
-pub mod package_rosetta;
-/// S16.4 — Measured Boot Attestation Chain: TPM quote → measured boot log →
-/// IMA appraisal → dm-verity root hash assembled into a single attestation report.
-pub mod boot_attestation;
+/// OS-RESEARCH: TCG TPM 2.0 dual-chain attestation root (S16.4).
+pub mod tpm;
+/// OS-RESEARCH: QNX/Plan 9-inspired transparent distributed IPC model.
+pub mod transparent_ipc;
+/// R3-W1: dm-verity / IPE immutable root filesystem integrity.
+pub mod verity;
 
 pub use adapter_handle::RealAdapterHandle;
 pub use adapter_manifest::AdapterManifest;
@@ -152,9 +152,7 @@ pub use pipeline::{
     DispatchKindInputs, PipelineState, TRANSITIONS,
 };
 pub use rollback::RollbackDriver;
-pub use rollback_engine::{
-    RollbackDecision, RollbackEngine, RollbackPolicy, RollbackResult,
-};
+pub use rollback_engine::{RollbackDecision, RollbackEngine, RollbackPolicy, RollbackResult};
 pub use rollback_strategy::{RollbackFailureMode, RollbackStrategy};
 pub use runtime::{
     AdapterHandle, AdapterRegistry, CapabilityRuntime, InMemoryCapabilityRuntime,
@@ -164,37 +162,35 @@ pub use runtime::{
 pub use status::ActionLifecycleState;
 // OS-RESEARCH re-exports
 pub use capsule_namespace::{
-    next_capsule_id, CapsuleId, CapsuleNamespace, MountFlag, NamespaceBinding,
-    NamespacePath, NamespaceRegistry,
+    next_capsule_id, CapsuleId, CapsuleNamespace, MountFlag, NamespaceBinding, NamespacePath,
+    NamespaceRegistry,
 };
-pub use sel4_cap_model::{CapRight, CapRights, CapToken, CapTokenId, CapTokenTree};
-pub use transparent_ipc::{
-    next_msg_id, CapsuleAddr, CapsuleMessage, MessageRouter, MsgId, MsgType, PendingRequest,
+pub use managed_isolate::{IsolationMechanism, IsolationRegistry, ManagedIsolate};
+pub use recursive_sandbox::{
+    RecursiveSandbox, SandboxCapability, SandboxHierarchy, SandboxLevel, SandboxResource, MAX_DEPTH,
 };
 pub use scheduler::{
-    AdaptivePartition, CapsulePriority, CapsuleSchedulingEntity, DecisionReason, PartitionScheduler,
-    PriorityBand, SchedulingDecision,
-};
-pub use recursive_sandbox::{
-    RecursiveSandbox, SandboxCapability, SandboxHierarchy, SandboxLevel, SandboxResource,
-    MAX_DEPTH,
-};
-pub use snapshot::{CapsuleSnapshot, SnapshotId, SnapshotPayload, SnapshotStore};
-pub use managed_isolate::{IsolationMechanism, IsolationRegistry, ManagedIsolate};
-pub use tpm::{
-    BootIntegrityVerifier, BootPosture, BootPostureReport, GoldenPcrValues,
-    PcrBank, PcrRegister, PcrValue, PcrVerificationDetail, RootIntegrityEvidence,
-    TpmAttestationKey, TpmQuote,
+    AdaptivePartition, CapsulePriority, CapsuleSchedulingEntity, DecisionReason,
+    PartitionScheduler, PriorityBand, SchedulingDecision,
 };
 pub use security_profile::{
     FipsOverlay, ProfileDimension, ProfileManifest, ProfileMatrix, ProfileRequirement,
     ProfileTransition, SecurityProfile,
 };
+pub use sel4_cap_model::{CapRight, CapRights, CapToken, CapTokenId, CapTokenTree};
+pub use snapshot::{CapsuleSnapshot, SnapshotId, SnapshotPayload, SnapshotStore};
+pub use tpm::{
+    BootIntegrityVerifier, BootPosture, BootPostureReport, GoldenPcrValues, PcrBank, PcrRegister,
+    PcrValue, PcrVerificationDetail, RootIntegrityEvidence, TpmAttestationKey, TpmQuote,
+};
+pub use transparent_ipc::{
+    next_msg_id, CapsuleAddr, CapsuleMessage, MessageRouter, MsgId, MsgType, PendingRequest,
+};
 // S16.7 — Service hardening score gates re-exports
 pub use service_hardening::{
-    DirectiveResult, GateVerdict, HardeningBaseline, HardeningDirective,
-    HardeningDirectiveValue, HardeningScore, HardeningScoreCalculator,
-    ServiceClass, ServiceHardeningPolicy, ServiceHardeningScoredEvidence,
+    DirectiveResult, GateVerdict, HardeningBaseline, HardeningDirective, HardeningDirectiveValue,
+    HardeningScore, HardeningScoreCalculator, ServiceClass, ServiceHardeningPolicy,
+    ServiceHardeningScoredEvidence,
 };
 // IMA re-exports
 pub use ima::{
@@ -203,60 +199,56 @@ pub use ima::{
 };
 // SELinux re-exports
 pub use selinux::{
-    AvcAuditEngine, AvcDecision, AvcDecisionKind, AvcDenial, MacPolicyCompiler,
-    MacPolicyLifecycle, MacPolicyRequirement, McsLabel, MlsLabel, SeLinuxContext,
-    SeLinuxDomain, SeLinuxPermission, SeLinuxRule, SePolicyBundle, SePolicyValidator,
-    SelinuxPolicyGate, SelinuEvidenceEvent, ValidationError, AIOS_DATA_DOMAIN,
-    AIOS_SYSTEM_DOMAIN,
+    AvcAuditEngine, AvcDecision, AvcDecisionKind, AvcDenial, MacPolicyCompiler, MacPolicyLifecycle,
+    MacPolicyRequirement, McsLabel, MlsLabel, SeLinuxContext, SeLinuxDomain, SeLinuxPermission,
+    SeLinuxRule, SePolicyBundle, SePolicyValidator, SelinuEvidenceEvent, SelinuxPolicyGate,
+    ValidationError, AIOS_DATA_DOMAIN, AIOS_SYSTEM_DOMAIN,
 };
 // R3-W1: verity, SBOM, FIPS re-exports
-pub use verity::{IpePolicy, VerityHashTree, VerityImage, VerityResult, VerityVerifier};
-pub use sbom::{
-    ReproStatus, ReproducibleBuildReceipt, SbomComponent, SbomDocument, SbomFormat,
-    SbomGenerator, SbomRelationship, SbomRelationshipKind, SlcaProvenanceAttestation,
-    SlcaProvenanceLevel, SlsaProvenance, SupplyChainEvidenceRecordType, VexJustification,
-    VexStatement, VexStatus,
-};
 pub use fips::{
-    ComplianceOperation, CryptoProvider, FipsAlgorithm, FipsAlgorithmStatus,
-    FipsBoundary, FipsBoundaryValidation, FipsCryptoEvidenceLog,
-    FipsCryptoOperation, FipsCryptoOperationType, FipsEvidenceType,
-    FipsMode, FipsOverlayState, FipsSelfTest, FipsSelfTestRunner,
+    ComplianceOperation, CryptoProvider, FipsAlgorithm, FipsAlgorithmStatus, FipsBoundary,
+    FipsBoundaryValidation, FipsCryptoEvidenceLog, FipsCryptoOperation, FipsCryptoOperationType,
+    FipsEvidenceType, FipsMode, FipsOverlayState, FipsSelfTest, FipsSelfTestRunner,
     FipsSelfTestType, ParallelShaEvidence,
 };
+pub use sbom::{
+    ReproStatus, ReproducibleBuildReceipt, SbomComponent, SbomDocument, SbomFormat, SbomGenerator,
+    SbomRelationship, SbomRelationshipKind, SlcaProvenanceAttestation, SlcaProvenanceLevel,
+    SlsaProvenance, SupplyChainEvidenceRecordType, VexJustification, VexStatement, VexStatus,
+};
+pub use verity::{IpePolicy, VerityHashTree, VerityImage, VerityResult, VerityVerifier};
 // R3-W2: Lifecycle, rollback, state sandbox re-exports
-pub use capsule_lifecycle::{CapsuleLifecycle, CapsuleLifecycleManager, CapsuleLifecycleState};
 pub use capsule_evidence::{CapsuleEvent, CapsuleEvidence, EvidenceChain};
+pub use capsule_lifecycle::{CapsuleLifecycle, CapsuleLifecycleManager, CapsuleLifecycleState};
 pub use driver_capsule::{
     CanaryBootResult, DriverCapsule, DriverClass, DriverRegistry, DriverSignature,
 };
 pub use state_sandbox::{
-    AccessDecision, AccessMode, CapsuleStateRoot, FileAccessRule, FilePermission,
-    SandboxViolation, StateSandbox,
+    AccessDecision, AccessMode, CapsuleStateRoot, FileAccessRule, FilePermission, SandboxViolation,
+    StateSandbox,
 };
 // R3-W2: cgroups v2 resource quotas re-exports
 pub use cgroups::{
-    CgroupProfile, EnforcementAction, EnforcementMode, QuotaViolation, ResourceQuota,
-    ResourceType, ResourceUsage,
+    CgroupProfile, EnforcementAction, EnforcementMode, QuotaViolation, ResourceQuota, ResourceType,
+    ResourceUsage,
 };
 // R3-W3 Step 3.1 — Terminal dispatcher re-exports
-pub use terminal::{ActionProposal, ApprovalStatus, TerminalDispatcher, TerminalMode, TerminalSession};
+pub use terminal::{
+    ActionProposal, ApprovalStatus, TerminalDispatcher, TerminalMode, TerminalSession,
+};
 // R3-W3.3 — Approval gate re-exports (INV-002)
 pub use approval_gate::{
     ApprovalDecision, ApprovalGate, ApprovalPolicy, GateApprovalRequest, GateAuditEntry,
 };
 // R3-W3 Step 3.2 — Action fabric re-exports
-pub use action_fabric::{
-    ActionFabric, ActionIntent, CapabilityCatalog, FabricResult, TypedAction,
-};
+pub use action_fabric::{ActionFabric, ActionIntent, CapabilityCatalog, FabricResult, TypedAction};
 // R3-W1: GDPR crypto-shred re-exports
 pub use gdpr::{
     AuditEntry, AuditExportFormat, AuditTrail, CryptoShredEvidence, CryptoShredKey,
-    CryptoShredRequest, CryptoShredScope, DataCategory, DataClassification,
-    DataGovernanceRegistry, DataResidencyConstraint, DataResidencyEnforcer,
-    DataResidencyPolicy, DataSubject, ExportBundle, GdprAuditExport, GdprAuditExporter,
-    ResidencyRegion, RetentionClass, RetentionPolicy, RightToBeForgottenPipeline,
-    ShredEvidence, ShredRequest, ShredResult,
+    CryptoShredRequest, CryptoShredScope, DataCategory, DataClassification, DataGovernanceRegistry,
+    DataResidencyConstraint, DataResidencyEnforcer, DataResidencyPolicy, DataSubject, ExportBundle,
+    GdprAuditExport, GdprAuditExporter, ResidencyRegion, RetentionClass, RetentionPolicy,
+    RightToBeForgottenPipeline, ShredEvidence, ShredRequest, ShredResult,
 };
 // R3-W6.1: Package Rosetta re-exports
 pub use package_rosetta::{

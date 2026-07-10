@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use aios_evidence::RecordType;
 use aios_sandbox::GpuPolicy;
@@ -37,7 +37,7 @@ pub enum VulkanDeviceType {
 
 impl DxvkConfig {
     #[must_use]
-    pub fn detect(prefix_path: &PathBuf, _gpu_policy: &GpuPolicy) -> Self {
+    pub fn detect(prefix_path: &Path, _gpu_policy: &GpuPolicy) -> Self {
         let (gpu_class, devices) = Self::enumerate_vulkan_devices();
         let mode = Self::select_dxvk_mode(&devices);
 
@@ -53,10 +53,7 @@ impl DxvkConfig {
         }
 
         if mode == WineDxvkMode::Vkd3dProton {
-            env_vars.insert(
-                String::from("VKD3D_CONFIG"),
-                String::from("dxr"),
-            );
+            env_vars.insert(String::from("VKD3D_CONFIG"), String::from("dxr"));
             let shader_cache = prefix_path.join("vkd3d-shader-cache");
             env_vars.insert(
                 String::from("VKD3D_SHADER_CACHE_PATH"),
@@ -78,14 +75,19 @@ impl DxvkConfig {
         prefix_id: &str,
         evidence: &dyn WineEvidenceEmitter,
     ) -> Result<(), WineError> {
+        let mode = serde_json::to_value(self.mode)
+            .map_err(|e| WineError::dxvk_setup_failed(e.to_string()))?;
+        let gpu_class = serde_json::to_value(self.gpu_class)
+            .map_err(|e| WineError::dxvk_setup_failed(e.to_string()))?;
+
         let _receipt = evidence
             .emit(
                 RecordType::ActionReceived,
                 serde_json::json!({
                     "event": "WineDxvkActivated",
                     "prefix_id": prefix_id,
-                    "mode": serde_json::to_value(self.mode).expect("serialize"),
-                    "gpu_class": serde_json::to_value(self.gpu_class).expect("serialize"),
+                    "mode": mode,
+                    "gpu_class": gpu_class,
                     "device_count": self.vulkan_devices.len(),
                 }),
             )
@@ -110,7 +112,9 @@ impl DxvkConfig {
             return WineDxvkMode::None;
         }
 
-        let has_discrete = devices.iter().any(|d| d.device_type == VulkanDeviceType::Discrete);
+        let has_discrete = devices
+            .iter()
+            .any(|d| d.device_type == VulkanDeviceType::Discrete);
         if has_discrete {
             WineDxvkMode::Vkd3dProton
         } else {
@@ -120,7 +124,10 @@ impl DxvkConfig {
 
     #[must_use]
     pub fn gpu_passthrough_allowed(&self, _policy: &GpuPolicy) -> bool {
-        matches!(self.gpu_class, WineGPUClass::Discrete | WineGPUClass::Integrated)
+        matches!(
+            self.gpu_class,
+            WineGPUClass::Discrete | WineGPUClass::Integrated
+        )
     }
 }
 
@@ -150,12 +157,8 @@ mod tests {
         let policy = GpuPolicy::default_deny_all();
         let config = DxvkConfig::detect(&prefix, &policy);
 
-        assert!(config
-            .env_vars
-            .contains_key("DXVK_STATE_CACHE_PATH"));
-        assert!(config
-            .env_vars
-            .contains_key("DXVK_HUD"));
+        assert!(config.env_vars.contains_key("DXVK_STATE_CACHE_PATH"));
+        assert!(config.env_vars.contains_key("DXVK_HUD"));
     }
 
     #[test]

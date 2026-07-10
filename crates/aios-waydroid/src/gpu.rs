@@ -23,14 +23,8 @@ impl WaydroidGpuConfig {
             software_rendering: true,
             env_overrides: {
                 let mut env = HashMap::new();
-                env.insert(
-                    String::from("LIBGL_ALWAYS_SOFTWARE"),
-                    String::from("1"),
-                );
-                env.insert(
-                    String::from("GALLIUM_DRIVER"),
-                    String::from("llvmpipe"),
-                );
+                env.insert(String::from("LIBGL_ALWAYS_SOFTWARE"), String::from("1"));
+                env.insert(String::from("GALLIUM_DRIVER"), String::from("llvmpipe"));
                 env
             },
         }
@@ -59,10 +53,7 @@ impl WaydroidGpuConfig {
             software_rendering: false,
             env_overrides: {
                 let mut env = HashMap::new();
-                env.insert(
-                    String::from("WAYLAND_DISPLAY"),
-                    String::from("wayland-0"),
-                );
+                env.insert(String::from("WAYLAND_DISPLAY"), String::from("wayland-0"));
                 env
             },
         }
@@ -87,10 +78,7 @@ pub fn resolve_dri_device() -> Option<String> {
 }
 
 pub fn resolve_vulkan_device() -> Option<String> {
-    let candidates = [
-        "/dev/dri/renderD128",
-        "/dev/dri/renderD129",
-    ];
+    let candidates = ["/dev/dri/renderD128", "/dev/dri/renderD129"];
 
     for path in &candidates {
         let p = PathBuf::from(path);
@@ -153,10 +141,8 @@ mod tests {
 
     #[test]
     fn gpu_host_passthrough_config() {
-        let config = WaydroidGpuConfig::host_gpu_passthrough(
-            "/dev/dri/renderD128",
-            "/dev/dri/renderD128",
-        );
+        let config =
+            WaydroidGpuConfig::host_gpu_passthrough("/dev/dri/renderD128", "/dev/dri/renderD128");
         assert_eq!(config.gpu_class, AndroidGPUClass::HostGpuPassthrough);
         assert!(!config.software_rendering);
         assert_eq!(config.dri_device, Some(String::from("/dev/dri/renderD128")));

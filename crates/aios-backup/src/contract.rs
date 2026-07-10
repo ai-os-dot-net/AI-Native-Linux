@@ -35,14 +35,10 @@ impl ConstitutionalBackupContract {
 
     pub fn validate(&self) -> Result<(), String> {
         if !self.encrypt_at_source {
-            return Err(
-                "INV-033 violation: encrypt_at_source must ALWAYS be true".to_string(),
-            );
+            return Err("INV-033 violation: encrypt_at_source must ALWAYS be true".to_string());
         }
         if !self.has_off_host_target() {
-            return Err(
-                "INV-033 violation: at least one OFF_HOST target is required".to_string(),
-            );
+            return Err("INV-033 violation: at least one OFF_HOST target is required".to_string());
         }
         if self.targets.is_empty() {
             return Err("at least one target must be specified".to_string());
@@ -80,23 +76,14 @@ mod tests {
 
     #[test]
     fn validate_rejects_no_off_host_target() {
-        let contract = ConstitutionalBackupContract::new(
-            "host-1".into(),
-            true,
-            true,
-            vec!["self".into()],
-        );
+        let contract =
+            ConstitutionalBackupContract::new("host-1".into(), true, true, vec!["self".into()]);
         assert!(contract.validate().is_err());
     }
 
     #[test]
     fn validate_rejects_empty_targets() {
-        let contract = ConstitutionalBackupContract::new(
-            "host-1".into(),
-            true,
-            true,
-            vec![],
-        );
+        let contract = ConstitutionalBackupContract::new("host-1".into(), true, true, vec![]);
         assert!(contract.validate().is_err());
     }
 
@@ -113,12 +100,8 @@ mod tests {
 
     #[test]
     fn has_off_host_target_rejects_local() {
-        let contract = ConstitutionalBackupContract::new(
-            "host-1".into(),
-            true,
-            true,
-            vec!["local".into()],
-        );
+        let contract =
+            ConstitutionalBackupContract::new("host-1".into(), true, true, vec!["local".into()]);
         assert!(!contract.has_off_host_target());
     }
 

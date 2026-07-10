@@ -44,8 +44,7 @@ impl MacProbe {
     pub fn check_selinux_enforcing(&self) -> Result<MacResult, HardeningError> {
         let enforce_path = std::path::Path::new("/sys/fs/selinux/enforce");
         let (status, observed, remediation) = if enforce_path.exists() {
-            let enforce_val =
-                std::fs::read_to_string(enforce_path).unwrap_or_default();
+            let enforce_val = std::fs::read_to_string(enforce_path).unwrap_or_default();
             let enforcing = enforce_val.trim() == "1";
             if enforcing {
                 (
@@ -85,31 +84,27 @@ impl MacProbe {
     pub fn check_policy_version(&self) -> Result<MacResult, HardeningError> {
         let policyvers_path = std::path::Path::new("/sys/fs/selinux/policyvers");
         let (status, observed, remediation) = if policyvers_path.exists() {
-            let version =
-                std::fs::read_to_string(policyvers_path).unwrap_or_default();
+            let version = std::fs::read_to_string(policyvers_path).unwrap_or_default();
             let v: Result<u32, _> = version.trim().parse();
             match v {
-                Ok(ver) if ver >= 33 => {
-                    (
-                        HardeningProbeStatus::Passed,
-                        format!("SELinux policy version {ver} (>= 33)"),
-                        None,
-                    )
-                }
-                Ok(ver) => {
-                    (
-                        HardeningProbeStatus::Warn,
-                        format!("SELinux policy version {ver} (below 33)"),
-                        Some("Upgrade SELinux userspace to a version supporting policy >= 33".to_string()),
-                    )
-                }
-                Err(_) => {
-                    (
-                        HardeningProbeStatus::Error,
-                        format!("unable to parse policy version: '{version}'"),
-                        Some("Verify SELinux installation integrity".to_string()),
-                    )
-                }
+                Ok(ver) if ver >= 33 => (
+                    HardeningProbeStatus::Passed,
+                    format!("SELinux policy version {ver} (>= 33)"),
+                    None,
+                ),
+                Ok(ver) => (
+                    HardeningProbeStatus::Warn,
+                    format!("SELinux policy version {ver} (below 33)"),
+                    Some(
+                        "Upgrade SELinux userspace to a version supporting policy >= 33"
+                            .to_string(),
+                    ),
+                ),
+                Err(_) => (
+                    HardeningProbeStatus::Error,
+                    format!("unable to parse policy version: '{version}'"),
+                    Some("Verify SELinux installation integrity".to_string()),
+                ),
             }
         } else {
             (
@@ -139,9 +134,7 @@ impl MacProbe {
                 Ok(contents) => {
                     let avc_count = contents
                         .lines()
-                        .filter(|line| {
-                            line.contains("avc:  denied") || line.contains("AVC")
-                        })
+                        .filter(|line| line.contains("avc:  denied") || line.contains("AVC"))
                         .count();
                     if avc_count == 0 {
                         (
@@ -157,13 +150,11 @@ impl MacProbe {
                         )
                     }
                 }
-                Err(_) => {
-                    (
-                        HardeningProbeStatus::Skipped,
-                        "Unable to read audit log — insufficient permissions".to_string(),
-                        Some("Run scanner as root or with CAP_AUDIT_READ".to_string()),
-                    )
-                }
+                Err(_) => (
+                    HardeningProbeStatus::Skipped,
+                    "Unable to read audit log — insufficient permissions".to_string(),
+                    Some("Run scanner as root or with CAP_AUDIT_READ".to_string()),
+                ),
             }
         } else {
             (

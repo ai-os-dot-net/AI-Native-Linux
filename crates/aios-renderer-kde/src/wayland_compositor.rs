@@ -12,14 +12,12 @@ use std::collections::BTreeMap;
 use std::env;
 use std::sync::{Arc, Mutex};
 
-use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle};
 use wayland_client::protocol::{
     wl_compositor, wl_output, wl_registry, wl_seat, wl_shm, wl_shm_pool, wl_surface,
 };
+use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle};
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
-use wayland_protocols_wlr::layer_shell::v1::client::{
-    zwlr_layer_shell_v1, zwlr_layer_surface_v1,
-};
+use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
 
 use crate::error::KdeRendererError;
 use crate::types::KdeSurfaceId;
@@ -40,9 +38,7 @@ pub fn zone_to_wlr_layer(zone: CompositionZone) -> zwlr_layer_shell_v1::Layer {
     match zone {
         CompositionZone::Background => zwlr_layer_shell_v1::Layer::Background,
         CompositionZone::Content => zwlr_layer_shell_v1::Layer::Bottom,
-        CompositionZone::Chrome | CompositionZone::Recovery => {
-            zwlr_layer_shell_v1::Layer::Overlay
-        }
+        CompositionZone::Chrome | CompositionZone::Recovery => zwlr_layer_shell_v1::Layer::Overlay,
     }
 }
 
@@ -62,9 +58,7 @@ impl LayerKeyboardInteractivity {
     #[must_use]
     fn to_protocol_value(self) -> zwlr_layer_surface_v1::KeyboardInteractivity {
         match self {
-            LayerKeyboardInteractivity::None => {
-                zwlr_layer_surface_v1::KeyboardInteractivity::None
-            }
+            LayerKeyboardInteractivity::None => zwlr_layer_surface_v1::KeyboardInteractivity::None,
             LayerKeyboardInteractivity::OnDemand => {
                 zwlr_layer_surface_v1::KeyboardInteractivity::OnDemand
             }
@@ -131,7 +125,10 @@ impl RealWaylandSurface {
     ///
     /// This sends the `wl_surface::destroy` request and drops all role
     /// handles, which causes the compositor to remove the surface.
-    #[allow(clippy::needless_pass_by_value, reason = "consuming self for drop semantics")]
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "consuming self for drop semantics"
+    )]
     pub fn destroy(self) {
         match self.role {
             WaylandSurfaceRole::LayerShell {
@@ -183,7 +180,10 @@ struct CompositorStateInner {
     /// Track which required globals have been received.
     globals_bound: GlobalBindMap,
     /// Whether a roundtrip has been completed.
-    #[allow(dead_code, reason = "set during connect, reserved for future health checks")]
+    #[allow(
+        dead_code,
+        reason = "set during connect, reserved for future health checks"
+    )]
     roundtrip_done: bool,
     /// xdg_wm_base has received its initial configure event (ping).
     _xdg_configured: bool,
@@ -284,31 +284,42 @@ impl Dispatch<wl_registry::WlRegistry, ()> for CompositorState {
                             wl_compositor::WlCompositor,
                             (),
                             CompositorState,
-                        >(registry, name, version.min(5), qh, ());
+                        >(
+                            registry, name, version.min(5), qh, ()
+                        );
                         inner.compositor = Some(compositor);
                         inner.globals_bound.insert("wl_compositor".into(), true);
                     }
                     "wl_shm" => {
-                        let shm =
-                            bind_global::<wl_shm::WlShm, (), CompositorState>(
-                                registry, name, 1, qh, (),
-                            );
+                        let shm = bind_global::<wl_shm::WlShm, (), CompositorState>(
+                            registry,
+                            name,
+                            1,
+                            qh,
+                            (),
+                        );
                         inner.shm = Some(shm);
                         inner.globals_bound.insert("wl_shm".into(), true);
                     }
                     "wl_seat" => {
-                        let seat =
-                            bind_global::<wl_seat::WlSeat, (), CompositorState>(
-                                registry, name, version.min(7), qh, (),
-                            );
+                        let seat = bind_global::<wl_seat::WlSeat, (), CompositorState>(
+                            registry,
+                            name,
+                            version.min(7),
+                            qh,
+                            (),
+                        );
                         inner._seat = Some(seat);
                         inner.globals_bound.insert("wl_seat".into(), true);
                     }
                     "wl_output" => {
-                        let output =
-                            bind_global::<wl_output::WlOutput, (), CompositorState>(
-                                registry, name, version.min(3), qh, (),
-                            );
+                        let output = bind_global::<wl_output::WlOutput, (), CompositorState>(
+                            registry,
+                            name,
+                            version.min(3),
+                            qh,
+                            (),
+                        );
                         inner._outputs.push(output);
                     }
                     "zwlr_layer_shell_v1" => {
@@ -316,17 +327,22 @@ impl Dispatch<wl_registry::WlRegistry, ()> for CompositorState {
                             zwlr_layer_shell_v1::ZwlrLayerShellV1,
                             (),
                             CompositorState,
-                        >(registry, name, version.min(4), qh, ());
+                        >(
+                            registry, name, version.min(4), qh, ()
+                        );
                         inner.layer_shell = Some(shell);
                         inner
                             .globals_bound
                             .insert("zwlr_layer_shell_v1".into(), true);
                     }
                     "xdg_wm_base" => {
-                        let wm =
-                            bind_global::<xdg_wm_base::XdgWmBase, (), CompositorState>(
-                                registry, name, version.min(3), qh, (),
-                            );
+                        let wm = bind_global::<xdg_wm_base::XdgWmBase, (), CompositorState>(
+                            registry,
+                            name,
+                            version.min(3),
+                            qh,
+                            (),
+                        );
                         inner.xdg_wm_base = Some(wm);
                         inner.globals_bound.insert("xdg_wm_base".into(), true);
                     }
@@ -496,7 +512,10 @@ impl Dispatch<wl_shm_pool::WlShmPool, ()> for CompositorState {
 pub struct RealWaylandClient {
     /// Wayland connection (Unix socket) — kept alive for the lifetime of
     /// this client; dropping it closes the socket.
-    #[allow(dead_code, reason = "kept alive for socket lifetime; event_queue drives protocol")]
+    #[allow(
+        dead_code,
+        reason = "kept alive for socket lifetime; event_queue drives protocol"
+    )]
     connection: Connection,
     /// Event queue that drives dispatch.
     event_queue: EventQueue<CompositorState>,
@@ -597,9 +616,9 @@ impl RealWaylandClient {
     ///
     /// Returns `Internal` if the roundtrip fails.
     pub fn roundtrip(&mut self) -> Result<usize, KdeRendererError> {
-        self.event_queue.roundtrip(&mut self.state).map_err(|e| {
-            KdeRendererError::Internal(format!("roundtrip failed: {e}"))
-        })
+        self.event_queue
+            .roundtrip(&mut self.state)
+            .map_err(|e| KdeRendererError::Internal(format!("roundtrip failed: {e}")))
     }
 
     /// Create a new Wayland surface for the given composition zone.
@@ -630,13 +649,9 @@ impl RealWaylandClient {
         let wl_surface = compositor.create_surface(&self.qh, ());
 
         match zone {
-            CompositionZone::Chrome
-            | CompositionZone::Background
-            | CompositionZone::Recovery => {
+            CompositionZone::Chrome | CompositionZone::Background | CompositionZone::Recovery => {
                 let layer_shell = inner.layer_shell.as_ref().ok_or_else(|| {
-                    KdeRendererError::Internal(
-                        "zwlr_layer_shell_v1 global not bound".to_owned(),
-                    )
+                    KdeRendererError::Internal("zwlr_layer_shell_v1 global not bound".to_owned())
                 })?;
 
                 let layer = zone_to_wlr_layer(zone);
@@ -656,9 +671,8 @@ impl RealWaylandClient {
                     _ => LayerKeyboardInteractivity::None,
                 };
 
-                layer_surface.set_keyboard_interactivity(
-                    keyboard_interactivity.to_protocol_value(),
-                );
+                layer_surface
+                    .set_keyboard_interactivity(keyboard_interactivity.to_protocol_value());
 
                 let screen_width: u32 = 1920;
                 let screen_height: u32 = 1080;
@@ -722,7 +736,10 @@ impl RealWaylandClient {
     ///
     /// This closes the Unix socket and frees all resources. After calling this,
     /// the client is no longer usable.
-    #[allow(clippy::needless_pass_by_value, reason = "consuming self for drop semantics")]
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "consuming self for drop semantics"
+    )]
     pub fn disconnect(mut self) -> Result<(), KdeRendererError> {
         let _ = self.event_queue.dispatch_pending(&mut self.state);
         Ok(())
@@ -847,7 +864,10 @@ mod tests {
             .create_surface_for_zone(id.clone(), CompositionZone::Chrome)
             .expect("create chrome surface");
         assert_eq!(surface.zone, CompositionZone::Chrome);
-        assert!(matches!(surface.role, WaylandSurfaceRole::LayerShell { .. }));
+        assert!(matches!(
+            surface.role,
+            WaylandSurfaceRole::LayerShell { .. }
+        ));
         surface.destroy();
         client.disconnect().expect("clean disconnect");
     }
@@ -997,7 +1017,9 @@ mod tests {
     #[test]
     fn connect_without_display_returns_error() {
         let saved = env::var("WAYLAND_DISPLAY").ok();
-        unsafe { env::remove_var("WAYLAND_DISPLAY"); }
+        unsafe {
+            env::remove_var("WAYLAND_DISPLAY");
+        }
 
         let result = RealWaylandClient::try_connect();
         assert!(result.is_err());
@@ -1007,7 +1029,9 @@ mod tests {
         ));
 
         if let Some(val) = saved {
-            unsafe { env::set_var("WAYLAND_DISPLAY", val); }
+            unsafe {
+                env::set_var("WAYLAND_DISPLAY", val);
+            }
         }
     }
 

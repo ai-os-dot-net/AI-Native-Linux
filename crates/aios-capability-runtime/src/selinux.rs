@@ -456,11 +456,7 @@ impl SeLinuxRule {
     /// Returns `None` if the source or target domain is empty, or the
     /// permission set is empty.
     #[must_use]
-    pub fn new(
-        source: &str,
-        target: &str,
-        permissions: &[SeLinuxPermission],
-    ) -> Option<Self> {
+    pub fn new(source: &str, target: &str, permissions: &[SeLinuxPermission]) -> Option<Self> {
         if source.is_empty() || target.is_empty() || permissions.is_empty() {
             return None;
         }
@@ -726,8 +722,7 @@ impl AvcDenial {
     /// Whether this denial involves the `unconfined_t` type.
     #[must_use]
     pub fn involves_unconfined(&self) -> bool {
-        self.source_context.type_ == "unconfined_t"
-            || self.target_context.type_ == "unconfined_t"
+        self.source_context.type_ == "unconfined_t" || self.target_context.type_ == "unconfined_t"
     }
 }
 
@@ -1053,9 +1048,7 @@ impl MacPolicyCompiler {
             }
 
             if !cil.contains("(allow") {
-                errors.push(
-                    "compiled CIL output contains no allow rules (INV-SEL-003)".into(),
-                );
+                errors.push("compiled CIL output contains no allow rules (INV-SEL-003)".into());
             }
 
             if cil.contains("unconfined_t") {
@@ -1196,14 +1189,15 @@ impl MacPolicyCompiler {
         }
 
         // Domain type declaration.
-        cil.push_str(&format!(
-            "(type {})\n",
-            bundle.domain.as_str()
-        ));
+        cil.push_str(&format!("(type {})\n", bundle.domain.as_str()));
 
         // File context declarations.
         for ctx in &bundle.file_contexts {
-            cil.push_str(&format!("(filecon \"{}\" any (system_u object_r {} (s0)))\n", ctx, bundle.domain.as_str()));
+            cil.push_str(&format!(
+                "(filecon \"{}\" any (system_u object_r {} (s0)))\n",
+                ctx,
+                bundle.domain.as_str()
+            ));
         }
 
         // Boolean declarations.
@@ -1213,7 +1207,11 @@ impl MacPolicyCompiler {
 
         // Port declarations.
         for p in &bundle.ports {
-            cil.push_str(&format!("(portcon {} tcp (system_u object_r {} (s0)))\n", p, bundle.domain.as_str()));
+            cil.push_str(&format!(
+                "(portcon {} tcp (system_u object_r {} (s0)))\n",
+                p,
+                bundle.domain.as_str()
+            ));
         }
 
         // Allow rules.
@@ -1393,9 +1391,7 @@ impl AvcAuditEngine {
     /// started, or `0.0` if the window has just started.
     #[must_use]
     pub fn avc_denial_rate(&self) -> f64 {
-        let elapsed_secs = (Utc::now() - self.window_start)
-            .num_seconds()
-            .max(1) as f64;
+        let elapsed_secs = (Utc::now() - self.window_start).num_seconds().max(1) as f64;
         self.denials.len() as f64 / elapsed_secs
     }
 
@@ -1507,10 +1503,7 @@ impl McsLabel {
     #[must_use]
     pub fn dominates(&self, other: &Self) -> bool {
         self.sensitivity_level >= other.sensitivity_level
-            && other
-                .categories
-                .iter()
-                .all(|c| self.categories.contains(c))
+            && other.categories.iter().all(|c| self.categories.contains(c))
     }
 
     /// Number of categories in this label.
@@ -1652,10 +1645,7 @@ impl SelinuxPolicyGate {
     /// Check whether the given SELinux lifecycle state satisfies the
     /// requirements of the specified security profile.
     #[must_use]
-    pub fn check_compliance(
-        profile: SecurityProfile,
-        state: MacPolicyLifecycle,
-    ) -> bool {
+    pub fn check_compliance(profile: SecurityProfile, state: MacPolicyLifecycle) -> bool {
         let required = Self::required_mac_profile(profile);
         match required {
             MacPolicyRequirement::None => true,
@@ -1707,10 +1697,7 @@ impl SelinuxPolicyGate {
 pub enum SelinuEvidenceEvent {
     /// A policy bundle was loaded into the kernel.
     /// Carries the bundle_id and timestamp.
-    PolicyLoaded {
-        bundle_id: String,
-        version: String,
-    },
+    PolicyLoaded { bundle_id: String, version: String },
     /// Policy transitioned to enforcing mode.
     PolicyEnforcing {
         bundle_id: String,
@@ -1747,10 +1734,7 @@ impl SelinuEvidenceEvent {
     #[must_use]
     pub fn to_evidence_line(&self) -> String {
         match self {
-            Self::PolicyLoaded {
-                bundle_id,
-                version,
-            } => format!(
+            Self::PolicyLoaded { bundle_id, version } => format!(
                 "SELINUX_POLICY_LOADED bundle_id={} version={}",
                 bundle_id, version
             ),
@@ -1867,10 +1851,7 @@ mod tests {
             type_: "aios_data_t".into(),
             level: "s0:c0,c1".into(),
         };
-        assert_eq!(
-            ctx.to_string(),
-            "system_u:object_r:aios_data_t:s0:c0,c1"
-        );
+        assert_eq!(ctx.to_string(), "system_u:object_r:aios_data_t:s0:c0,c1");
     }
 
     #[test]
@@ -1904,16 +1885,24 @@ mod tests {
 
     #[test]
     fn rule_detects_unconfined() {
-        let r = SeLinuxRule::new("unconfined_t", "aios_data_t", &[SeLinuxPermission::Read])
-            .unwrap();
+        let r =
+            SeLinuxRule::new("unconfined_t", "aios_data_t", &[SeLinuxPermission::Read]).unwrap();
         assert!(r.references_unconfined());
 
-        let r2 = SeLinuxRule::new("aios_capsule_1_t", "unconfined_t", &[SeLinuxPermission::Read])
-            .unwrap();
+        let r2 = SeLinuxRule::new(
+            "aios_capsule_1_t",
+            "unconfined_t",
+            &[SeLinuxPermission::Read],
+        )
+        .unwrap();
         assert!(r2.references_unconfined());
 
-        let r3 = SeLinuxRule::new("aios_capsule_1_t", "aios_data_t", &[SeLinuxPermission::Read])
-            .unwrap();
+        let r3 = SeLinuxRule::new(
+            "aios_capsule_1_t",
+            "aios_data_t",
+            &[SeLinuxPermission::Read],
+        )
+        .unwrap();
         assert!(!r3.references_unconfined());
     }
 
@@ -1923,13 +1912,8 @@ mod tests {
 
     #[test]
     fn validator_rejects_empty_ruleset() {
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            vec![],
-            vec![],
-        );
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], vec![], vec![]);
         let result = SePolicyValidator::validate(&bundle);
         assert!(result.is_err());
         let errs = result.unwrap_err();
@@ -1938,19 +1922,10 @@ mod tests {
 
     #[test]
     fn validator_rejects_unconfined_t() {
-        let rule = SeLinuxRule::new(
-            "unconfined_t",
-            "aios_data_t",
-            &[SeLinuxPermission::Read],
-        )
-        .unwrap();
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            vec![rule],
-            vec![],
-        );
+        let rule =
+            SeLinuxRule::new("unconfined_t", "aios_data_t", &[SeLinuxPermission::Read]).unwrap();
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], vec![rule], vec![]);
         let result = SePolicyValidator::validate(&bundle);
         assert!(result.is_err());
         let errs = result.unwrap_err();
@@ -1961,19 +1936,12 @@ mod tests {
     fn validator_rejects_blanket_permissions_without_justification() {
         let all_perms = Vec::from(SeLinuxPermission::all());
         let rule = SeLinuxRule::new("aios_capsule_1_t", "aios_data_t", &all_perms).unwrap();
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            vec![rule],
-            vec![],
-        );
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], vec![rule], vec![]);
         let result = SePolicyValidator::validate(&bundle);
         assert!(result.is_err());
         let errs = result.unwrap_err();
-        assert!(errs
-            .iter()
-            .any(|e| e.contains("without justification")));
+        assert!(errs.iter().any(|e| e.contains("without justification")));
     }
 
     #[test]
@@ -1985,13 +1953,8 @@ mod tests {
             "capsule needs read access to AIOS shared data",
         )
         .unwrap();
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            vec![rule],
-            vec![],
-        );
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], vec![rule], vec![]);
         let result = SePolicyValidator::validate(&bundle);
         assert!(result.is_ok());
     }
@@ -2016,51 +1979,31 @@ mod tests {
             )
             .unwrap(),
         ];
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            rules,
-            vec![],
-        );
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], rules, vec![]);
         assert_eq!(bundle.rule_count(), 2);
         assert_eq!(bundle.total_permissions(), 3);
     }
 
     #[test]
     fn policy_bundle_contains_unconfined_detection() {
-        let rules = vec![
-            SeLinuxRule::new(
-                "aios_capsule_1_t",
-                "aios_data_t",
-                &[SeLinuxPermission::Read],
-            )
-            .unwrap(),
-        ];
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            rules,
-            vec![],
-        );
+        let rules = vec![SeLinuxRule::new(
+            "aios_capsule_1_t",
+            "aios_data_t",
+            &[SeLinuxPermission::Read],
+        )
+        .unwrap()];
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], rules, vec![]);
         assert!(!bundle.contains_unconfined());
 
-        let dirty_rules = vec![
-            SeLinuxRule::new(
-                "unconfined_t",
-                "aios_data_t",
-                &[SeLinuxPermission::Read],
-            )
-            .unwrap(),
-        ];
-        let dirty_bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            dirty_rules,
-            vec![],
-        );
+        let dirty_rules =
+            vec![
+                SeLinuxRule::new("unconfined_t", "aios_data_t", &[SeLinuxPermission::Read])
+                    .unwrap(),
+            ];
+        let dirty_bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], dirty_rules, vec![]);
         assert!(dirty_bundle.contains_unconfined());
     }
 
@@ -2083,11 +2026,56 @@ mod tests {
             level: "s0".into(),
         };
 
-        assert!(AvcDenial::new(0, src.clone(), tgt.clone(), vec![SeLinuxPermission::Read], "myproc", None, "aios").is_none());
-        assert!(AvcDenial::new(1000, src.clone(), tgt.clone(), vec![], "myproc", None, "aios").is_none());
-        assert!(AvcDenial::new(1000, src.clone(), tgt.clone(), vec![SeLinuxPermission::Read], "", None, "aios").is_none());
-        assert!(AvcDenial::new(1000, src.clone(), tgt.clone(), vec![SeLinuxPermission::Read], "myproc", None, "").is_none());
-        assert!(AvcDenial::new(1000, src, tgt, vec![SeLinuxPermission::Read, SeLinuxPermission::Write], "myproc", None, "aios").is_some());
+        assert!(AvcDenial::new(
+            0,
+            src.clone(),
+            tgt.clone(),
+            vec![SeLinuxPermission::Read],
+            "myproc",
+            None,
+            "aios"
+        )
+        .is_none());
+        assert!(AvcDenial::new(
+            1000,
+            src.clone(),
+            tgt.clone(),
+            vec![],
+            "myproc",
+            None,
+            "aios"
+        )
+        .is_none());
+        assert!(AvcDenial::new(
+            1000,
+            src.clone(),
+            tgt.clone(),
+            vec![SeLinuxPermission::Read],
+            "",
+            None,
+            "aios"
+        )
+        .is_none());
+        assert!(AvcDenial::new(
+            1000,
+            src.clone(),
+            tgt.clone(),
+            vec![SeLinuxPermission::Read],
+            "myproc",
+            None,
+            ""
+        )
+        .is_none());
+        assert!(AvcDenial::new(
+            1000,
+            src,
+            tgt,
+            vec![SeLinuxPermission::Read, SeLinuxPermission::Write],
+            "myproc",
+            None,
+            "aios"
+        )
+        .is_some());
     }
 
     #[test]
@@ -2189,13 +2177,8 @@ mod tests {
             "system capsule requires full access to orchestrator API",
         )
         .unwrap();
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            vec![rule],
-            vec![],
-        );
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], vec![rule], vec![]);
         let result = SePolicyValidator::validate(&bundle);
         assert!(result.is_ok());
     }
@@ -2219,10 +2202,7 @@ mod tests {
         assert_eq!(domain.mcs_categories, vec![0, 1, 2]);
         assert_eq!(domain.allowed_transitions, vec!["aios_data_t"]);
         assert_eq!(domain.allowed_booleans, vec!["allow_user_exec_domain"]);
-        assert_eq!(
-            domain.allowed_file_contexts,
-            vec!["/usr/lib/aios(/.*)?"]
-        );
+        assert_eq!(domain.allowed_file_contexts, vec!["/usr/lib/aios(/.*)?"]);
         assert!(domain.has_mls());
         assert_eq!(domain.transition_count(), 1);
     }
@@ -2246,19 +2226,14 @@ mod tests {
             &[SeLinuxPermission::Read],
         )
         .unwrap();
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            vec![rule],
-            vec![],
-        )
-        .with_bundle_id("aios.selinux.core")
-        .with_version("2026.05.rev3")
-        .add_file_context("/var/lib/aios(/.*)?")
-        .add_boolean("allow_user_exec_content")
-        .add_port("8080")
-        .with_signature("sha256:abcdef");
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], vec![rule], vec![])
+                .with_bundle_id("aios.selinux.core")
+                .with_version("2026.05.rev3")
+                .add_file_context("/var/lib/aios(/.*)?")
+                .add_boolean("allow_user_exec_content")
+                .add_port("8080")
+                .with_signature("sha256:abcdef");
         assert_eq!(bundle.bundle_id, Some("aios.selinux.core".into()));
         assert_eq!(bundle.version, Some("2026.05.rev3".into()));
         assert_eq!(bundle.file_contexts.len(), 1);
@@ -2276,13 +2251,8 @@ mod tests {
             &[SeLinuxPermission::Read],
         )
         .unwrap();
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            vec![rule],
-            vec![],
-        );
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], vec![rule], vec![]);
         assert!(!bundle.is_signed());
         assert!(bundle.bundle_id.is_none());
         assert!(bundle.version.is_none());
@@ -2336,13 +2306,8 @@ mod tests {
             "capsule needs read access to shared data",
         )
         .unwrap();
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            vec![rule],
-            vec![],
-        );
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], vec![rule], vec![]);
         let mut compiler = MacPolicyCompiler::new(bundle);
         assert_eq!(compiler.state, MacPolicyLifecycle::Draft);
 
@@ -2378,13 +2343,8 @@ mod tests {
             &[SeLinuxPermission::Read],
         )
         .unwrap();
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            vec![rule],
-            vec![],
-        );
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], vec![rule], vec![]);
         let mut compiler = MacPolicyCompiler::new(bundle);
         assert!(compiler.compile_policy().is_ok());
         // Second compile should fail.
@@ -2395,19 +2355,10 @@ mod tests {
 
     #[test]
     fn compiler_rejects_compile_with_unconfined() {
-        let rule = SeLinuxRule::new(
-            "unconfined_t",
-            "aios_data_t",
-            &[SeLinuxPermission::Read],
-        )
-        .unwrap();
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            vec![rule],
-            vec![],
-        );
+        let rule =
+            SeLinuxRule::new("unconfined_t", "aios_data_t", &[SeLinuxPermission::Read]).unwrap();
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], vec![rule], vec![]);
         let mut compiler = MacPolicyCompiler::new(bundle);
         let result = compiler.compile_policy();
         assert!(result.is_err());
@@ -2422,13 +2373,8 @@ mod tests {
             &[SeLinuxPermission::Read],
         )
         .unwrap();
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            vec![rule],
-            vec![],
-        );
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], vec![rule], vec![]);
         let mut compiler = MacPolicyCompiler::new(bundle);
         compiler.compile_policy().unwrap();
         compiler.validate_policy().unwrap();
@@ -2440,17 +2386,13 @@ mod tests {
 
     #[test]
     fn compiler_cannot_enforce_with_validation_errors() {
-        let bundle = SePolicyBundle::generate_for_capsule(
-            CapsuleId(1),
-            "s0",
-            vec![],
-            vec![],
-            vec![],
-        );
+        let bundle =
+            SePolicyBundle::generate_for_capsule(CapsuleId(1), "s0", vec![], vec![], vec![]);
         let mut compiler = MacPolicyCompiler::new(bundle);
         // Skip compile, manually set state and inject errors.
         compiler.state = MacPolicyLifecycle::Loaded;
-        compiler.validation_errors
+        compiler
+            .validation_errors
             .push("mock validation error".into());
         let result = compiler.enforce_policy();
         assert!(result.is_err());
@@ -2469,9 +2411,23 @@ mod tests {
 
     #[test]
     fn avc_decision_is_denial() {
-        let d = AvcDecision::new("aios_agent_t", "aios_vault_t", "file", "read", AvcDecisionKind::Denied).unwrap();
+        let d = AvcDecision::new(
+            "aios_agent_t",
+            "aios_vault_t",
+            "file",
+            "read",
+            AvcDecisionKind::Denied,
+        )
+        .unwrap();
         assert!(d.is_denial());
-        let allowed = AvcDecision::new("aios_agent_t", "aios_data_t", "file", "read", AvcDecisionKind::Allowed).unwrap();
+        let allowed = AvcDecision::new(
+            "aios_agent_t",
+            "aios_data_t",
+            "file",
+            "read",
+            AvcDecisionKind::Allowed,
+        )
+        .unwrap();
         assert!(!allowed.is_denial());
     }
 
@@ -2532,16 +2488,43 @@ mod tests {
 
         // 2 denials: threshold not exceeded (>, not >=).
         engine.capture_avc_denial(
-            AvcDenial::new(1000, src.clone(), tgt.clone(), vec![SeLinuxPermission::Read], "p1", None, "aios").unwrap(),
+            AvcDenial::new(
+                1000,
+                src.clone(),
+                tgt.clone(),
+                vec![SeLinuxPermission::Read],
+                "p1",
+                None,
+                "aios",
+            )
+            .unwrap(),
         );
         engine.capture_avc_denial(
-            AvcDenial::new(1000, src.clone(), tgt.clone(), vec![SeLinuxPermission::Write], "p1", None, "aios").unwrap(),
+            AvcDenial::new(
+                1000,
+                src.clone(),
+                tgt.clone(),
+                vec![SeLinuxPermission::Write],
+                "p1",
+                None,
+                "aios",
+            )
+            .unwrap(),
         );
         assert!(!engine.is_alert_threshold_exceeded());
 
         // 3rd denial: threshold exceeded.
         engine.capture_avc_denial(
-            AvcDenial::new(1000, src, tgt, vec![SeLinuxPermission::Execute], "p1", None, "aios").unwrap(),
+            AvcDenial::new(
+                1000,
+                src,
+                tgt,
+                vec![SeLinuxPermission::Execute],
+                "p1",
+                None,
+                "aios",
+            )
+            .unwrap(),
         );
         assert!(engine.is_alert_threshold_exceeded());
     }
@@ -2582,7 +2565,7 @@ mod tests {
         assert!(subject.can_read(0));
         assert!(subject.can_read(3));
         assert!(!subject.can_read(5)); // cannot read up.
-        // "write up" — subject at s3 can write to s3..s5.
+                                       // "write up" — subject at s3 can write to s3..s5.
         assert!(subject.can_write(3));
         assert!(subject.can_write(5));
         assert!(!subject.can_write(1)); // cannot write down.
@@ -2660,9 +2643,7 @@ mod tests {
         assert!(!SelinuxPolicyGate::requires_mls(
             SecurityProfile::StigAligned
         ));
-        assert!(SelinuxPolicyGate::requires_mls(
-            SecurityProfile::AirgapHigh
-        ));
+        assert!(SelinuxPolicyGate::requires_mls(SecurityProfile::AirgapHigh));
     }
 
     // ── SelinuEvidenceEvent ──

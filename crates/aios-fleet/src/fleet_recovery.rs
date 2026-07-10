@@ -116,7 +116,6 @@ impl CoordinatorHeartbeat {
         }
     }
 
-    #[must_use]
     pub fn verify_signature(&self, expected_public_key: &str) -> Result<(), FleetRecoveryError> {
         use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
@@ -445,7 +444,8 @@ impl FleetRecoveryCoordinator {
             return Ok(());
         }
 
-        self.claimed_coordinators.sort_by(|a, b| b.1.cmp(&a.1));
+        self.claimed_coordinators
+            .sort_by_key(|(_, sequence)| std::cmp::Reverse(*sequence));
 
         let winner = self.claimed_coordinators[0].0.clone();
 
@@ -570,7 +570,6 @@ const fn hex_nibble(c: u8) -> Result<u8, ()> {
 )]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
 
     fn mk_membership(host_id: &str, state: FleetMembershipState) -> FleetMembership {
         FleetMembership {

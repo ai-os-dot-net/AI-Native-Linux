@@ -237,10 +237,8 @@ impl RemoteJobState {
             | (Self::OriginApproved, Self::Rejected)
             | (Self::TargetApproved, Self::Rejected) => true,
             (Self::TargetApproved, Self::Transferring) => true,
-            (Self::Transferring, Self::Running)
-            | (Self::Transferring, Self::Failed) => true,
-            (Self::Running, Self::Completed)
-            | (Self::Running, Self::Failed) => true,
+            (Self::Transferring, Self::Running) | (Self::Transferring, Self::Failed) => true,
+            (Self::Running, Self::Completed) | (Self::Running, Self::Failed) => true,
             (Self::Completed, _) | (Self::Failed, _) | (Self::Rejected, _) => false,
             // Same-state is a no-op, not a transition.
             (a, b) if a == b => false,
@@ -258,7 +256,10 @@ impl RemoteJobState {
     /// are needed before transfer.
     #[must_use]
     pub fn is_pre_transfer(self) -> bool {
-        matches!(self, Self::Proposed | Self::OriginApproved | Self::TargetApproved)
+        matches!(
+            self,
+            Self::Proposed | Self::OriginApproved | Self::TargetApproved
+        )
     }
 }
 
@@ -494,7 +495,10 @@ impl RemoteExecutionJob {
     ///
     /// Returns [`RemoteExecutionError::InvalidTransition`] if the FSM
     /// forbids the transition.
-    pub fn transition_to(&mut self, next: RemoteJobState) -> Result<RemoteJobState, RemoteExecutionError> {
+    pub fn transition_to(
+        &mut self,
+        next: RemoteJobState,
+    ) -> Result<RemoteJobState, RemoteExecutionError> {
         if !self.state.can_transition_to(next) {
             return Err(RemoteExecutionError::InvalidTransition {
                 routing_id: self.routing_id,
@@ -850,7 +854,6 @@ impl RemoteWorkloadRouter {
 
         job.transition_to(RemoteJobState::Transferring)?;
         let snapshot = job.clone();
-        drop(job);
 
         // Emit evidence: workload transfer initiated
         let payload = serde_json::json!({
@@ -921,7 +924,6 @@ impl RemoteWorkloadRouter {
         job.exit_code = Some(exit_code);
         job.completed_at = Some(Utc::now());
         let snapshot = job.clone();
-        drop(job);
 
         // Emit evidence: REMOTE_WORKLOAD_RESULT
         let payload = serde_json::json!({
@@ -976,22 +978,13 @@ impl RemoteWorkloadRouter {
 
         // Set the rejection decision on whichever side hasn't been set
         if job.origin_decision.is_none() {
-            job.origin_decision = Some(PolicyDecision::reject(
-                rejected_by,
-                "UNKNOWN",
-                "rejected",
-            ));
+            job.origin_decision = Some(PolicyDecision::reject(rejected_by, "UNKNOWN", "rejected"));
         }
         if job.target_decision.is_none() {
-            job.target_decision = Some(PolicyDecision::reject(
-                rejected_by,
-                "UNKNOWN",
-                "rejected",
-            ));
+            job.target_decision = Some(PolicyDecision::reject(rejected_by, "UNKNOWN", "rejected"));
         }
 
         let snapshot = job.clone();
-        drop(job);
 
         let payload = serde_json::json!({
             "routing_id": routing_id.to_string(),
@@ -1051,10 +1044,6 @@ impl Default for RemoteWorkloadRouter {
 )]
 mod tests {
     use super::*;
-
-    fn test_routing_id() -> Ulid {
-        Ulid::from_string("01JQRS00000000000000000000").unwrap_or_else(|_| Ulid::new())
-    }
 
     fn make_router() -> RemoteWorkloadRouter {
         RemoteWorkloadRouter::new()
@@ -1121,7 +1110,10 @@ mod tests {
         );
         assert!(result.is_err(), "BlockedRoute should be rejected");
         let err = result.unwrap_err();
-        assert!(matches!(err, RemoteExecutionError::BlockedRouteClass { .. }));
+        assert!(matches!(
+            err,
+            RemoteExecutionError::BlockedRouteClass { .. }
+        ));
     }
 
     // -----------------------------------------------------------------------
@@ -1204,7 +1196,10 @@ mod tests {
         // Only origin approved — transfer should fail
         router.origin_approve(rid, human_approve()).unwrap();
         let result = router.transfer_workload(rid);
-        assert!(result.is_err(), "transfer without target approval should fail");
+        assert!(
+            result.is_err(),
+            "transfer without target approval should fail"
+        );
         assert!(matches!(
             result.unwrap_err(),
             RemoteExecutionError::NotYetBothApproved { .. }
@@ -1265,11 +1260,17 @@ mod tests {
 
         // Origin approves
         router.origin_approve(rid, human_approve()).unwrap();
-        assert_eq!(router.get_job(rid).unwrap().state, RemoteJobState::OriginApproved);
+        assert_eq!(
+            router.get_job(rid).unwrap().state,
+            RemoteJobState::OriginApproved
+        );
 
         // Target approves
         router.target_approve(rid, human_approve()).unwrap();
-        assert_eq!(router.get_job(rid).unwrap().state, RemoteJobState::TargetApproved);
+        assert_eq!(
+            router.get_job(rid).unwrap().state,
+            RemoteJobState::TargetApproved
+        );
         assert!(router.validate_both_approved(rid));
 
         // Transfer
@@ -1382,7 +1383,7 @@ mod tests {
         let rid = Ulid::from_string(&routing.routing_id).unwrap();
 
         // Propose emits one evidence record
-        assert!(log.len() > 0, "propose should emit evidence");
+        assert!(!log.is_empty(), "propose should emit evidence");
 
         // Approve, transfer, complete
         router.origin_approve(rid, human_approve()).unwrap();
@@ -1476,7 +1477,8 @@ mod tests {
         let rid = Ulid::from_string(&routing.routing_id).unwrap();
 
         router.origin_approve(rid, human_approve()).unwrap();
-        let ai_decision = PolicyDecision::approve("agent:model:llama", "DEV_RELAXED", "dev-sandbox");
+        let ai_decision =
+            PolicyDecision::approve("agent:model:llama", "DEV_RELAXED", "dev-sandbox");
         let result = router.target_approve(rid, ai_decision);
         assert!(result.is_err(), "AI should not be able to approve target");
     }
@@ -1594,8 +1596,14 @@ mod tests {
     #[test]
     fn remote_job_state_display() {
         assert_eq!(RemoteJobState::Proposed.to_string(), "PROPOSED");
-        assert_eq!(RemoteJobState::OriginApproved.to_string(), "ORIGIN_APPROVED");
-        assert_eq!(RemoteJobState::TargetApproved.to_string(), "TARGET_APPROVED");
+        assert_eq!(
+            RemoteJobState::OriginApproved.to_string(),
+            "ORIGIN_APPROVED"
+        );
+        assert_eq!(
+            RemoteJobState::TargetApproved.to_string(),
+            "TARGET_APPROVED"
+        );
         assert_eq!(RemoteJobState::Transferring.to_string(), "TRANSFERRING");
         assert_eq!(RemoteJobState::Running.to_string(), "RUNNING");
         assert_eq!(RemoteJobState::Completed.to_string(), "COMPLETED");

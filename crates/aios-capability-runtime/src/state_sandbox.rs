@@ -399,7 +399,6 @@ impl StateSandbox {
     /// - `Ok(())` when access is permitted.
     /// - `Err(SandboxViolation)` detailing the denial, which is also
     ///   appended to the internal violation log.
-    #[must_use]
     pub fn check_access(
         &mut self,
         capsule_id: CapsuleId,
@@ -490,16 +489,11 @@ impl StateSandbox {
     ///
     /// If a rule already exists for this (capsule, path) pair, it is
     /// **replaced** with the new permissions (non-destructive update).
-    pub fn allow(
-        &mut self,
-        capsule_id: CapsuleId,
-        path: String,
-        permissions: Vec<FilePermission>,
-    ) {
-        self.rules.retain(|r| {
-            !(r.source_capsule == capsule_id && r.target_path == path)
-        });
-        self.rules.push(FileAccessRule::new(capsule_id, path, permissions));
+    pub fn allow(&mut self, capsule_id: CapsuleId, path: String, permissions: Vec<FilePermission>) {
+        self.rules
+            .retain(|r| !(r.source_capsule == capsule_id && r.target_path == path));
+        self.rules
+            .push(FileAccessRule::new(capsule_id, path, permissions));
     }
 
     /// Revoke all access for a capsule to a specific path.
@@ -508,9 +502,8 @@ impl StateSandbox {
     /// Returns `true` if at least one rule was removed (INV-SS-003).
     pub fn deny(&mut self, capsule_id: CapsuleId, path: &str) -> bool {
         let len_before = self.rules.len();
-        self.rules.retain(|r| {
-            !(r.source_capsule == capsule_id && r.target_path == path)
-        });
+        self.rules
+            .retain(|r| !(r.source_capsule == capsule_id && r.target_path == path));
         self.rules.len() < len_before
     }
 
@@ -528,7 +521,10 @@ impl StateSandbox {
         path: &str,
         operation: FilePermission,
     ) -> AccessDecision {
-        let matching = self.rules.iter().find(|r| r.permits(path, operation) && r.covers_capsule(capsule_id));
+        let matching = self
+            .rules
+            .iter()
+            .find(|r| r.permits(path, operation) && r.covers_capsule(capsule_id));
 
         match matching {
             Some(_) => AccessDecision::Allowed,
@@ -620,9 +616,10 @@ impl StateSandbox {
         operation: FilePermission,
         log_reason: &str,
     ) -> AccessDecision {
-        let matching = self.rules.iter().find(|r| {
-            r.permits(path, operation) && r.covers_capsule(capsule_id)
-        });
+        let matching = self
+            .rules
+            .iter()
+            .find(|r| r.permits(path, operation) && r.covers_capsule(capsule_id));
 
         match matching {
             Some(_) => AccessDecision::Allowed,
@@ -678,7 +675,11 @@ mod tests {
     #[test]
     fn explicit_allow_grants_read_access() {
         let mut sb = StateSandbox::new();
-        sb.allow(CapsuleId(1), "/data/capsule-a".into(), vec![FilePermission::Read]);
+        sb.allow(
+            CapsuleId(1),
+            "/data/capsule-a".into(),
+            vec![FilePermission::Read],
+        );
         let result = sb.evaluate(CapsuleId(1), "/data/capsule-a", FilePermission::Read);
         assert!(result.is_allowed());
     }
@@ -686,7 +687,11 @@ mod tests {
     #[test]
     fn allow_only_covers_granted_operations() {
         let mut sb = StateSandbox::new();
-        sb.allow(CapsuleId(1), "/data/capsule-a".into(), vec![FilePermission::Read]);
+        sb.allow(
+            CapsuleId(1),
+            "/data/capsule-a".into(),
+            vec![FilePermission::Read],
+        );
 
         let read_result = sb.evaluate(CapsuleId(1), "/data/capsule-a", FilePermission::Read);
         assert!(read_result.is_allowed());
@@ -721,7 +726,11 @@ mod tests {
     #[test]
     fn deny_after_allow_revokes_access() {
         let mut sb = StateSandbox::new();
-        sb.allow(CapsuleId(1), "/data/capsule-a".into(), vec![FilePermission::Read]);
+        sb.allow(
+            CapsuleId(1),
+            "/data/capsule-a".into(),
+            vec![FilePermission::Read],
+        );
         assert!(sb
             .evaluate(CapsuleId(1), "/data/capsule-a", FilePermission::Read)
             .is_allowed());
@@ -804,7 +813,11 @@ mod tests {
     #[test]
     fn capsule_does_not_see_rules_for_other_capsules() {
         let mut sb = StateSandbox::new();
-        sb.allow(CapsuleId(1), "/data/capsule-a".into(), vec![FilePermission::Read]);
+        sb.allow(
+            CapsuleId(1),
+            "/data/capsule-a".into(),
+            vec![FilePermission::Read],
+        );
 
         // Capsule 2 should NOT be able to access Capsule 1's path.
         let result = sb.evaluate(CapsuleId(2), "/data/capsule-a", FilePermission::Read);

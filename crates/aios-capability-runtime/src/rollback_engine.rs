@@ -222,10 +222,7 @@ impl RollbackEngine {
     /// Return the current failure count for a capsule.
     #[must_use]
     pub fn failure_count(&self, capsule_id: CapsuleId) -> u32 {
-        self.failure_counts
-            .get(&capsule_id)
-            .copied()
-            .unwrap_or(0)
+        self.failure_counts.get(&capsule_id).copied().unwrap_or(0)
     }
 
     /// ---------- rollback decision ------------------------------------------
@@ -350,10 +347,7 @@ impl RollbackEngine {
     /// Number of capsules with a non-zero failure count.
     #[must_use]
     pub fn degraded_capsule_count(&self) -> usize {
-        self.failure_counts
-            .values()
-            .filter(|&&c| c > 0)
-            .count()
+        self.failure_counts.values().filter(|&&c| c > 0).count()
     }
 
     /// Rollback depth for a specific capsule.
@@ -412,7 +406,9 @@ mod tests {
         let cid = CapsuleId(1);
 
         // Seed a snapshot so a decision *could* be made.
-        engine.snapshot_store.freeze(cid, "baseline".into(), 100, snapshot_state());
+        engine
+            .snapshot_store
+            .freeze(cid, "baseline".into(), 100, snapshot_state());
 
         let decision = engine.record_failure(cid);
         assert_eq!(engine.failure_count(cid), 1);
@@ -589,10 +585,7 @@ mod tests {
         // A new trace snapshot was created.
         let snapshots_after = engine.snapshot_store.list(cid).len();
         assert_eq!(snapshots_after, snapshots_before + 1);
-        assert!(result
-            .new_snapshot
-            .label
-            .starts_with("rollback-from-"));
+        assert!(result.new_snapshot.label.starts_with("rollback-from-"));
     }
 
     // ---- execute_rollback resets failure counter ----------------------------
@@ -625,12 +618,8 @@ mod tests {
         // Set up some state.
         engine.record_failure(cid);
         engine.record_failure(cid);
-        engine
-            .last_rollback
-            .insert(cid, 5000);
-        engine
-            .rollback_depth
-            .insert(cid, 3);
+        engine.last_rollback.insert(cid, 5000);
+        engine.rollback_depth.insert(cid, 3);
 
         engine.reset_capsule(cid);
 
@@ -698,8 +687,14 @@ mod tests {
         assert_ne!(d1, d3);
 
         assert_eq!(RollbackDecision::NoAction, RollbackDecision::NoAction);
-        assert_ne!(RollbackDecision::NoAction, RollbackDecision::ThresholdNotReached);
-        assert_ne!(RollbackDecision::NoAction, RollbackDecision::NoSnapshotAvailable);
+        assert_ne!(
+            RollbackDecision::NoAction,
+            RollbackDecision::ThresholdNotReached
+        );
+        assert_ne!(
+            RollbackDecision::NoAction,
+            RollbackDecision::NoSnapshotAvailable
+        );
     }
 
     // ---- should_rollback with no failures returns ThresholdNotReached --------

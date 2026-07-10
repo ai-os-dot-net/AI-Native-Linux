@@ -417,8 +417,7 @@ impl SelfHealingPolicy {
     pub fn validate(&self) -> Result<(), RecoveryError> {
         if self.minimum_mode == RecoveryMode::Normal && !self.component_policies.is_empty() {
             return Err(RecoveryError::Internal(
-                "self-healing policy must not permit Normal-mode mutations (INV-012)"
-                    .to_owned(),
+                "self-healing policy must not permit Normal-mode mutations (INV-012)".to_owned(),
             ));
         }
         Ok(())

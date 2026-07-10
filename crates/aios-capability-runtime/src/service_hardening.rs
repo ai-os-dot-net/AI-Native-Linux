@@ -214,7 +214,7 @@ impl HardeningDirectiveValue {
         match self {
             Self::YesNo(v) => *v,
             Self::PathList(v) => !v.is_empty(),
-            Self::CapabilitySet(v) => v.iter().any(|c| c != ""),
+            Self::CapabilitySet(v) => v.iter().any(|c| !c.is_empty()),
             Self::SyscallSet(v) => !v.is_empty(),
             Self::AddressFamilySet(v) => !v.is_empty(),
         }
@@ -383,11 +383,7 @@ impl HardeningBaseline {
     pub fn core_mandatory_directives(&self) -> Vec<HardeningDirective> {
         use HardeningDirective::*;
         match self {
-            Self::DevRelaxed => vec![
-                NoNewPrivileges,
-                MemoryDenyWriteExecute,
-                SELinuxConfinement,
-            ],
+            Self::DevRelaxed => vec![NoNewPrivileges, MemoryDenyWriteExecute, SELinuxConfinement],
             Self::SecureDefault => vec![
                 NoNewPrivileges,
                 ProtectSystem,
@@ -466,19 +462,14 @@ impl ServiceHardeningPolicy {
     /// | OBSERVABILITY        | 50          | 55             | 60           | 65          |
     /// | RENDERER_SURFACE     | 50          | 55             | 60           | 65          |
     #[must_use]
-    pub fn canonical(
-        service_class: ServiceClass,
-        profile: SecurityProfile,
-    ) -> Option<Self> {
+    pub fn canonical(service_class: ServiceClass, profile: SecurityProfile) -> Option<Self> {
         let floor = Self::floor_for(service_class, profile)?;
 
         let baseline = HardeningBaseline::from_profile(profile);
         let mut mandatory = baseline.core_mandatory_directives();
 
         // DEV_FIXTURE relaxes mandatory directives under DEV_RELAXED.
-        if service_class == ServiceClass::DevFixture
-            && baseline == HardeningBaseline::DevRelaxed
-        {
+        if service_class == ServiceClass::DevFixture && baseline == HardeningBaseline::DevRelaxed {
             mandatory = vec![HardeningDirective::NoNewPrivileges];
         }
 
@@ -498,10 +489,7 @@ impl ServiceHardeningPolicy {
     /// Returns `None` when the class is not permitted under this profile
     /// (e.g. `DevFixture` outside `DEV_RELAXED`).
     #[must_use]
-    fn floor_for(
-        service_class: ServiceClass,
-        profile: SecurityProfile,
-    ) -> Option<u32> {
+    fn floor_for(service_class: ServiceClass, profile: SecurityProfile) -> Option<u32> {
         match (service_class, profile) {
             // DEV_FIXTURE only under DEV_RELAXED
             (ServiceClass::DevFixture, SecurityProfile::DevRelaxed) => Some(20),
@@ -527,31 +515,15 @@ impl ServiceHardeningPolicy {
             (ServiceClass::AiPlane, SecurityProfile::StigAligned) => Some(70),
             (ServiceClass::AiPlane, SecurityProfile::AirgapHigh) => Some(75),
 
-            (ServiceClass::CapabilityRuntime, SecurityProfile::DevRelaxed) => {
-                Some(55)
-            }
-            (ServiceClass::CapabilityRuntime, SecurityProfile::SecureDefault) => {
-                Some(60)
-            }
-            (ServiceClass::CapabilityRuntime, SecurityProfile::StigAligned) => {
-                Some(65)
-            }
-            (ServiceClass::CapabilityRuntime, SecurityProfile::AirgapHigh) => {
-                Some(70)
-            }
+            (ServiceClass::CapabilityRuntime, SecurityProfile::DevRelaxed) => Some(55),
+            (ServiceClass::CapabilityRuntime, SecurityProfile::SecureDefault) => Some(60),
+            (ServiceClass::CapabilityRuntime, SecurityProfile::StigAligned) => Some(65),
+            (ServiceClass::CapabilityRuntime, SecurityProfile::AirgapHigh) => Some(70),
 
-            (ServiceClass::SystemIntegration, SecurityProfile::DevRelaxed) => {
-                Some(55)
-            }
-            (ServiceClass::SystemIntegration, SecurityProfile::SecureDefault) => {
-                Some(60)
-            }
-            (ServiceClass::SystemIntegration, SecurityProfile::StigAligned) => {
-                Some(65)
-            }
-            (ServiceClass::SystemIntegration, SecurityProfile::AirgapHigh) => {
-                Some(70)
-            }
+            (ServiceClass::SystemIntegration, SecurityProfile::DevRelaxed) => Some(55),
+            (ServiceClass::SystemIntegration, SecurityProfile::SecureDefault) => Some(60),
+            (ServiceClass::SystemIntegration, SecurityProfile::StigAligned) => Some(65),
+            (ServiceClass::SystemIntegration, SecurityProfile::AirgapHigh) => Some(70),
 
             (ServiceClass::Observability, SecurityProfile::DevRelaxed) => Some(50),
             (ServiceClass::Observability, SecurityProfile::SecureDefault) => Some(55),
@@ -715,9 +687,7 @@ impl HardeningScoreCalculator {
         // ── Structural hard denies ────────────────────────────────────
 
         // DEV_FIXTURE is only permitted under DEV_RELAXED.
-        if service_class == ServiceClass::DevFixture
-            && !baseline.allows_dev_fixture()
-        {
+        if service_class == ServiceClass::DevFixture && !baseline.allows_dev_fixture() {
             blocked_reasons.push(format!(
                 "DEV_FIXTURE class not permitted under {}; \
                  promotion blocked per INV-SEC-007",
@@ -727,15 +697,12 @@ impl HardeningScoreCalculator {
 
         // SELinux confinement: AIOS-owned services MUST run in a confined
         // domain (forbid_unconfined_t). DEV_FIXTURE exempt under DEV_RELAXED.
-        let is_dev_fixture_exempt = service_class == ServiceClass::DevFixture
-            && baseline == HardeningBaseline::DevRelaxed;
+        let is_dev_fixture_exempt =
+            service_class == ServiceClass::DevFixture && baseline == HardeningBaseline::DevRelaxed;
 
         if !is_dev_fixture_exempt {
-            let selinux_observed = observed_directives
-                .get(&HardeningDirective::SELinuxConfinement);
-            let selinux_confined = selinux_observed
-                .map(|v| v.is_truthy())
-                .unwrap_or(false);
+            let selinux_observed = observed_directives.get(&HardeningDirective::SELinuxConfinement);
+            let selinux_confined = selinux_observed.map(|v| v.is_truthy()).unwrap_or(false);
 
             if !selinux_confined {
                 blocked_reasons.push(
@@ -748,14 +715,12 @@ impl HardeningScoreCalculator {
 
         // ── Assemble score ────────────────────────────────────────────
 
-        let final_score = total_score.max(0).min(100) as u32;
+        let final_score = u32::try_from(total_score.clamp(0, 100)).unwrap_or_default();
         let floor = policy.minimum_score;
         let numeric_pass = final_score >= floor;
         let has_structural_denies = !blocked_reasons.is_empty();
 
-        let promotion_blocked = if has_structural_denies
-            && baseline.blocks_on_structural_deny()
-        {
+        let promotion_blocked = if has_structural_denies && baseline.blocks_on_structural_deny() {
             true
         } else if !numeric_pass && baseline.blocks_on_numeric_miss() {
             blocked_reasons.push(format!(
@@ -800,10 +765,7 @@ impl HardeningScoreCalculator {
 
     /// Derive the gate verdict (PASS / WARN / FAIL) for the score.
     #[must_use]
-    pub fn gate_verdict(
-        score: &HardeningScore,
-        policy: &ServiceHardeningPolicy,
-    ) -> GateVerdict {
+    pub fn gate_verdict(score: &HardeningScore, policy: &ServiceHardeningPolicy) -> GateVerdict {
         let baseline = HardeningBaseline::from_profile(score.profile);
         let numeric_pass = score.total_score >= policy.minimum_score;
         let has_structural_denies = !score.blocked_reasons.is_empty();
@@ -935,8 +897,7 @@ mod tests {
 
     #[test]
     fn service_class_labels_are_unique() {
-        let mut labels: Vec<&str> =
-            ServiceClass::all().iter().map(|c| c.label()).collect();
+        let mut labels: Vec<&str> = ServiceClass::all().iter().map(|c| c.label()).collect();
         let original_len = labels.len();
         labels.sort_unstable();
         labels.dedup();
@@ -996,16 +957,6 @@ mod tests {
     // -----------------------------------------------------------------------
     // HardeningScoreCalculator — score computation
     // -----------------------------------------------------------------------
-
-    fn observed_map(
-        entries: &[(HardeningDirective, HardeningDirectiveValue)],
-    ) -> HashMap<HardeningDirective, HardeningDirectiveValue> {
-        let mut map = HashMap::new();
-        for (d, v) in entries {
-            map.insert(*d, v.clone());
-        }
-        map
-    }
 
     fn all_present(
         directives: &[HardeningDirective],
@@ -1074,20 +1025,23 @@ mod tests {
         // We only have 2 present → 17 missing → total weight of all = 100
         // Present: 7 + 10 = 17. Score = 17.
         assert!(score.total_score < 100, "score should be reduced");
-        assert_eq!(score.directive_results.len(), policy.mandatory_directives.len());
+        assert_eq!(
+            score.directive_results.len(),
+            policy.mandatory_directives.len()
+        );
     }
 
     #[test]
     fn dev_fixture_blocked_outside_dev_relaxed() {
         let profile = SecurityProfile::SecureDefault;
-        let policy = ServiceHardeningPolicy::canonical(
-            ServiceClass::DevFixture,
-            profile,
-        );
+        let policy = ServiceHardeningPolicy::canonical(ServiceClass::DevFixture, profile);
 
         // DevFixture under anything except DEV_RELAXED returns None
         // because floor_for returns None.
-        assert!(policy.is_none(), "DEV_FIXTURE must be None outside DEV_RELAXED");
+        assert!(
+            policy.is_none(),
+            "DEV_FIXTURE must be None outside DEV_RELAXED"
+        );
     }
 
     #[test]
@@ -1326,14 +1280,8 @@ mod tests {
         assert!(!HardeningDirectiveValue::no().is_truthy());
         assert!(HardeningDirectiveValue::PathList(vec!["/var".into()]).is_truthy());
         assert!(!HardeningDirectiveValue::PathList(vec![]).is_truthy());
-        assert!(
-            HardeningDirectiveValue::CapabilitySet(vec!["CAP_SYS_ADMIN".into()])
-                .is_truthy()
-        );
-        assert!(
-            HardeningDirectiveValue::SyscallSet(vec!["@system-service".into()])
-                .is_truthy()
-        );
+        assert!(HardeningDirectiveValue::CapabilitySet(vec!["CAP_SYS_ADMIN".into()]).is_truthy());
+        assert!(HardeningDirectiveValue::SyscallSet(vec!["@system-service".into()]).is_truthy());
     }
 
     // -----------------------------------------------------------------------
@@ -1374,8 +1322,7 @@ mod tests {
             SecurityProfile::AirgapHigh,
         ] {
             assert!(
-                ServiceHardeningPolicy::canonical(ServiceClass::DevFixture, *profile)
-                    .is_none(),
+                ServiceHardeningPolicy::canonical(ServiceClass::DevFixture, *profile).is_none(),
                 "DEV_FIXTURE should be None under {profile:?}"
             );
         }
@@ -1402,10 +1349,7 @@ mod tests {
         );
 
         let report = HardeningScoreCalculator::promotion_blocker_report(&score);
-        assert!(
-            report.is_empty(),
-            "report should be empty when not blocked"
-        );
+        assert!(report.is_empty(), "report should be empty when not blocked");
     }
 
     #[test]
@@ -1429,7 +1373,10 @@ mod tests {
         );
 
         let report = HardeningScoreCalculator::promotion_blocker_report(&score);
-        assert!(!report.is_empty(), "report should have entries when blocked");
+        assert!(
+            !report.is_empty(),
+            "report should have entries when blocked"
+        );
         assert!(report.iter().any(|r| r.contains("unconfined_t")));
     }
 

@@ -362,18 +362,14 @@ impl ClusterOverlayNetwork {
             return Err(ClusterOverlayError::NoEnrolledMembers);
         }
 
-        let mut candidates: Vec<String> = enrolled
-            .iter()
-            .map(|m| m.host_id.clone())
-            .collect();
+        let mut candidates: Vec<String> = enrolled.iter().map(|m| m.host_id.clone()).collect();
 
         candidates.sort();
         candidates.dedup();
 
-        let winner = candidates
-            .first()
-            .cloned()
-            .ok_or_else(|| ClusterOverlayError::ElectionFailed("no candidates after sort".into()))?;
+        let winner = candidates.first().cloned().ok_or_else(|| {
+            ClusterOverlayError::ElectionFailed("no candidates after sort".into())
+        })?;
 
         let election = CoordinatorElection {
             election_id: Ulid::new(),
@@ -458,10 +454,9 @@ impl ClusterOverlayNetwork {
     /// Returns [`ClusterOverlayError::PeerInWrongState`] if the peer is
     /// not in `Discovered` or `KeyExchange` state.
     pub fn peer_key_exchange(&self, host_id: &str) -> Result<(), ClusterOverlayError> {
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|e| ClusterOverlayError::KeyExchangeFailed(host_id.into(), format!("lock: {e}")))?;
+        let mut inner = self.inner.lock().map_err(|e| {
+            ClusterOverlayError::KeyExchangeFailed(host_id.into(), format!("lock: {e}"))
+        })?;
 
         let old_state;
         {
@@ -500,10 +495,9 @@ impl ClusterOverlayNetwork {
     ///
     /// Returns [`ClusterOverlayError::PeerNotFound`] if the host is unknown.
     pub fn heartbeat(&self, host_id: &str) -> Result<(), ClusterOverlayError> {
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|e| ClusterOverlayError::HeartbeatFailed(host_id.into(), format!("lock: {e}")))?;
+        let mut inner = self.inner.lock().map_err(|e| {
+            ClusterOverlayError::HeartbeatFailed(host_id.into(), format!("lock: {e}"))
+        })?;
 
         let peer = inner
             .peers
@@ -536,10 +530,9 @@ impl ClusterOverlayNetwork {
         host_id: &str,
         timeout_seconds: i64,
     ) -> Result<bool, ClusterOverlayError> {
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|e| ClusterOverlayError::HeartbeatFailed(host_id.into(), format!("lock: {e}")))?;
+        let mut inner = self.inner.lock().map_err(|e| {
+            ClusterOverlayError::HeartbeatFailed(host_id.into(), format!("lock: {e}"))
+        })?;
 
         let peer = inner
             .peers
@@ -551,11 +544,12 @@ impl ClusterOverlayNetwork {
         }
 
         let threshold = Utc::now()
-            - chrono::Duration::try_seconds(timeout_seconds)
-                .ok_or_else(|| ClusterOverlayError::HeartbeatFailed(
+            - chrono::Duration::try_seconds(timeout_seconds).ok_or_else(|| {
+                ClusterOverlayError::HeartbeatFailed(
                     host_id.into(),
                     "invalid timeout duration".into(),
-                ))?;
+                )
+            })?;
 
         if peer.last_seen < threshold {
             let old_state = peer.state;
@@ -681,10 +675,7 @@ impl ClusterOverlayNetwork {
     /// Returns [`ClusterOverlayError::NoCoordinatorElected`] if no
     /// coordinator exists. Returns [`ClusterOverlayError::NoPeersAvailable`]
     /// if there are no discovered peers.
-    pub fn establish_hub_and_spoke(
-        &self,
-        coordinator_id: &str,
-    ) -> Result<(), ClusterOverlayError> {
+    pub fn establish_hub_and_spoke(&self, coordinator_id: &str) -> Result<(), ClusterOverlayError> {
         let mut inner = self
             .inner
             .lock()
@@ -701,7 +692,9 @@ impl ClusterOverlayNetwork {
         }
 
         if !inner.peers.contains_key(coordinator_id) {
-            return Err(ClusterOverlayError::CoordinatorNotEnrolled(coordinator_id.into()));
+            return Err(ClusterOverlayError::CoordinatorNotEnrolled(
+                coordinator_id.into(),
+            ));
         }
 
         // Assign roles
@@ -819,7 +812,9 @@ impl ClusterOverlayNetwork {
             .ok_or(ClusterOverlayError::NoCoordinatorElected)?;
 
         if !inner.peers.contains_key(&coord_id) {
-            return Err(ClusterOverlayError::CoordinatorNotEnrolled(coord_id.clone()));
+            return Err(ClusterOverlayError::CoordinatorNotEnrolled(
+                coord_id.clone(),
+            ));
         }
 
         // Coordinator → Coordinator, all others → Spoke
@@ -880,8 +875,7 @@ impl ClusterOverlayNetwork {
         let filtered: Vec<FleetMembership> = remaining_memberships
             .iter()
             .filter(|m| {
-                m.state == FleetMembershipState::Enrolled
-                    && m.host_id != failed_coordinator_id
+                m.state == FleetMembershipState::Enrolled && m.host_id != failed_coordinator_id
             })
             .cloned()
             .collect();
@@ -989,11 +983,8 @@ mod tests {
 
     /// Helper: create an enrolled FleetMembership.
     fn enrolled_membership(host_id: &str) -> FleetMembership {
-        let mut m = FleetMembership::new(
-            format!("mem_{host_id}"),
-            host_id.into(),
-            "clr_test".into(),
-        );
+        let mut m =
+            FleetMembership::new(format!("mem_{host_id}"), host_id.into(), "clr_test".into());
         // Force to Enrolled for election tests
         m.state = FleetMembershipState::Enrolled;
         m
@@ -1075,7 +1066,10 @@ mod tests {
         let memberships: Vec<FleetMembership> = vec![];
         let result = overlay.elect_coordinator(&memberships);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ClusterOverlayError::NoEnrolledMembers));
+        assert!(matches!(
+            result.unwrap_err(),
+            ClusterOverlayError::NoEnrolledMembers
+        ));
     }
 
     // =================================================================
@@ -1090,7 +1084,10 @@ mod tests {
             membership_with_state("host_b", FleetMembershipState::Discovered),
         ];
         let result = overlay.elect_coordinator(&memberships);
-        assert!(matches!(result.unwrap_err(), ClusterOverlayError::NoEnrolledMembers));
+        assert!(matches!(
+            result.unwrap_err(),
+            ClusterOverlayError::NoEnrolledMembers
+        ));
     }
 
     // =================================================================
@@ -1102,9 +1099,30 @@ mod tests {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::HubAndSpoke);
 
         // Add peers
-        overlay.add_peer("host_c".into(), dummy_verifying_key(1), dummy_wireguard_key(1), local_addr(8001)).unwrap();
-        overlay.add_peer("host_s1".into(), dummy_verifying_key(2), dummy_wireguard_key(2), local_addr(8002)).unwrap();
-        overlay.add_peer("host_s2".into(), dummy_verifying_key(3), dummy_wireguard_key(3), local_addr(8003)).unwrap();
+        overlay
+            .add_peer(
+                "host_c".into(),
+                dummy_verifying_key(1),
+                dummy_wireguard_key(1),
+                local_addr(8001),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_s1".into(),
+                dummy_verifying_key(2),
+                dummy_wireguard_key(2),
+                local_addr(8002),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_s2".into(),
+                dummy_verifying_key(3),
+                dummy_wireguard_key(3),
+                local_addr(8003),
+            )
+            .unwrap();
 
         // Establish hub-and-spoke with host_c as coordinator
         overlay.establish_hub_and_spoke("host_c").unwrap();
@@ -1128,10 +1146,38 @@ mod tests {
     fn full_mesh_topology_all_peers_connected() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::FullMesh);
 
-        overlay.add_peer("host_a".into(), dummy_verifying_key(1), dummy_wireguard_key(1), local_addr(9001)).unwrap();
-        overlay.add_peer("host_b".into(), dummy_verifying_key(2), dummy_wireguard_key(2), local_addr(9002)).unwrap();
-        overlay.add_peer("host_c".into(), dummy_verifying_key(3), dummy_wireguard_key(3), local_addr(9003)).unwrap();
-        overlay.add_peer("host_d".into(), dummy_verifying_key(4), dummy_wireguard_key(4), local_addr(9004)).unwrap();
+        overlay
+            .add_peer(
+                "host_a".into(),
+                dummy_verifying_key(1),
+                dummy_wireguard_key(1),
+                local_addr(9001),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_b".into(),
+                dummy_verifying_key(2),
+                dummy_wireguard_key(2),
+                local_addr(9002),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_c".into(),
+                dummy_verifying_key(3),
+                dummy_wireguard_key(3),
+                local_addr(9003),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_d".into(),
+                dummy_verifying_key(4),
+                dummy_wireguard_key(4),
+                local_addr(9004),
+            )
+            .unwrap();
 
         overlay.establish_full_mesh().unwrap();
 
@@ -1153,7 +1199,14 @@ mod tests {
     #[test]
     fn full_mesh_single_peer_zero_edges() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::FullMesh);
-        overlay.add_peer("host_01".into(), dummy_verifying_key(1), dummy_wireguard_key(1), local_addr(9100)).unwrap();
+        overlay
+            .add_peer(
+                "host_01".into(),
+                dummy_verifying_key(1),
+                dummy_wireguard_key(1),
+                local_addr(9100),
+            )
+            .unwrap();
         overlay.establish_full_mesh().unwrap();
 
         let summary = overlay.topology_summary();
@@ -1168,8 +1221,22 @@ mod tests {
     #[test]
     fn full_mesh_two_peers_one_edge() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::FullMesh);
-        overlay.add_peer("host_01".into(), dummy_verifying_key(1), dummy_wireguard_key(1), local_addr(9201)).unwrap();
-        overlay.add_peer("host_02".into(), dummy_verifying_key(2), dummy_wireguard_key(2), local_addr(9202)).unwrap();
+        overlay
+            .add_peer(
+                "host_01".into(),
+                dummy_verifying_key(1),
+                dummy_wireguard_key(1),
+                local_addr(9201),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_02".into(),
+                dummy_verifying_key(2),
+                dummy_wireguard_key(2),
+                local_addr(9202),
+            )
+            .unwrap();
         overlay.establish_full_mesh().unwrap();
 
         let summary = overlay.topology_summary();
@@ -1193,19 +1260,49 @@ mod tests {
         ];
 
         // Add peers first (election only needs memberships)
-        overlay.add_peer("host_coord".into(), dummy_verifying_key(10), dummy_wireguard_key(10), local_addr(9300)).unwrap();
-        overlay.add_peer("host_spoke1".into(), dummy_verifying_key(11), dummy_wireguard_key(11), local_addr(9301)).unwrap();
-        overlay.add_peer("host_spoke2".into(), dummy_verifying_key(12), dummy_wireguard_key(12), local_addr(9302)).unwrap();
+        overlay
+            .add_peer(
+                "host_coord".into(),
+                dummy_verifying_key(10),
+                dummy_wireguard_key(10),
+                local_addr(9300),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_spoke1".into(),
+                dummy_verifying_key(11),
+                dummy_wireguard_key(11),
+                local_addr(9301),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_spoke2".into(),
+                dummy_verifying_key(12),
+                dummy_wireguard_key(12),
+                local_addr(9302),
+            )
+            .unwrap();
 
         overlay.elect_coordinator(&memberships).unwrap();
 
         overlay.establish_hybrid_relayed_mesh().unwrap();
 
         // Coordinator should be Coordinator role
-        assert_eq!(overlay.get_peer_role("host_coord"), Some(OverlayRole::Coordinator));
+        assert_eq!(
+            overlay.get_peer_role("host_coord"),
+            Some(OverlayRole::Coordinator)
+        );
         // Spokes should be Spoke
-        assert_eq!(overlay.get_peer_role("host_spoke1"), Some(OverlayRole::Spoke));
-        assert_eq!(overlay.get_peer_role("host_spoke2"), Some(OverlayRole::Spoke));
+        assert_eq!(
+            overlay.get_peer_role("host_spoke1"),
+            Some(OverlayRole::Spoke)
+        );
+        assert_eq!(
+            overlay.get_peer_role("host_spoke2"),
+            Some(OverlayRole::Spoke)
+        );
         // No direct mesh connections (relay through coordinator)
         assert_eq!(overlay.topology_summary().mesh_edges, 0);
     }
@@ -1224,9 +1321,30 @@ mod tests {
             enrolled_membership("host_spoke_b"),
         ];
 
-        overlay.add_peer("host_hub".into(), dummy_verifying_key(20), dummy_wireguard_key(20), local_addr(9400)).unwrap();
-        overlay.add_peer("host_spoke_a".into(), dummy_verifying_key(21), dummy_wireguard_key(21), local_addr(9401)).unwrap();
-        overlay.add_peer("host_spoke_b".into(), dummy_verifying_key(22), dummy_wireguard_key(22), local_addr(9402)).unwrap();
+        overlay
+            .add_peer(
+                "host_hub".into(),
+                dummy_verifying_key(20),
+                dummy_wireguard_key(20),
+                local_addr(9400),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_spoke_a".into(),
+                dummy_verifying_key(21),
+                dummy_wireguard_key(21),
+                local_addr(9401),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_spoke_b".into(),
+                dummy_verifying_key(22),
+                dummy_wireguard_key(22),
+                local_addr(9402),
+            )
+            .unwrap();
 
         overlay.elect_coordinator(&memberships).unwrap();
 
@@ -1248,16 +1366,29 @@ mod tests {
     fn wireguard_key_exchange_simulation() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::HubAndSpoke);
 
-        overlay.add_peer("host_01".into(), dummy_verifying_key(30), dummy_wireguard_key(30), local_addr(9500)).unwrap();
+        overlay
+            .add_peer(
+                "host_01".into(),
+                dummy_verifying_key(30),
+                dummy_wireguard_key(30),
+                local_addr(9500),
+            )
+            .unwrap();
 
         // Initially in Discovered state
-        assert_eq!(overlay.get_peer_state("host_01"), Some(PeerState::Discovered));
+        assert_eq!(
+            overlay.get_peer_state("host_01"),
+            Some(PeerState::Discovered)
+        );
 
         // Perform key exchange
         overlay.peer_key_exchange("host_01").unwrap();
 
         // Should now be Connected
-        assert_eq!(overlay.get_peer_state("host_01"), Some(PeerState::Connected));
+        assert_eq!(
+            overlay.get_peer_state("host_01"),
+            Some(PeerState::Connected)
+        );
     }
 
     // =================================================================
@@ -1268,11 +1399,21 @@ mod tests {
     fn heartbeat_lost_detection() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::FullMesh);
 
-        overlay.add_peer("host_01".into(), dummy_verifying_key(40), dummy_wireguard_key(40), local_addr(9600)).unwrap();
+        overlay
+            .add_peer(
+                "host_01".into(),
+                dummy_verifying_key(40),
+                dummy_wireguard_key(40),
+                local_addr(9600),
+            )
+            .unwrap();
 
         // Get peer into Connected state
         overlay.peer_key_exchange("host_01").unwrap();
-        assert_eq!(overlay.get_peer_state("host_01"), Some(PeerState::Connected));
+        assert_eq!(
+            overlay.get_peer_state("host_01"),
+            Some(PeerState::Connected)
+        );
 
         // A fresh heartbeat should not be lost
         let lost = overlay.detect_heartbeat_lost("host_01", 30).unwrap();
@@ -1297,14 +1438,24 @@ mod tests {
     fn heartbeat_lost_zero_timeout_detects_immediately() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::FullMesh);
 
-        overlay.add_peer("host_01".into(), dummy_verifying_key(41), dummy_wireguard_key(41), local_addr(9610)).unwrap();
+        overlay
+            .add_peer(
+                "host_01".into(),
+                dummy_verifying_key(41),
+                dummy_wireguard_key(41),
+                local_addr(9610),
+            )
+            .unwrap();
         overlay.peer_key_exchange("host_01").unwrap();
 
         // With timeout=0, threshold is now. last_seen < now (strictly),
         // so this correctly detects heartbeat as lost.
         let lost = overlay.detect_heartbeat_lost("host_01", 0).unwrap();
         assert!(lost, "zero timeout should detect lost heartbeat");
-        assert_eq!(overlay.get_peer_state("host_01"), Some(PeerState::HeartbeatLost));
+        assert_eq!(
+            overlay.get_peer_state("host_01"),
+            Some(PeerState::HeartbeatLost)
+        );
     }
 
     // =================================================================
@@ -1315,9 +1466,30 @@ mod tests {
     fn peer_removal_on_withdrawal() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::FullMesh);
 
-        overlay.add_peer("host_a".into(), dummy_verifying_key(50), dummy_wireguard_key(50), local_addr(9701)).unwrap();
-        overlay.add_peer("host_b".into(), dummy_verifying_key(51), dummy_wireguard_key(51), local_addr(9702)).unwrap();
-        overlay.add_peer("host_c".into(), dummy_verifying_key(52), dummy_wireguard_key(52), local_addr(9703)).unwrap();
+        overlay
+            .add_peer(
+                "host_a".into(),
+                dummy_verifying_key(50),
+                dummy_wireguard_key(50),
+                local_addr(9701),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_b".into(),
+                dummy_verifying_key(51),
+                dummy_wireguard_key(51),
+                local_addr(9702),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_c".into(),
+                dummy_verifying_key(52),
+                dummy_wireguard_key(52),
+                local_addr(9703),
+            )
+            .unwrap();
 
         overlay.establish_full_mesh().unwrap();
         assert_eq!(overlay.list_peers().len(), 3);
@@ -1349,9 +1521,30 @@ mod tests {
             enrolled_membership("host_c"),
         ];
 
-        overlay.add_peer("host_a".into(), dummy_verifying_key(60), dummy_wireguard_key(60), local_addr(9800)).unwrap();
-        overlay.add_peer("host_b".into(), dummy_verifying_key(61), dummy_wireguard_key(61), local_addr(9801)).unwrap();
-        overlay.add_peer("host_c".into(), dummy_verifying_key(62), dummy_wireguard_key(62), local_addr(9802)).unwrap();
+        overlay
+            .add_peer(
+                "host_a".into(),
+                dummy_verifying_key(60),
+                dummy_wireguard_key(60),
+                local_addr(9800),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_b".into(),
+                dummy_verifying_key(61),
+                dummy_wireguard_key(61),
+                local_addr(9801),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_c".into(),
+                dummy_verifying_key(62),
+                dummy_wireguard_key(62),
+                local_addr(9802),
+            )
+            .unwrap();
 
         // Initial election
         let first_winner = overlay.elect_coordinator(&memberships).unwrap();
@@ -1366,7 +1559,10 @@ mod tests {
         assert_eq!(overlay.coordinator_id(), Some("host_b".into()));
 
         // host_a should be disconnected
-        assert_eq!(overlay.get_peer_state("host_a"), Some(PeerState::Disconnected));
+        assert_eq!(
+            overlay.get_peer_state("host_a"),
+            Some(PeerState::Disconnected)
+        );
     }
 
     // =================================================================
@@ -1377,7 +1573,14 @@ mod tests {
     fn hub_and_spoke_fails_without_coordinator_in_peer_list() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::HubAndSpoke);
 
-        overlay.add_peer("host_01".into(), dummy_verifying_key(70), dummy_wireguard_key(70), local_addr(9900)).unwrap();
+        overlay
+            .add_peer(
+                "host_01".into(),
+                dummy_verifying_key(70),
+                dummy_wireguard_key(70),
+                local_addr(9900),
+            )
+            .unwrap();
 
         let result = overlay.establish_hub_and_spoke("host_nonexistent");
         assert!(result.is_err());
@@ -1411,11 +1614,25 @@ mod tests {
     fn add_peer_duplicate_idempotent() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::FullMesh);
 
-        overlay.add_peer("host_01".into(), dummy_verifying_key(80), dummy_wireguard_key(80), local_addr(10001)).unwrap();
+        overlay
+            .add_peer(
+                "host_01".into(),
+                dummy_verifying_key(80),
+                dummy_wireguard_key(80),
+                local_addr(10001),
+            )
+            .unwrap();
         assert_eq!(overlay.list_peers().len(), 1);
 
         // Adding same host_id again should not fail and not duplicate
-        overlay.add_peer("host_01".into(), dummy_verifying_key(81), dummy_wireguard_key(81), local_addr(10002)).unwrap();
+        overlay
+            .add_peer(
+                "host_01".into(),
+                dummy_verifying_key(81),
+                dummy_wireguard_key(81),
+                local_addr(10002),
+            )
+            .unwrap();
         assert_eq!(overlay.list_peers().len(), 1);
     }
 
@@ -1428,7 +1645,10 @@ mod tests {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::HubAndSpoke);
         let result = overlay.peer_key_exchange("host_ghost");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ClusterOverlayError::PeerNotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ClusterOverlayError::PeerNotFound(_)
+        ));
     }
 
     // =================================================================
@@ -1439,10 +1659,20 @@ mod tests {
     fn key_exchange_fails_in_wrong_state() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::HubAndSpoke);
 
-        overlay.add_peer("host_01".into(), dummy_verifying_key(90), dummy_wireguard_key(90), local_addr(10100)).unwrap();
+        overlay
+            .add_peer(
+                "host_01".into(),
+                dummy_verifying_key(90),
+                dummy_wireguard_key(90),
+                local_addr(10100),
+            )
+            .unwrap();
         // Move to Connected
         overlay.peer_key_exchange("host_01").unwrap();
-        assert_eq!(overlay.get_peer_state("host_01"), Some(PeerState::Connected));
+        assert_eq!(
+            overlay.get_peer_state("host_01"),
+            Some(PeerState::Connected)
+        );
 
         // Second key exchange on already Connected peer should fail
         let result = overlay.peer_key_exchange("host_01");
@@ -1460,7 +1690,10 @@ mod tests {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::FullMesh);
         let result = overlay.remove_peer("host_ghost");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ClusterOverlayError::PeerNotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ClusterOverlayError::PeerNotFound(_)
+        ));
     }
 
     // =================================================================
@@ -1471,11 +1704,16 @@ mod tests {
     fn remove_peer_clears_coordinator() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::HubAndSpoke);
 
-        let memberships = vec![
-            enrolled_membership("host_coord"),
-        ];
+        let memberships = vec![enrolled_membership("host_coord")];
 
-        overlay.add_peer("host_coord".into(), dummy_verifying_key(100), dummy_wireguard_key(100), local_addr(10200)).unwrap();
+        overlay
+            .add_peer(
+                "host_coord".into(),
+                dummy_verifying_key(100),
+                dummy_wireguard_key(100),
+                local_addr(10200),
+            )
+            .unwrap();
         overlay.elect_coordinator(&memberships).unwrap();
         assert_eq!(overlay.coordinator_id(), Some("host_coord".into()));
 
@@ -1491,9 +1729,30 @@ mod tests {
     fn topology_summary_connected_peers_count() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::FullMesh);
 
-        overlay.add_peer("host_a".into(), dummy_verifying_key(110), dummy_wireguard_key(110), local_addr(10301)).unwrap();
-        overlay.add_peer("host_b".into(), dummy_verifying_key(111), dummy_wireguard_key(111), local_addr(10302)).unwrap();
-        overlay.add_peer("host_c".into(), dummy_verifying_key(112), dummy_wireguard_key(112), local_addr(10303)).unwrap();
+        overlay
+            .add_peer(
+                "host_a".into(),
+                dummy_verifying_key(110),
+                dummy_wireguard_key(110),
+                local_addr(10301),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_b".into(),
+                dummy_verifying_key(111),
+                dummy_wireguard_key(111),
+                local_addr(10302),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_c".into(),
+                dummy_verifying_key(112),
+                dummy_wireguard_key(112),
+                local_addr(10303),
+            )
+            .unwrap();
 
         // None connected yet
         let summary = overlay.topology_summary();
@@ -1515,7 +1774,14 @@ mod tests {
     #[test]
     fn hub_and_spoke_fails_with_wrong_mode() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::FullMesh);
-        overlay.add_peer("host_01".into(), dummy_verifying_key(120), dummy_wireguard_key(120), local_addr(10400)).unwrap();
+        overlay
+            .add_peer(
+                "host_01".into(),
+                dummy_verifying_key(120),
+                dummy_wireguard_key(120),
+                local_addr(10400),
+            )
+            .unwrap();
 
         let result = overlay.establish_hub_and_spoke("host_01");
         assert!(result.is_err());
@@ -1534,7 +1800,14 @@ mod tests {
     #[test]
     fn hybrid_relayed_mesh_fails_without_coordinator() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::HybridRelayedMesh);
-        overlay.add_peer("host_01".into(), dummy_verifying_key(130), dummy_wireguard_key(130), local_addr(10500)).unwrap();
+        overlay
+            .add_peer(
+                "host_01".into(),
+                dummy_verifying_key(130),
+                dummy_wireguard_key(130),
+                local_addr(10500),
+            )
+            .unwrap();
 
         let result = overlay.establish_hybrid_relayed_mesh();
         assert!(result.is_err());
@@ -1562,13 +1835,24 @@ mod tests {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::FullMesh)
             .with_emitter(Some(Arc::new(NoopEmitter)));
 
-        overlay.add_peer("host_a".into(), dummy_verifying_key(140), dummy_wireguard_key(140), local_addr(10601)).unwrap();
-        overlay.add_peer("host_b".into(), dummy_verifying_key(141), dummy_wireguard_key(141), local_addr(10602)).unwrap();
+        overlay
+            .add_peer(
+                "host_a".into(),
+                dummy_verifying_key(140),
+                dummy_wireguard_key(140),
+                local_addr(10601),
+            )
+            .unwrap();
+        overlay
+            .add_peer(
+                "host_b".into(),
+                dummy_verifying_key(141),
+                dummy_wireguard_key(141),
+                local_addr(10602),
+            )
+            .unwrap();
 
-        let memberships = vec![
-            enrolled_membership("host_a"),
-            enrolled_membership("host_b"),
-        ];
+        let memberships = vec![enrolled_membership("host_a"), enrolled_membership("host_b")];
         overlay.elect_coordinator(&memberships).unwrap();
         overlay.peer_key_exchange("host_a").unwrap();
         overlay.establish_full_mesh().unwrap();
@@ -1601,12 +1885,22 @@ mod tests {
     fn heartbeat_updates_last_seen() {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::HubAndSpoke);
 
-        overlay.add_peer("host_01".into(), dummy_verifying_key(150), dummy_wireguard_key(150), local_addr(10700)).unwrap();
+        overlay
+            .add_peer(
+                "host_01".into(),
+                dummy_verifying_key(150),
+                dummy_wireguard_key(150),
+                local_addr(10700),
+            )
+            .unwrap();
         overlay.peer_key_exchange("host_01").unwrap();
 
         // Heartbeat on connected peer should succeed
         overlay.heartbeat("host_01").unwrap();
-        assert_eq!(overlay.get_peer_state("host_01"), Some(PeerState::Connected));
+        assert_eq!(
+            overlay.get_peer_state("host_01"),
+            Some(PeerState::Connected)
+        );
     }
 
     // =================================================================
@@ -1618,6 +1912,9 @@ mod tests {
         let overlay = ClusterOverlayNetwork::new(ClusterOverlayMode::HubAndSpoke);
         let result = overlay.heartbeat("host_ghost");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ClusterOverlayError::PeerNotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ClusterOverlayError::PeerNotFound(_)
+        ));
     }
 }

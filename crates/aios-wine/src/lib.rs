@@ -34,7 +34,9 @@ pub use enums::{
 };
 pub use error::WineError;
 pub use evidence::{InMemoryWineEvidenceEmitter, WineEvidenceEmitter};
-pub use installer::{capture_installer, generate_desktop_entry, record_app_manifest, DesktopEntry, InstallerConfig};
+pub use installer::{
+    capture_installer, generate_desktop_entry, record_app_manifest, DesktopEntry, InstallerConfig,
+};
 pub use prefix::{WineAppManifest, WineArchitecture, WinePrefixManager};
 pub use sandbox_profile::{
     allow_wine_system_paths, deny_proc_sys, generate_wine_sandbox_profile, validate_prefix_path,

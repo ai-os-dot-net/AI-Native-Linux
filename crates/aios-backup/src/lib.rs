@@ -21,7 +21,5 @@ pub use capsule_mobility::{CapsuleExport, CapsuleImport};
 pub use contract::ConstitutionalBackupContract;
 pub use crypto_shred::crypto_shred_backup_set;
 pub use dr_runbook::DrRunbook;
-pub use enums::{
-    BackupSetState, CapsuleImportDecision, DrScenario, KeyCustody, RestoreMode,
-};
+pub use enums::{BackupSetState, CapsuleImportDecision, DrScenario, KeyCustody, RestoreMode};
 pub use restore_plan::RestorePlan;

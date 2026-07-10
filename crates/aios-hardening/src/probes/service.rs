@@ -92,11 +92,7 @@ impl ServiceProbe {
                     let prefix = format!("{directive}=");
                     if let Some(line) = content.lines().find(|l| l.trim().starts_with(&prefix)) {
                         present = present.wrapping_add(1);
-                        let actual = line
-                            .trim()
-                            .strip_prefix(&prefix)
-                            .unwrap_or("")
-                            .trim();
+                        let actual = line.trim().strip_prefix(&prefix).unwrap_or("").trim();
                         if actual == *expected_value {
                             matched = matched.wrapping_add(1);
                         }
@@ -135,14 +131,12 @@ impl ServiceProbe {
                     )
                 }
             }
-            None => {
-                (
-                    HardeningProbeStatus::Skipped,
-                    None,
-                    format!("Service unit file not found for '{service_name}'"),
-                    None,
-                )
-            }
+            None => (
+                HardeningProbeStatus::Skipped,
+                None,
+                format!("Service unit file not found for '{service_name}'"),
+                None,
+            ),
         };
 
         Ok(ServiceResult {
@@ -210,10 +204,7 @@ mod tests {
     fn check_multiple_services_returns_correct_count() {
         let probe = ServiceProbe::new();
         let results = probe
-            .check_multiple_services(&[
-                "nonexistent-fake1.service",
-                "nonexistent-fake2.service",
-            ]);
+            .check_multiple_services(&["nonexistent-fake1.service", "nonexistent-fake2.service"]);
         assert!(results.is_ok());
         let r = results.unwrap();
         assert_eq!(r.len(), 2);

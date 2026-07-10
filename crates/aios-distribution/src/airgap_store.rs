@@ -267,7 +267,8 @@ impl AirgapAuditLog {
             hasher.update(pid.as_bytes());
         }
         hasher.update(entry.details.as_bytes());
-        self.evidence_hashes.push(hasher.finalize().to_hex().to_string());
+        self.evidence_hashes
+            .push(hasher.finalize().to_hex().to_string());
 
         self.events.push(entry);
     }
@@ -276,7 +277,6 @@ impl AirgapAuditLog {
     ///
     /// Returns `Ok(true)` if the chain is intact, `Ok(false)` if any hash
     /// link is broken.
-    #[must_use]
     pub fn verify_chain(&self) -> Result<bool, DistributionError> {
         if self.evidence_hashes.is_empty() {
             return Ok(true);
@@ -366,7 +366,6 @@ impl AirgapStoreBuilder {
     /// # Errors
     ///
     /// Returns `Internal` if the mirror is not a `Local` semantic.
-    #[must_use]
     pub fn build_from_mirror(
         &self,
         mirror_endpoint: &MirrorEndpoint,
@@ -417,16 +416,21 @@ impl AirgapStoreBuilder {
     /// The `signed_envelope` is a BLAKE3 hash covering the update identity.
     /// `requires_reboot` is set when any delta or new package has format
     /// `"kernel"` or `"system"`.
-    #[must_use]
     pub fn build_incremental_update(
         &self,
         base: &AirgapStoreManifest,
         target: &AirgapStoreManifest,
     ) -> Result<AirgapUpdateSet, DistributionError> {
-        let base_map: std::collections::BTreeMap<&str, &AirgapPackage> =
-            base.packages.iter().map(|p| (p.package_id.as_str(), p)).collect();
-        let target_map: std::collections::BTreeMap<&str, &AirgapPackage> =
-            target.packages.iter().map(|p| (p.package_id.as_str(), p)).collect();
+        let base_map: std::collections::BTreeMap<&str, &AirgapPackage> = base
+            .packages
+            .iter()
+            .map(|p| (p.package_id.as_str(), p))
+            .collect();
+        let target_map: std::collections::BTreeMap<&str, &AirgapPackage> = target
+            .packages
+            .iter()
+            .map(|p| (p.package_id.as_str(), p))
+            .collect();
 
         let mut delta_packages: Vec<AirgapPackage> = Vec::new();
         let mut new_packages: Vec<AirgapPackage> = Vec::new();
@@ -494,7 +498,6 @@ impl AirgapStoreBuilder {
     /// 3. Validate `total_size_bytes` matches the sum of all `size_bytes`.
     ///
     /// Returns `Ok(true)` when all checks pass, `Ok(false)` on any mismatch.
-    #[must_use]
     pub fn verify_store_integrity(
         &self,
         manifest: &AirgapStoreManifest,
@@ -701,9 +704,7 @@ mod tests {
 
         manifest.total_packages = 999;
 
-        let ok = builder
-            .verify_store_integrity(&manifest)
-            .expect("verify");
+        let ok = builder.verify_store_integrity(&manifest).expect("verify");
         assert!(!ok);
     }
 
@@ -719,9 +720,7 @@ mod tests {
 
         manifest.total_size_bytes = 0;
 
-        let ok = builder
-            .verify_store_integrity(&manifest)
-            .expect("verify");
+        let ok = builder.verify_store_integrity(&manifest).expect("verify");
         assert!(!ok);
     }
 
@@ -817,7 +816,7 @@ mod tests {
         let pkg = sample_package("pkg:acme:app", "1.0.0", 1024);
 
         let base = builder
-            .build_from_mirror(&ep, &[pkg.clone()], "oas_base", "snap_1")
+            .build_from_mirror(&ep, std::slice::from_ref(&pkg), "oas_base", "snap_1")
             .expect("base");
         let target = builder
             .build_from_mirror(&ep, &[pkg], "oas_target", "snap_2")
@@ -852,7 +851,10 @@ mod tests {
             .build_incremental_update(&base, &target)
             .expect("incremental update");
 
-        assert!(update.requires_reboot, "kernel-format package must require reboot");
+        assert!(
+            update.requires_reboot,
+            "kernel-format package must require reboot"
+        );
     }
 
     // ── estimate_transfer_size ─────────────────────────────────────────
@@ -937,8 +939,10 @@ mod tests {
 
     #[test]
     fn audit_event_wire_names_are_distinct() {
-        let names: std::collections::BTreeSet<&str> =
-            AirgapAuditEvent::all().iter().map(|v| v.wire_name()).collect();
+        let names: std::collections::BTreeSet<&str> = AirgapAuditEvent::all()
+            .iter()
+            .map(|v| v.wire_name())
+            .collect();
         assert_eq!(names.len(), 4, "all 4 wire_names must be distinct");
     }
 
@@ -971,7 +975,7 @@ mod tests {
         assert!(log.events.is_empty());
         assert!(log.evidence_hashes.is_empty());
 
-        let _ = log.record_event(
+        log.record_event(
             AirgapAuditEvent::AirgapStoreBuilt,
             None,
             "built from mirror psm_01",
@@ -987,13 +991,13 @@ mod tests {
     fn audit_log_records_multiple_events_with_chain() {
         let mut log = AirgapAuditLog::new("oas_chain_test");
 
-        let _ = log.record_event(AirgapAuditEvent::AirgapStoreBuilt, None, "built");
-        let _ = log.record_event(
+        log.record_event(AirgapAuditEvent::AirgapStoreBuilt, None, "built");
+        log.record_event(
             AirgapAuditEvent::AirgapStoreVerified,
             None,
             "integrity pass",
         );
-        let _ = log.record_event(
+        log.record_event(
             AirgapAuditEvent::AirgapPackageInstalled,
             Some("pkg:acme:app".into()),
             "installed v1.0.0",
@@ -1029,11 +1033,13 @@ mod tests {
             ("\"nas_share\"", AirgapStoreMedium::NasShare),
             ("\"sneaker_net\"", AirgapStoreMedium::SneakerNet),
             ("\"optical_disc\"", AirgapStoreMedium::OpticalDisc),
-            ("\"satellite_downlink\"", AirgapStoreMedium::SatelliteDownlink),
+            (
+                "\"satellite_downlink\"",
+                AirgapStoreMedium::SatelliteDownlink,
+            ),
         ];
         for (json, expected) in &all_cases {
-            let parsed: AirgapStoreMedium =
-                serde_json::from_str(json).expect("deserialize medium");
+            let parsed: AirgapStoreMedium = serde_json::from_str(json).expect("deserialize medium");
             assert_eq!(parsed, *expected, "failed on {json}");
         }
     }

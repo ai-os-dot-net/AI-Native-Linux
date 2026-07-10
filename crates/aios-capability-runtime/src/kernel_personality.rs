@@ -194,7 +194,11 @@ impl KernelCapabilityMatrix {
     ///
     /// If the personality was already registered, its capability set is
     /// **replaced** with the new vector.
-    pub fn register(&mut self, personality: KernelPersonality, capabilities: Vec<KernelCapability>) {
+    pub fn register(
+        &mut self,
+        personality: KernelPersonality,
+        capabilities: Vec<KernelCapability>,
+    ) {
         self.entries.insert(personality, capabilities);
     }
 
@@ -457,7 +461,10 @@ mod tests {
         );
         let decision = matrix.admit(
             &microvm(),
-            &[KernelCapability::SyscallFilter, KernelCapability::TpmAttestation],
+            &[
+                KernelCapability::SyscallFilter,
+                KernelCapability::TpmAttestation,
+            ],
         );
         assert!(matches!(decision, KernelAdmissionDecision::Rejected(_)));
         if let KernelAdmissionDecision::Rejected(reason) = decision {
@@ -524,7 +531,10 @@ mod tests {
     fn kernel_personality_label() {
         assert_eq!(linux_6x().label(), "Linux/6.x");
         assert_eq!(KernelPersonality::FreeBsd.label(), "FreeBSD");
-        assert_eq!(KernelPersonality::Custom("my-os".into()).label(), "Custom/my-os");
+        assert_eq!(
+            KernelPersonality::Custom("my-os".into()).label(),
+            "Custom/my-os"
+        );
     }
 
     #[test]

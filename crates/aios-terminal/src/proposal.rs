@@ -118,6 +118,15 @@ pub enum ProposalValidationError {
     MissingEvidenceReceipt,
 }
 
+/// Proposal lifecycle transition failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProposalTransitionError {
+    /// Current state that rejected the transition.
+    pub from: ProposalState,
+    /// Requested target state.
+    pub to: ProposalState,
+}
+
 /// An AI-generated action proposal — the core typed object that flows through
 /// the terminal pipeline (submit → classify → compile → preflight → approve
 /// → execute → verify → evidence).
@@ -210,9 +219,7 @@ impl AIActionProposal {
             });
         }
         if self.evidence_receipt.is_none() {
-            return ProposalValidation::Invalid(
-                ProposalValidationError::MissingEvidenceReceipt,
-            );
+            return ProposalValidation::Invalid(ProposalValidationError::MissingEvidenceReceipt);
         }
         if let Some("AI_NATIVE_SUBJECT" | "AI_AGENT_CAPSULE") = actor_kind {
             if self.state == ProposalState::Approved || self.state == ProposalState::Executed {
@@ -227,69 +234,51 @@ impl AIActionProposal {
     /// Transition the proposal to `Approved` state.
     ///
     /// This must only be called after a human operator explicitly approves.
-    /// Returns `Ok(())` on success or `Err(())` if the current state does not
-    /// allow this transition.
-    pub fn approve(&mut self) -> Result<(), ()> {
-        if self.state.can_transition_to(ProposalState::Approved) {
-            self.state = ProposalState::Approved;
-            Ok(())
-        } else {
-            Err(())
-        }
+    /// Returns `Ok(())` on success or a typed transition error if the current
+    /// state does not allow this transition.
+    pub fn approve(&mut self) -> Result<(), ProposalTransitionError> {
+        self.transition_to(ProposalState::Approved)
     }
 
     /// Transition the proposal to `Rejected` state.
     ///
     /// This can be called from `UnderReview` or via operator rejection.
-    pub fn reject(&mut self) -> Result<(), ()> {
-        if self.state.can_transition_to(ProposalState::Rejected) {
-            self.state = ProposalState::Rejected;
-            Ok(())
-        } else {
-            Err(())
-        }
+    pub fn reject(&mut self) -> Result<(), ProposalTransitionError> {
+        self.transition_to(ProposalState::Rejected)
     }
 
     /// Transition the proposal to `Revoked` state.
     ///
     /// Only valid from `Approved` — corresponds to an emergency stop or
     /// operator revocation before execution.
-    pub fn revoke(&mut self) -> Result<(), ()> {
-        if self.state.can_transition_to(ProposalState::Revoked) {
-            self.state = ProposalState::Revoked;
-            Ok(())
-        } else {
-            Err(())
-        }
+    pub fn revoke(&mut self) -> Result<(), ProposalTransitionError> {
+        self.transition_to(ProposalState::Revoked)
     }
 
     /// Transition the proposal to `Proposed` state (from `Draft`).
-    pub fn submit(&mut self) -> Result<(), ()> {
-        if self.state.can_transition_to(ProposalState::Proposed) {
-            self.state = ProposalState::Proposed;
-            Ok(())
-        } else {
-            Err(())
-        }
+    pub fn submit(&mut self) -> Result<(), ProposalTransitionError> {
+        self.transition_to(ProposalState::Proposed)
     }
 
     /// Transition the proposal to `UnderReview` state (from `Proposed`).
-    pub fn move_to_review(&mut self) -> Result<(), ()> {
-        if self.state.can_transition_to(ProposalState::UnderReview) {
-            self.state = ProposalState::UnderReview;
-            Ok(())
-        } else {
-            Err(())
-        }
+    pub fn move_to_review(&mut self) -> Result<(), ProposalTransitionError> {
+        self.transition_to(ProposalState::UnderReview)
     }
 
     /// Transition the proposal to `Executed` state (from `Approved`).
-    pub fn mark_executed(&mut self) -> Result<(), ()> {
-        if self.state.can_transition_to(ProposalState::Executed) {
-            self.state = ProposalState::Executed;
+    pub fn mark_executed(&mut self) -> Result<(), ProposalTransitionError> {
+        self.transition_to(ProposalState::Executed)
+    }
+
+    fn transition_to(&mut self, target: ProposalState) -> Result<(), ProposalTransitionError> {
+        if self.state.can_transition_to(target) {
+            self.state = target;
             Ok(())
         } else {
-            Err(())
+            Err(ProposalTransitionError {
+                from: self.state,
+                to: target,
+            })
         }
     }
 
@@ -314,10 +303,7 @@ impl AIActionProposal {
 mod tests {
     use super::*;
 
-    fn make_proposal(
-        confidence: f64,
-        risk_class: ProposalRiskClass,
-    ) -> AIActionProposal {
+    fn make_proposal(confidence: f64, risk_class: ProposalRiskClass) -> AIActionProposal {
         let mut p = AIActionProposal::new(
             "subj_test",
             "model_gpt",
@@ -381,7 +367,8 @@ mod tests {
 
     #[test]
     fn fsm_under_review_to_approved() {
-        let mut p = make_proposal_with_state(0.9, ProposalRiskClass::Low, ProposalState::UnderReview);
+        let mut p =
+            make_proposal_with_state(0.9, ProposalRiskClass::Low, ProposalState::UnderReview);
         p.approve().unwrap();
         assert_eq!(p.state, ProposalState::Approved);
     }
@@ -411,7 +398,8 @@ mod tests {
 
     #[test]
     fn fsm_under_review_reject() {
-        let mut p = make_proposal_with_state(0.9, ProposalRiskClass::Low, ProposalState::UnderReview);
+        let mut p =
+            make_proposal_with_state(0.9, ProposalRiskClass::Low, ProposalState::UnderReview);
         p.reject().unwrap();
         assert_eq!(p.state, ProposalState::Rejected);
     }
@@ -555,7 +543,10 @@ mod tests {
 
     #[test]
     fn risk_class_confidence_floor_low() {
-        assert!((ProposalRiskClass::Low.confidence_floor() - MIN_PROPOSAL_CONFIDENCE).abs() < f64::EPSILON);
+        assert!(
+            (ProposalRiskClass::Low.confidence_floor() - MIN_PROPOSAL_CONFIDENCE).abs()
+                < f64::EPSILON
+        );
     }
 
     #[test]

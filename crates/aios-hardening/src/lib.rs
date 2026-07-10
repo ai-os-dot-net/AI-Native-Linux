@@ -31,13 +31,11 @@ pub mod probes;
 /// Centralized hardening scanner with probe registry and result aggregation.
 pub mod scanner;
 
-pub use enums::{
-    HardeningProbeStatus, HardeningStandard, ProbeClass, ProbeSeverity,
-};
+pub use enums::{HardeningProbeStatus, HardeningStandard, ProbeClass, ProbeSeverity};
 pub use error::HardeningError;
 pub use probes::{
-    BootChainProbe, BootChainResult, CryptoProbe, CryptoResult, MacProbe,
-    MacResult, ServiceProbe, ServiceResult,
+    BootChainProbe, BootChainResult, CryptoProbe, CryptoResult, MacProbe, MacResult, ServiceProbe,
+    ServiceResult,
 };
 pub use scanner::{HardeningScanResult, HardeningScanner, ProbeResult};
 

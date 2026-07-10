@@ -53,10 +53,7 @@ impl SignedModelBundle {
     ///   profiles.
     #[must_use]
     pub fn is_routing_eligible(&self) -> bool {
-        match self.trust_level {
-            ModelBundleTrustLevel::Untrusted => false,
-            _ => true,
-        }
+        !matches!(self.trust_level, ModelBundleTrustLevel::Untrusted)
     }
 }
 
@@ -96,13 +93,8 @@ mod tests {
 
     #[test]
     fn local_only_bundle_is_routing_eligible() {
-        let bundle = SignedModelBundle::new(
-            "m1",
-            "local",
-            ModelBundleTrustLevel::LocalOnly,
-            "abc123",
-            0,
-        );
+        let bundle =
+            SignedModelBundle::new("m1", "local", ModelBundleTrustLevel::LocalOnly, "abc123", 0);
         assert!(bundle.is_routing_eligible());
     }
 
@@ -132,37 +124,19 @@ mod tests {
 
     #[test]
     fn bundle_id_starts_with_smb_prefix() {
-        let bundle = SignedModelBundle::new(
-            "m1",
-            "p",
-            ModelBundleTrustLevel::AiosVerified,
-            "d",
-            4,
-        );
+        let bundle = SignedModelBundle::new("m1", "p", ModelBundleTrustLevel::AiosVerified, "d", 4);
         assert!(bundle.bundle_id.starts_with("smb_"));
     }
 
     #[test]
     fn slsa_level_zero_is_stored_correctly() {
-        let bundle = SignedModelBundle::new(
-            "m1",
-            "p",
-            ModelBundleTrustLevel::LocalOnly,
-            "d",
-            0,
-        );
+        let bundle = SignedModelBundle::new("m1", "p", ModelBundleTrustLevel::LocalOnly, "d", 0);
         assert_eq!(bundle.slsa_level, 0);
     }
 
     #[test]
     fn slsa_level_four_is_stored_correctly() {
-        let bundle = SignedModelBundle::new(
-            "m1",
-            "p",
-            ModelBundleTrustLevel::AiosVerified,
-            "d",
-            4,
-        );
+        let bundle = SignedModelBundle::new("m1", "p", ModelBundleTrustLevel::AiosVerified, "d", 4);
         assert_eq!(bundle.slsa_level, 4);
     }
 }

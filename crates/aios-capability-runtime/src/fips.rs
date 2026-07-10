@@ -88,7 +88,11 @@ impl fmt::Display for CryptoProvider {
             "{} (cert #{}, {})",
             self.name,
             self.certificate,
-            if self.validated { "VALIDATED" } else { "UNVALIDATED" }
+            if self.validated {
+                "VALIDATED"
+            } else {
+                "UNVALIDATED"
+            }
         )
     }
 }
@@ -124,22 +128,33 @@ impl ComplianceOperation {
     pub fn approved_algorithms(self) -> &'static [&'static str] {
         match self {
             Self::Encrypt | Self::Decrypt => &[
-                "AES-128-GCM", "AES-192-GCM", "AES-256-GCM",
-                "AES-128-CBC", "AES-256-CBC", "AES-128-CTR", "AES-256-CTR",
+                "AES-128-GCM",
+                "AES-192-GCM",
+                "AES-256-GCM",
+                "AES-128-CBC",
+                "AES-256-CBC",
+                "AES-128-CTR",
+                "AES-256-CTR",
                 "ChaCha20-Poly1305",
             ],
             Self::Sign | Self::Verify => &[
-                "RSA-2048-SHA256", "RSA-3072-SHA384", "RSA-4096-SHA512",
-                "ECDSA-P256-SHA256", "ECDSA-P384-SHA384", "ECDSA-P521-SHA512",
+                "RSA-2048-SHA256",
+                "RSA-3072-SHA384",
+                "RSA-4096-SHA512",
+                "ECDSA-P256-SHA256",
+                "ECDSA-P384-SHA384",
+                "ECDSA-P521-SHA512",
                 "Ed25519",
             ],
             Self::Hash => &[
-                "SHA-256", "SHA-384", "SHA-512",
-                "SHA3-256", "SHA3-384", "SHA3-512",
+                "SHA-256", "SHA-384", "SHA-512", "SHA3-256", "SHA3-384", "SHA3-512",
             ],
             Self::Kdf => &[
-                "HKDF-SHA256", "HKDF-SHA384", "HKDF-SHA512",
-                "PBKDF2-SHA256", "PBKDF2-SHA384",
+                "HKDF-SHA256",
+                "HKDF-SHA384",
+                "HKDF-SHA512",
+                "PBKDF2-SHA256",
+                "PBKDF2-SHA384",
             ],
         }
     }
@@ -148,7 +163,14 @@ impl ComplianceOperation {
 
     #[must_use]
     pub fn all() -> [Self; Self::COUNT] {
-        [Self::Encrypt, Self::Decrypt, Self::Sign, Self::Verify, Self::Hash, Self::Kdf]
+        [
+            Self::Encrypt,
+            Self::Decrypt,
+            Self::Sign,
+            Self::Verify,
+            Self::Hash,
+            Self::Kdf,
+        ]
     }
 }
 
@@ -162,7 +184,7 @@ impl fmt::Display for ComplianceOperation {
 // FipsBoundary — crypto boundary with active provider and algorithm policy
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FipsBoundary {
     pub mode: FipsMode,
     pub active_provider: Option<CryptoProvider>,
@@ -236,11 +258,13 @@ impl FipsBoundary {
     }
 
     pub fn allow_algorithm(&mut self, algorithm: impl Into<String>) {
-        self.allowed_algorithms.insert(normalize_algorithm_name(&algorithm.into()));
+        self.allowed_algorithms
+            .insert(normalize_algorithm_name(&algorithm.into()));
     }
 
     pub fn deny_algorithm(&mut self, algorithm: impl Into<String>) {
-        self.allowed_algorithms.remove(&normalize_algorithm_name(&algorithm.into()));
+        self.allowed_algorithms
+            .remove(&normalize_algorithm_name(&algorithm.into()));
     }
 
     #[must_use]
@@ -251,16 +275,6 @@ impl FipsBoundary {
         self.active_provider
             .as_ref()
             .is_some_and(|p| p.is_validated())
-    }
-}
-
-impl Default for FipsBoundary {
-    fn default() -> Self {
-        Self {
-            mode: FipsMode::default(),
-            active_provider: None,
-            allowed_algorithms: HashSet::new(),
-        }
     }
 }
 
@@ -607,6 +621,7 @@ pub struct FipsCryptoOperation {
 
 impl FipsCryptoOperation {
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         operation_id: impl Into<String>,
         algorithm: FipsAlgorithm,
@@ -633,7 +648,11 @@ impl FipsCryptoOperation {
         }
     }
 
-    pub fn attach_parallel_sha_evidence(&mut self, sha256: impl Into<String>, sha512: impl Into<String>) {
+    pub fn attach_parallel_sha_evidence(
+        &mut self,
+        sha256: impl Into<String>,
+        sha512: impl Into<String>,
+    ) {
         self.sha256_evidence = Some(sha256.into());
         self.sha512_evidence = Some(sha512.into());
     }
@@ -727,13 +746,11 @@ impl FipsCryptoEvidenceLog {
             return FipsEvidenceType::FipsAlgorithmBlocked;
         }
 
-        if self.fips_mode.is_active() {
-            if op.sha256_evidence.is_none() {
-                op.attach_parallel_sha_evidence(
-                    compute_sha256_placeholder(&op),
-                    compute_sha512_placeholder(&op),
-                );
-            }
+        if self.fips_mode.is_active() && op.sha256_evidence.is_none() {
+            op.attach_parallel_sha_evidence(
+                compute_sha256_placeholder(&op),
+                compute_sha512_placeholder(&op),
+            );
         }
 
         self.operations.push(op);
@@ -750,8 +767,7 @@ impl FipsCryptoEvidenceLog {
                 if !self.fips_mode.is_active() {
                     return true;
                 }
-                !op.fips_status.is_blocked()
-                    || op.algorithm.is_allowed_as_evidence_hash()
+                !op.fips_status.is_blocked() || op.algorithm.is_allowed_as_evidence_hash()
             })
     }
 
@@ -838,13 +854,7 @@ impl FipsSelfTestRunner {
             FipsAlgorithm::Sha256 => self.kat_sha256(),
             FipsAlgorithm::Sha512 => self.kat_sha512(),
             FipsAlgorithm::AesGcm => self.kat_aes_gcm(),
-            _ => {
-                if algorithm.is_fips_approved() {
-                    true
-                } else {
-                    false
-                }
-            }
+            _ => algorithm.is_fips_approved(),
         };
         let st = FipsSelfTest::new(
             format!("kat_{}_{}", algorithm.label(), self.test_records.len()),
@@ -869,13 +879,7 @@ impl FipsSelfTestRunner {
             | FipsAlgorithm::Rsa2048
             | FipsAlgorithm::Rsa3072
             | FipsAlgorithm::Rsa4096 => true,
-            _ => {
-                if algorithm.is_fips_approved() {
-                    true
-                } else {
-                    false
-                }
-            }
+            _ => algorithm.is_fips_approved(),
         };
         let st = FipsSelfTest::new(
             format!("pct_{}_{}", algorithm.label(), self.test_records.len()),
@@ -977,10 +981,7 @@ pub struct FipsBoundaryValidation {
 
 impl FipsBoundaryValidation {
     #[must_use]
-    pub fn new(
-        overlay_state: FipsOverlayState,
-        fips_mode: FipsMode,
-    ) -> Self {
+    pub fn new(overlay_state: FipsOverlayState, fips_mode: FipsMode) -> Self {
         Self {
             overlay_state,
             evidence_log: FipsCryptoEvidenceLog::new(fips_mode),
@@ -1027,7 +1028,10 @@ impl FipsBoundaryValidation {
             "Operations blocked: {}\n",
             self.evidence_log.blocked_count()
         ));
-        r.push_str(&format!("Drift events: {}\n", self.evidence_log.drift_count()));
+        r.push_str(&format!(
+            "Drift events: {}\n",
+            self.evidence_log.drift_count()
+        ));
         r.push_str(&format!(
             "Self-tests passed: {}\n",
             self.runner.passed_count()
@@ -1056,9 +1060,7 @@ impl FipsBoundaryValidation {
                 self.overlay_state == FipsOverlayState::FipsOff
                     || self.overlay_state == FipsOverlayState::FipsBlocked
             }
-            None => {
-                self.overlay_state != FipsOverlayState::FipsActive
-            }
+            None => self.overlay_state != FipsOverlayState::FipsActive,
         }
     }
 
@@ -1077,8 +1079,11 @@ impl FipsBoundaryValidation {
     pub fn record_self_test(&mut self, st: FipsSelfTest) {
         self.evidence_log.record_self_test(st.clone());
         if !st.result {
-            self.validation_errors
-                .push(format!("self_test_failed: {} {}", st.algorithm.label(), st.test_type.label()));
+            self.validation_errors.push(format!(
+                "self_test_failed: {} {}",
+                st.algorithm.label(),
+                st.test_type.label()
+            ));
         }
     }
 }
@@ -1125,13 +1130,14 @@ impl ParallelShaEvidence {
 
 #[allow(clippy::unnecessary_wraps)]
 fn format_iso8601_now() -> String {
-    chrono::Utc::now()
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string()
+    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
 fn hex_lower_bytes(data: &[u8]) -> String {
-    data.iter().map(|b| format!("{:02x}", b)).collect::<Vec<String>>().join("")
+    data.iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<Vec<String>>()
+        .join("")
 }
 
 fn compute_sha256_placeholder(op: &FipsCryptoOperation) -> String {
@@ -1533,20 +1539,14 @@ mod tests {
 
     #[test]
     fn boundary_validation_inactive_state() {
-        let mut bv = FipsBoundaryValidation::new(
-            FipsOverlayState::FipsOff,
-            FipsMode::Standard,
-        );
+        let mut bv = FipsBoundaryValidation::new(FipsOverlayState::FipsOff, FipsMode::Standard);
         let state = bv.validate_crypto_module();
         assert_eq!(state, FipsOverlayState::FipsOff);
     }
 
     #[test]
     fn boundary_validation_export_report() {
-        let bv = FipsBoundaryValidation::new(
-            FipsOverlayState::FipsActive,
-            FipsMode::Strict,
-        );
+        let bv = FipsBoundaryValidation::new(FipsOverlayState::FipsActive, FipsMode::Strict);
         let report = bv.export_boundary_report();
         assert!(report.contains("FIPS Crypto Boundary Report"));
         assert!(report.contains("FIPS_ACTIVE"));
@@ -1554,10 +1554,7 @@ mod tests {
 
     #[test]
     fn boundary_validation_cmvp_compliance() {
-        let bv = FipsBoundaryValidation::new(
-            FipsOverlayState::FipsActive,
-            FipsMode::Strict,
-        );
+        let bv = FipsBoundaryValidation::new(FipsOverlayState::FipsActive, FipsMode::Strict);
         assert!(bv.check_cmvp_compliance(Some("CMVP-40001")));
         assert!(!bv.check_cmvp_compliance(None));
         assert!(!bv.check_cmvp_compliance(Some("")));
@@ -1582,11 +1579,26 @@ mod tests {
 
     #[test]
     fn evidence_type_labels() {
-        assert_eq!(FipsEvidenceType::FipsOperationRecorded.label(), "FIPS_OPERATION_RECORDED");
-        assert_eq!(FipsEvidenceType::FipsSelfTestPassed.label(), "FIPS_SELF_TEST_PASSED");
-        assert_eq!(FipsEvidenceType::FipsSelfTestFailed.label(), "FIPS_SELF_TEST_FAILED");
-        assert_eq!(FipsEvidenceType::FipsDriftDetected.label(), "FIPS_DRIFT_DETECTED");
-        assert_eq!(FipsEvidenceType::FipsAlgorithmBlocked.label(), "FIPS_ALGORITHM_BLOCKED");
+        assert_eq!(
+            FipsEvidenceType::FipsOperationRecorded.label(),
+            "FIPS_OPERATION_RECORDED"
+        );
+        assert_eq!(
+            FipsEvidenceType::FipsSelfTestPassed.label(),
+            "FIPS_SELF_TEST_PASSED"
+        );
+        assert_eq!(
+            FipsEvidenceType::FipsSelfTestFailed.label(),
+            "FIPS_SELF_TEST_FAILED"
+        );
+        assert_eq!(
+            FipsEvidenceType::FipsDriftDetected.label(),
+            "FIPS_DRIFT_DETECTED"
+        );
+        assert_eq!(
+            FipsEvidenceType::FipsAlgorithmBlocked.label(),
+            "FIPS_ALGORITHM_BLOCKED"
+        );
     }
 
     // -----------------------------------------------------------------------

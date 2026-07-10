@@ -46,7 +46,7 @@ pub enum OllamaError {
 ///
 /// All fields are `Option` — `None` values are omitted from the serialised
 /// JSON payload so the server applies its own defaults.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct OllamaOptions {
     /// Sampling temperature (0.0–2.0).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -66,19 +66,6 @@ pub struct OllamaOptions {
     /// Size of the context window.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub num_ctx: Option<u32>,
-}
-
-impl Default for OllamaOptions {
-    fn default() -> Self {
-        Self {
-            temperature: None,
-            top_p: None,
-            top_k: None,
-            num_predict: None,
-            seed: None,
-            num_ctx: None,
-        }
-    }
 }
 
 /// Request body for `POST /api/generate`.
@@ -227,7 +214,7 @@ impl OllamaAdapter {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(timeout_seconds))
             .build()
-            .expect("reqwest::Client::builder with standard config must not fail");
+            .unwrap_or_else(|_| reqwest::Client::new());
 
         Self {
             base_url: base_url.to_string(),
@@ -275,8 +262,6 @@ impl OllamaAdapter {
             .map_err(|e| {
                 if e.is_timeout() {
                     OllamaError::Timeout
-                } else if e.is_connect() {
-                    OllamaError::ConnectionFailed(e.to_string())
                 } else {
                     OllamaError::ConnectionFailed(e.to_string())
                 }
@@ -291,33 +276,21 @@ impl OllamaAdapter {
             });
         }
 
-        let parsed: OllamaGenerateResponse =
-            response.json().await.map_err(|e| {
-                if e.is_timeout() {
-                    OllamaError::Timeout
-                } else {
-                    OllamaError::ParseError(e.to_string())
-                }
-            })?;
+        let parsed: OllamaGenerateResponse = response.json().await.map_err(|e| {
+            if e.is_timeout() {
+                OllamaError::Timeout
+            } else {
+                OllamaError::ParseError(e.to_string())
+            }
+        })?;
 
         let latency_ms = start.elapsed().as_millis() as u64;
 
         if let Some(ref emitter) = self.evidence_emitter {
-            let tokens_in = u32::try_from(
-                parsed.prompt_eval_count.unwrap_or(0),
-            )
-            .unwrap_or(u32::MAX);
-            let tokens_out =
-                u32::try_from(parsed.eval_count.unwrap_or(0)).unwrap_or(u32::MAX);
+            let tokens_in = parsed.prompt_eval_count.unwrap_or(0);
+            let tokens_out = parsed.eval_count.unwrap_or(0);
             let _ = emitter
-                .emit_model_call(
-                    &req.model,
-                    &req.model,
-                    tokens_in,
-                    tokens_out,
-                    0,
-                    latency_ms,
-                )
+                .emit_model_call(&req.model, &req.model, tokens_in, tokens_out, 0, latency_ms)
                 .await;
         }
 
@@ -359,8 +332,6 @@ impl OllamaAdapter {
             .map_err(|e| {
                 if e.is_timeout() {
                     OllamaError::Timeout
-                } else if e.is_connect() {
-                    OllamaError::ConnectionFailed(e.to_string())
                 } else {
                     OllamaError::ConnectionFailed(e.to_string())
                 }
@@ -409,8 +380,6 @@ impl OllamaAdapter {
             .map_err(|e| {
                 if e.is_timeout() {
                     OllamaError::Timeout
-                } else if e.is_connect() {
-                    OllamaError::ConnectionFailed(e.to_string())
                 } else {
                     OllamaError::ConnectionFailed(e.to_string())
                 }
@@ -424,14 +393,13 @@ impl OllamaAdapter {
             )));
         }
 
-        let parsed: OllamaTagsResponse =
-            response.json().await.map_err(|e| {
-                if e.is_timeout() {
-                    OllamaError::Timeout
-                } else {
-                    OllamaError::ParseError(e.to_string())
-                }
-            })?;
+        let parsed: OllamaTagsResponse = response.json().await.map_err(|e| {
+            if e.is_timeout() {
+                OllamaError::Timeout
+            } else {
+                OllamaError::ParseError(e.to_string())
+            }
+        })?;
 
         Ok(parsed.models)
     }
@@ -447,12 +415,7 @@ impl OllamaAdapter {
     /// Returns [`OllamaError::ConnectionFailed`] only for unexpected
     /// transport errors that are not connection-refused or timeout.
     pub async fn health_check(&self) -> Result<bool, OllamaError> {
-        match self
-            .client
-            .get(&self.base_url)
-            .send()
-            .await
-        {
+        match self.client.get(&self.base_url).send().await {
             Ok(response) => Ok(response.status().is_success()),
             Err(e) => {
                 if e.is_connect() || e.is_timeout() {
@@ -527,8 +490,7 @@ mod tests {
             seed: None,
             num_ctx: None,
         };
-        let req =
-            OllamaGenerateRequest::new("llama3", "hello").with_options(options);
+        let req = OllamaGenerateRequest::new("llama3", "hello").with_options(options);
         let json = serde_json::to_value(&req).unwrap();
 
         let opts = &json["options"];
@@ -543,8 +505,7 @@ mod tests {
 
     #[test]
     fn serialize_generate_request_with_system() {
-        let req =
-            OllamaGenerateRequest::new("llama3", "hello").with_system("You are helpful.");
+        let req = OllamaGenerateRequest::new("llama3", "hello").with_system("You are helpful.");
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["system"], "You are helpful.");
     }
@@ -632,8 +593,7 @@ mod tests {
             ]
         }"#;
 
-        let parsed: OllamaTagsResponse =
-            serde_json::from_str(&raw).expect("deserialize tags");
+        let parsed: OllamaTagsResponse = serde_json::from_str(raw).expect("deserialize tags");
 
         assert_eq!(parsed.models.len(), 2);
         assert_eq!(parsed.models[0].name, "llama3:latest");
@@ -644,10 +604,10 @@ mod tests {
 
     #[test]
     fn deserialize_model_info_minimal() {
-        let raw = r#"{"name":"codellama:7b","modified_at":"2024-06-01T00:00:00Z","size":4000000000}"#;
+        let raw =
+            r#"{"name":"codellama:7b","modified_at":"2024-06-01T00:00:00Z","size":4000000000}"#;
 
-        let info: OllamaModelInfo =
-            serde_json::from_str(raw).expect("deserialize model info");
+        let info: OllamaModelInfo = serde_json::from_str(raw).expect("deserialize model info");
 
         assert_eq!(info.name, "codellama:7b");
         assert_eq!(info.size, 4_000_000_000);
@@ -739,10 +699,8 @@ mod tests {
             .collect()
             .await;
 
-        let results: Vec<OllamaGenerateResponse> = lines
-            .into_iter()
-            .map(|r| r.expect("parse ok"))
-            .collect();
+        let results: Vec<OllamaGenerateResponse> =
+            lines.into_iter().map(|r| r.expect("parse ok")).collect();
 
         assert_eq!(results.len(), 5);
         assert!(!results[0].done);
@@ -789,10 +747,7 @@ mod tests {
 
         assert_eq!(req.model, "mistral");
         assert_eq!(req.prompt, "hi");
-        assert_eq!(
-            req.options.as_ref().and_then(|o| o.temperature),
-            Some(0.5)
-        );
+        assert_eq!(req.options.as_ref().and_then(|o| o.temperature), Some(0.5));
         assert_eq!(req.system.as_deref(), Some("Be concise."));
     }
 }

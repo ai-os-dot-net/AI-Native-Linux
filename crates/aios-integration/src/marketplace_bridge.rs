@@ -121,9 +121,10 @@ impl BillingPlan {
     pub const fn requires_license(&self) -> bool {
         match self {
             Self::Free | Self::OpenSource => false,
-            Self::Freemium | Self::OneTimePurchase | Self::Subscription | Self::EnterpriseLicence => {
-                true
-            }
+            Self::Freemium
+            | Self::OneTimePurchase
+            | Self::Subscription
+            | Self::EnterpriseLicence => true,
         }
     }
 }
@@ -264,16 +265,6 @@ impl MarketplaceIntegration {
     fn publisher_index_ref(&self) -> &Arc<RwLock<HashMap<String, Vec<String>>>> {
         &self.publisher_index
     }
-
-    /// Returns a reference to the shared feed subscriptions.
-    fn feeds_ref(&self) -> &Arc<RwLock<HashMap<String, FeedSubscription>>> {
-        &self.feeds
-    }
-
-    /// Returns a reference to the shared license store.
-    fn licenses_ref(&self) -> &Arc<RwLock<HashMap<String, LicenseVerification>>> {
-        &self.licenses
-    }
 }
 
 impl std::fmt::Debug for MarketplaceIntegration {
@@ -282,7 +273,10 @@ impl std::fmt::Debug for MarketplaceIntegration {
             .field("bridge_id", &self.bridge_id)
             .field("marketplace_endpoint", &self.marketplace_endpoint)
             .field("distribution_endpoint", &self.distribution_endpoint)
-            .field("evidence_emitter", &self.evidence_emitter.as_ref().map(|_| "present"))
+            .field(
+                "evidence_emitter",
+                &self.evidence_emitter.as_ref().map(|_| "present"),
+            )
             .field("local_index", &self.local_index)
             .field("local_details", &self.local_details)
             .field("category_index", &self.category_index)
@@ -421,9 +415,7 @@ impl FeedSubscription {
     pub fn is_stale(&self, stale_after_seconds: i64) -> bool {
         match self.last_synced {
             Some(last) => {
-                let elapsed = Utc::now()
-                    .signed_duration_since(last)
-                    .num_seconds();
+                let elapsed = Utc::now().signed_duration_since(last).num_seconds();
                 elapsed > stale_after_seconds
             }
             None => true,
@@ -463,21 +455,29 @@ impl CapsuleDiscoveryService {
         }
     }
 
+    /// Returns the remote marketplace endpoint backing this discovery service.
+    #[must_use]
+    pub fn marketplace_endpoint(&self) -> &str {
+        &self.marketplace_endpoint
+    }
+
+    /// Returns whether this service has an evidence emitter attached.
+    #[must_use]
+    pub fn has_evidence_emitter(&self) -> bool {
+        self.emitter.is_some()
+    }
+
     /// Searches the local marketplace index for capsules matching `query`.
     ///
     /// Matches against capsule name, description, publisher, category, and tags.
     /// Returns up to `limit` results ranked by relevance (download count + rating).
-    #[must_use]
     #[allow(clippy::unused_async)]
     pub async fn search_marketplace(
         &self,
         query: &str,
         limit: usize,
     ) -> Result<Vec<MarketplaceListing>, IntegrationError> {
-        let index = self
-            .local_index
-            .read()
-            .map_err(|_| lock_poisoned())?;
+        let index = self.local_index.read().map_err(|_| lock_poisoned())?;
 
         let query_lower = query.to_lowercase();
         let mut results: Vec<MarketplaceListing> = index
@@ -487,15 +487,19 @@ impl CapsuleDiscoveryService {
                     || l.description.to_lowercase().contains(&query_lower)
                     || l.publisher_id.to_lowercase().contains(&query_lower)
                     || l.category.to_lowercase().contains(&query_lower)
-                    || l.tags.iter().any(|t| t.to_lowercase().contains(&query_lower))
+                    || l.tags
+                        .iter()
+                        .any(|t| t.to_lowercase().contains(&query_lower))
             })
             .cloned()
             .collect();
 
         results.sort_by(|a, b| {
-            b.downloads
-                .cmp(&a.downloads)
-                .then_with(|| b.rating.partial_cmp(&a.rating).unwrap_or(std::cmp::Ordering::Equal))
+            b.downloads.cmp(&a.downloads).then_with(|| {
+                b.rating
+                    .partial_cmp(&a.rating)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         });
 
         results.truncate(limit);
@@ -512,10 +516,7 @@ impl CapsuleDiscoveryService {
         &self,
         listing_id: &str,
     ) -> Result<CapsuleDetail, IntegrationError> {
-        let details = self
-            .local_details
-            .read()
-            .map_err(|_| lock_poisoned())?;
+        let details = self.local_details.read().map_err(|_| lock_poisoned())?;
 
         details
             .get(listing_id)
@@ -524,26 +525,19 @@ impl CapsuleDiscoveryService {
     }
 
     /// Returns listings in a given category.
-    #[must_use]
     #[allow(clippy::unused_async)]
     pub async fn browse_category(
         &self,
         category: &str,
     ) -> Result<Vec<MarketplaceListing>, IntegrationError> {
-        let cat_index = self
-            .category_index
-            .read()
-            .map_err(|_| lock_poisoned())?;
+        let cat_index = self.category_index.read().map_err(|_| lock_poisoned())?;
 
         let listing_ids = match cat_index.get(category) {
             Some(ids) => ids.clone(),
             None => return Ok(Vec::new()),
         };
 
-        let index = self
-            .local_index
-            .read()
-            .map_err(|_| lock_poisoned())?;
+        let index = self.local_index.read().map_err(|_| lock_poisoned())?;
 
         let results: Vec<MarketplaceListing> = listing_ids
             .iter()
@@ -554,13 +548,12 @@ impl CapsuleDiscoveryService {
     }
 
     /// Returns featured listings (highest-rated, verified capsules).
-    #[must_use]
     #[allow(clippy::unused_async)]
-    pub async fn get_featured(&self, limit: usize) -> Result<Vec<MarketplaceListing>, IntegrationError> {
-        let index = self
-            .local_index
-            .read()
-            .map_err(|_| lock_poisoned())?;
+    pub async fn get_featured(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<MarketplaceListing>, IntegrationError> {
+        let index = self.local_index.read().map_err(|_| lock_poisoned())?;
 
         let mut results: Vec<MarketplaceListing> = index
             .values()
@@ -580,26 +573,19 @@ impl CapsuleDiscoveryService {
     }
 
     /// Returns all listings from a given publisher.
-    #[must_use]
     #[allow(clippy::unused_async)]
     pub async fn get_publisher_listings(
         &self,
         publisher_id: &str,
     ) -> Result<Vec<MarketplaceListing>, IntegrationError> {
-        let pub_index = self
-            .publisher_index
-            .read()
-            .map_err(|_| lock_poisoned())?;
+        let pub_index = self.publisher_index.read().map_err(|_| lock_poisoned())?;
 
         let listing_ids = match pub_index.get(publisher_id) {
             Some(ids) => ids.clone(),
             None => return Ok(Vec::new()),
         };
 
-        let index = self
-            .local_index
-            .read()
-            .map_err(|_| lock_poisoned())?;
+        let index = self.local_index.read().map_err(|_| lock_poisoned())?;
 
         let results: Vec<MarketplaceListing> = listing_ids
             .iter()
@@ -613,16 +599,12 @@ impl CapsuleDiscoveryService {
     ///
     /// Returns a topologically sorted list of all dependencies (including
     /// transitive) that must be installed before `listing_id`.
-    #[must_use]
     #[allow(clippy::unused_async)]
     pub async fn resolve_dependencies(
         &self,
         listing_id: &str,
     ) -> Result<Vec<String>, IntegrationError> {
-        let index = self
-            .local_index
-            .read()
-            .map_err(|_| lock_poisoned())?;
+        let index = self.local_index.read().map_err(|_| lock_poisoned())?;
 
         let mut resolved: Vec<String> = Vec::new();
         let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -688,6 +670,18 @@ impl InstallFromMarketplace {
         }
     }
 
+    /// Returns the distribution endpoint used for installs.
+    #[must_use]
+    pub fn distribution_endpoint(&self) -> &str {
+        &self.distribution_endpoint
+    }
+
+    /// Returns whether install actions will emit integration evidence.
+    #[must_use]
+    pub fn has_evidence_emitter(&self) -> bool {
+        self.emitter.is_some()
+    }
+
     /// Installs a capsule from the marketplace.
     ///
     /// Single transaction: marketplace listing → resolve deps → airgap/online
@@ -702,6 +696,12 @@ impl InstallFromMarketplace {
         _deps: Vec<String>,
         _online: bool,
     ) -> Result<InstallOutcome, IntegrationError> {
+        if self.distribution_endpoint.is_empty() {
+            return Err(IntegrationError::Internal(
+                "distribution endpoint is empty".into(),
+            ));
+        }
+
         Ok(InstallOutcome {
             listing_id: _listing_id.to_string(),
             success: true,
@@ -767,6 +767,43 @@ impl MarketplaceSync {
         }
     }
 
+    /// Returns the remote marketplace endpoint used by sync operations.
+    #[must_use]
+    pub fn marketplace_endpoint(&self) -> &str {
+        &self.marketplace_endpoint
+    }
+
+    /// Returns whether sync actions will emit integration evidence.
+    #[must_use]
+    pub fn has_evidence_emitter(&self) -> bool {
+        self.emitter.is_some()
+    }
+
+    /// Returns local cache sizes for listings, details, categories, and publishers.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Internal` if any cache lock is poisoned.
+    pub fn cache_counts(&self) -> Result<(usize, usize, usize, usize), IntegrationError> {
+        let listings = self.local_index.read().map_err(|_| lock_poisoned())?.len();
+        let details = self
+            .local_details
+            .read()
+            .map_err(|_| lock_poisoned())?
+            .len();
+        let categories = self
+            .category_index
+            .read()
+            .map_err(|_| lock_poisoned())?
+            .len();
+        let publishers = self
+            .publisher_index
+            .read()
+            .map_err(|_| lock_poisoned())?
+            .len();
+        Ok((listings, details, categories, publishers))
+    }
+
     /// Synchronises the local marketplace index with the remote.
     ///
     /// This is a bridge stub — in production, this would call the remote
@@ -774,6 +811,12 @@ impl MarketplaceSync {
     /// and apply additions/updates/removals.
     #[allow(clippy::unused_async)]
     pub async fn sync_marketplace_index(&self) -> Result<SyncOutcome, IntegrationError> {
+        if self.marketplace_endpoint.is_empty() {
+            return Err(IntegrationError::Internal(
+                "marketplace endpoint is empty".into(),
+            ));
+        }
+
         Ok(SyncOutcome {
             success: true,
             listings_added: 0,
@@ -822,7 +865,6 @@ impl MarketplaceSync {
     /// Checks the remote marketplace for updates to currently installed capsules.
     ///
     /// Returns a map of `listing_id` → `latest_version`.
-    #[must_use]
     #[allow(clippy::unused_async)]
     pub async fn check_for_updates(
         &self,
@@ -840,25 +882,6 @@ impl MarketplaceSync {
 mod tests {
     use super::*;
     use chrono::Duration;
-
-    fn make_test_listing(id: &str, name: &str, category: &str, rating: f64, verified: bool) -> MarketplaceListing {
-        MarketplaceListing {
-            listing_id: id.to_string(),
-            capsule_name: name.to_string(),
-            publisher_id: format!("pub_{id}"),
-            category: category.to_string(),
-            description: format!("Description for {name}"),
-            latest_version: "1.0.0".to_string(),
-            billing_plan: BillingPlan::Free,
-            downloads: 1000,
-            rating,
-            published_at: Utc::now(),
-            updated_at: Utc::now(),
-            verified,
-            tags: vec![category.to_string()],
-            dependencies: Vec::new(),
-        }
-    }
 
     fn make_test_bridge() -> MarketplaceIntegration {
         MarketplaceIntegration::new(
@@ -1040,7 +1063,9 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let bridge = make_test_bridge();
         let discovery = CapsuleDiscoveryService::from_bridge(&bridge);
-        let results = rt.block_on(discovery.search_marketplace("nonexistent", 10)).unwrap();
+        let results = rt
+            .block_on(discovery.search_marketplace("nonexistent", 10))
+            .unwrap();
         assert!(results.is_empty());
     }
 
@@ -1049,7 +1074,9 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let bridge = make_test_bridge();
         let discovery = CapsuleDiscoveryService::from_bridge(&bridge);
-        let results = rt.block_on(discovery.browse_category("no-such-category")).unwrap();
+        let results = rt
+            .block_on(discovery.browse_category("no-such-category"))
+            .unwrap();
         assert!(results.is_empty());
     }
 
@@ -1061,14 +1088,20 @@ mod tests {
     fn marketplace_sync_construction() {
         let bridge = make_test_bridge();
         let sync = MarketplaceSync::from_bridge(&bridge);
-        assert_eq!(sync.marketplace_endpoint, "https://marketplace.aios.internal");
+        assert_eq!(
+            sync.marketplace_endpoint,
+            "https://marketplace.aios.internal"
+        );
     }
 
     #[test]
     fn install_from_marketplace_construction() {
         let bridge = make_test_bridge();
         let install = InstallFromMarketplace::from_bridge(&bridge);
-        assert_eq!(install.distribution_endpoint, "https://distribution.aios.internal");
+        assert_eq!(
+            install.distribution_endpoint,
+            "https://distribution.aios.internal"
+        );
     }
 
     #[test]

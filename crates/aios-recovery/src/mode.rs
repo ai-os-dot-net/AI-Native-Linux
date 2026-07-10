@@ -150,7 +150,10 @@ impl HealingCapability {
                 Self::CanRestartNetwork | Self::CanReconfigureDNS,
                 RecoveryMutableScope::NetworkReconfig,
             ) | (Self::CanIsolateMeshNode, RecoveryMutableScope::MeshRouting)
-                | (Self::CanSnapshotState, RecoveryMutableScope::FilesystemMutation)
+                | (
+                    Self::CanSnapshotState,
+                    RecoveryMutableScope::FilesystemMutation
+                )
         )
     }
 }

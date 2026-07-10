@@ -197,9 +197,7 @@ impl FipsOverlay {
 ///
 /// Every dimension has a [`ProfileRequirement`] at each profile level
 /// (INV-SEC-005).
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ProfileDimension {
     /// SELinux enforcement mode (disabled, permissive, enforcing, MLS).
@@ -293,9 +291,7 @@ impl fmt::Display for ProfileDimension {
 /// The requirement level for a single (profile, dimension) cell.
 ///
 /// Ordered from weakest to strongest obligation.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ProfileRequirement {
     /// No requirement; the dimension may be left unconfigured.
@@ -360,8 +356,7 @@ impl ProfileMatrix {
     #[must_use]
     pub fn canonical() -> Self {
         use ProfileDimension::*;
-        use ProfileRequirement::{Optional, Recommended, Required,
-            RequiredWithException as ReqEx};
+        use ProfileRequirement::{Optional, Recommended, Required, RequiredWithException as ReqEx};
         use SecurityProfile::*;
 
         let mut entries = HashMap::with_capacity(56); // 4 × 14 = 56 entries
@@ -449,10 +444,7 @@ impl ProfileMatrix {
     /// Collect all dimensions at a given profile that have a mandatory
     /// requirement (Required or RequiredWithException).
     #[must_use]
-    pub fn mandatory_dimensions(
-        &self,
-        profile: SecurityProfile,
-    ) -> Vec<ProfileDimension> {
+    pub fn mandatory_dimensions(&self, profile: SecurityProfile) -> Vec<ProfileDimension> {
         ProfileDimension::all()
             .into_iter()
             .filter(|dim| {
@@ -476,10 +468,7 @@ impl ProfileMatrix {
         for profile in &profiles {
             for dim in ProfileDimension::all() {
                 if !self.entries.contains_key(&(*profile, dim)) {
-                    errors.push(format!(
-                        "missing requirement for {:?} × {:?}",
-                        profile, dim,
-                    ));
+                    errors.push(format!("missing requirement for {:?} × {:?}", profile, dim,));
                 }
             }
         }
@@ -540,8 +529,7 @@ impl ProfileManifest {
     pub fn validate(&self) -> Vec<String> {
         let mut errors = Vec::new();
 
-        if let Some(msg) = self.fips_overlay.check_compatible(self.active_profile)
-        {
+        if let Some(msg) = self.fips_overlay.check_compatible(self.active_profile) {
             errors.push(msg);
         }
 
@@ -666,24 +654,15 @@ mod tests {
 
     #[test]
     fn is_stronger_than_detects_ascending() {
-        assert!(SecurityProfile::SecureDefault
-            .is_stronger_than(SecurityProfile::DevRelaxed));
-        assert!(SecurityProfile::StigAligned
-            .is_stronger_than(SecurityProfile::SecureDefault));
-        assert!(
-            SecurityProfile::AirgapHigh.is_stronger_than(SecurityProfile::StigAligned)
-        );
+        assert!(SecurityProfile::SecureDefault.is_stronger_than(SecurityProfile::DevRelaxed));
+        assert!(SecurityProfile::StigAligned.is_stronger_than(SecurityProfile::SecureDefault));
+        assert!(SecurityProfile::AirgapHigh.is_stronger_than(SecurityProfile::StigAligned));
     }
 
     #[test]
     fn is_stronger_than_refuses_same_or_descending() {
-        assert!(
-            !SecurityProfile::DevRelaxed.is_stronger_than(SecurityProfile::DevRelaxed)
-        );
-        assert!(
-            !SecurityProfile::DevRelaxed
-                .is_stronger_than(SecurityProfile::SecureDefault)
-        );
+        assert!(!SecurityProfile::DevRelaxed.is_stronger_than(SecurityProfile::DevRelaxed));
+        assert!(!SecurityProfile::DevRelaxed.is_stronger_than(SecurityProfile::SecureDefault));
     }
 
     #[test]
@@ -799,7 +778,7 @@ mod tests {
             .filter(|dim| {
                 matrix
                     .requirement(profile, **dim)
-                    .map_or(false, |r| r == ProfileRequirement::Optional)
+                    .is_some_and(|r| r == ProfileRequirement::Optional)
             })
             .count();
         // Most of the 14 dimensions are Optional for DEV_RELAXED.
@@ -872,8 +851,7 @@ mod tests {
 
     #[test]
     fn manifest_json_round_trip() {
-        let manifest =
-            ProfileManifest::new(SecurityProfile::StigAligned, FipsOverlay::Strict);
+        let manifest = ProfileManifest::new(SecurityProfile::StigAligned, FipsOverlay::Strict);
         let json = manifest.to_json().unwrap();
         let decoded = ProfileManifest::from_json(&json).unwrap();
         assert_eq!(decoded.active_profile, SecurityProfile::StigAligned);
@@ -882,8 +860,7 @@ mod tests {
 
     #[test]
     fn manifest_fips_validation() {
-        let manifest =
-            ProfileManifest::new(SecurityProfile::DevRelaxed, FipsOverlay::Strict);
+        let manifest = ProfileManifest::new(SecurityProfile::DevRelaxed, FipsOverlay::Strict);
         let errors = manifest.validate();
         assert!(!errors.is_empty());
         assert!(errors[0].contains("FIPS_STRICT"));
@@ -891,8 +868,7 @@ mod tests {
 
     #[test]
     fn manifest_valid_when_compatible() {
-        let manifest =
-            ProfileManifest::new(SecurityProfile::AirgapHigh, FipsOverlay::Strict);
+        let manifest = ProfileManifest::new(SecurityProfile::AirgapHigh, FipsOverlay::Strict);
         assert!(manifest.validate().is_empty());
     }
 
@@ -904,10 +880,7 @@ mod tests {
             "unknown_field": true
         }"#;
         let result = ProfileManifest::from_json(json);
-        assert!(
-            result.is_err(),
-            "manifest should reject unknown fields"
-        );
+        assert!(result.is_err(), "manifest should reject unknown fields");
     }
 
     // -----------------------------------------------------------------------
@@ -970,14 +943,15 @@ mod tests {
 
     #[test]
     fn all_dimensions_have_unique_labels() {
-        let labels: Vec<&str> = ProfileDimension::all()
-            .iter()
-            .map(|d| d.label())
-            .collect();
+        let labels: Vec<&str> = ProfileDimension::all().iter().map(|d| d.label()).collect();
         let mut unique = labels.clone();
         unique.sort_unstable();
         unique.dedup();
-        assert_eq!(labels.len(), unique.len(), "dimension labels must be unique");
+        assert_eq!(
+            labels.len(),
+            unique.len(),
+            "dimension labels must be unique"
+        );
     }
 
     // -----------------------------------------------------------------------

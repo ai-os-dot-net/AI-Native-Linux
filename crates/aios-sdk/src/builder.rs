@@ -76,10 +76,7 @@ impl CapsuleBuilder {
     /// Initialise a new project directory and scaffold from a template.
     ///
     /// Returns an error when the project directory already exists.
-    pub fn init_project(
-        &mut self,
-        _template: ProjectTemplate,
-    ) -> Result<(), BuilderError> {
+    pub fn init_project(&mut self, _template: ProjectTemplate) -> Result<(), BuilderError> {
         let path = std::path::Path::new(&self.project_root);
         if path.exists() {
             return Err(BuilderError::ProjectExists(self.project_root.clone()));
@@ -109,8 +106,7 @@ impl CapsuleBuilder {
                 format,
             )
             .map_err(|e| BuilderError::ManifestInvalid(format!("{e:?}")))?;
-        self.manifest = Some(manifest);
-        Ok(self.manifest.as_ref().expect("just set"))
+        Ok(self.manifest.insert(manifest))
     }
 
     /// Add a capability name to the current manifest.
@@ -225,7 +221,10 @@ impl BoilerplateProjectGenerator {
                 files.push(("capsule.json".into(), self.generate_manifest_file()));
             }
             ProjectTemplate::EbpfProbe => {
-                files.push(("Cargo.toml".into(), self.generate_cargo_toml("ebpf-capsule", "0.1.0")));
+                files.push((
+                    "Cargo.toml".into(),
+                    self.generate_cargo_toml("ebpf-capsule", "0.1.0"),
+                ));
                 files.push(("src/main.rs".into(), self.generate_main_file()));
                 files.push(("capsule.json".into(), self.generate_manifest_file()));
             }
@@ -365,8 +364,7 @@ mod tests {
     fn project_template_serde_round_trips() {
         for template in ProjectTemplate::iter() {
             let json = serde_json::to_string(&template).expect("serialize");
-            let parsed: ProjectTemplate =
-                serde_json::from_str(&json).expect("deserialize");
+            let parsed: ProjectTemplate = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(template, parsed, "round-trip failed for {template:?}");
         }
     }

@@ -5,8 +5,18 @@ use strum_macros::{EnumCount, EnumIter};
 ///
 /// Maps to the standards tracked in `aios-integration::standard_registry`.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
-    Serialize, Deserialize, EnumIter, EnumCount,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumIter,
+    EnumCount,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum HardeningStandard {
@@ -54,8 +64,18 @@ impl std::fmt::Display for HardeningStandard {
 
 /// Severity of a single hardening probe outcome.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
-    Serialize, Deserialize, EnumIter, EnumCount,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumIter,
+    EnumCount,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ProbeSeverity {
@@ -96,8 +116,18 @@ impl std::fmt::Display for ProbeSeverity {
 
 /// Class of hardening probe — corresponds to a system posture domain.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
-    Serialize, Deserialize, EnumIter, EnumCount,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumIter,
+    EnumCount,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ProbeClass {
@@ -146,9 +176,7 @@ impl std::fmt::Display for ProbeClass {
 }
 
 /// Outcome of a single hardening probe execution.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumIter, EnumCount,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumIter, EnumCount)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum HardeningProbeStatus {
     /// Probe passed — evidence collected.
@@ -302,18 +330,9 @@ mod tests {
 
     #[test]
     fn hardening_probe_status_severity_mapping() {
-        assert_eq!(
-            HardeningProbeStatus::Passed.severity(),
-            ProbeSeverity::Pass
-        );
-        assert_eq!(
-            HardeningProbeStatus::Failed.severity(),
-            ProbeSeverity::Fail
-        );
-        assert_eq!(
-            HardeningProbeStatus::Warn.severity(),
-            ProbeSeverity::Warn
-        );
+        assert_eq!(HardeningProbeStatus::Passed.severity(), ProbeSeverity::Pass);
+        assert_eq!(HardeningProbeStatus::Failed.severity(), ProbeSeverity::Fail);
+        assert_eq!(HardeningProbeStatus::Warn.severity(), ProbeSeverity::Warn);
         assert_eq!(
             HardeningProbeStatus::Skipped.severity(),
             ProbeSeverity::NotApplicable

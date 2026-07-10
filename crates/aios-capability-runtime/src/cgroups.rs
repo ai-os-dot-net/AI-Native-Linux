@@ -425,9 +425,7 @@ impl CgroupProfile {
                     EnforcementAction::Throttle(soft)
                 }
             },
-            EnforcementMode::Warn => {
-                EnforcementAction::Warn(violation.description())
-            }
+            EnforcementMode::Warn => EnforcementAction::Warn(violation.description()),
         }
     }
 }
@@ -782,7 +780,7 @@ mod tests {
         let profile = CgroupProfile::new(CapsuleId(1), quota, EnforcementMode::Hard);
 
         let usage = ResourceUsage {
-            cpu_usage_usec: 50_000, // CPU violated
+            cpu_usage_usec: 50_000,   // CPU violated
             memory_usage_bytes: 2048, // Memory also violated
             io_read_bytes: 0,
             io_write_bytes: 0,

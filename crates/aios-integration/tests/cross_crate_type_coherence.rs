@@ -1,27 +1,35 @@
 //! Cross-crate type coherence tests for the AI-OS.NET 34-crate system.
 
 #![forbid(unsafe_code)]
-#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used,
-         clippy::doc_markdown, clippy::wildcard_imports, clippy::similar_names,
-         clippy::too_many_lines, clippy::unused_imports, missing_docs,
-         reason = "test code; panic-on-failure is the idiomatic test signal")]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    clippy::doc_markdown,
+    clippy::wildcard_imports,
+    clippy::similar_names,
+    clippy::too_many_lines,
+    clippy::unused_imports,
+    missing_docs,
+    reason = "test code; panic-on-failure is the idiomatic test signal"
+)]
 
-use aios_capability_runtime::security_profile::SecurityProfile as CapSecurityProfile;
-use aios_fleet::federated_identity::FederatedSubjectId;
-use aios_evidence::{RecordType, RetentionClass, ReceiptBuilder};
 use aios_action::ActionPhase;
-use aios_policy::{
-    RuleEffect, Decision, EvidenceGrade, NetworkPolicy,
-    ApprovalScope, ApproverClass, PolicyBundle, PolicyRule, RuleScope,
-    Constraints, subject::{HydratedSubject, SubjectType},
-};
-use aios_terminal::UserIntentClass;
-use aios_sandbox::isolation::IsolationKind;
+use aios_capability_runtime::security_profile::SecurityProfile as CapSecurityProfile;
 use aios_container::IsolationLevel as ContainerIsolationLevel;
-use aios_sandbox::network::NetworkPosture as SandboxNetworkPosture;
-use aios_network::posture::NetworkPosture as NetNetworkPosture;
-use aios_sandbox::gpu::GpuCapabilityClass as SandboxGpuCapabilityClass;
+use aios_evidence::{ReceiptBuilder, RecordType, RetentionClass};
+use aios_fleet::federated_identity::FederatedSubjectId;
 use aios_hardware::gpu::GpuCapabilityClass as HwGpuCapabilityClass;
+use aios_network::posture::NetworkPosture as NetNetworkPosture;
+use aios_policy::{
+    subject::{HydratedSubject, SubjectType},
+    ApprovalScope, ApproverClass, Constraints, Decision, EvidenceGrade, NetworkPolicy,
+    PolicyBundle, PolicyRule, RuleEffect, RuleScope,
+};
+use aios_sandbox::gpu::GpuCapabilityClass as SandboxGpuCapabilityClass;
+use aios_sandbox::isolation::IsolationKind;
+use aios_sandbox::network::NetworkPosture as SandboxNetworkPosture;
+use aios_terminal::UserIntentClass;
 use aios_waydroid::AndroidGPUClass;
 use aios_wine::WineGPUClass;
 
@@ -50,12 +58,21 @@ fn test_evidence_record_type_consistent() {
     let back: RetentionClass = serde_json::from_str(&json).unwrap();
     assert_eq!(back, rc);
 
-    let variants = [RecordType::ActionReceived, RecordType::ApprovalRequested,
-                    RecordType::ApprovalGranted, RecordType::ApprovalDenied];
-    let names: Vec<String> = variants.iter().map(|v| serde_json::to_string(v).unwrap()).collect();
+    let variants = [
+        RecordType::ActionReceived,
+        RecordType::ApprovalRequested,
+        RecordType::ApprovalGranted,
+        RecordType::ApprovalDenied,
+    ];
+    let names: Vec<String> = variants
+        .iter()
+        .map(|v| serde_json::to_string(v).unwrap())
+        .collect();
     for i in 0..names.len() {
         for j in 0..names.len() {
-            if i != j { assert_ne!(names[i], names[j]); }
+            if i != j {
+                assert_ne!(names[i], names[j]);
+            }
         }
     }
 }
@@ -70,14 +87,21 @@ fn test_subject_actor_kind_consistent() {
     assert!(!json.is_empty()); // SubjectType always serializes to a non-empty string
 
     let subj = HydratedSubject {
-        canonical_subject_id: "test".into(), subject_type: SubjectType::Human,
-        groups: vec![], capabilities: vec![],
-        session_class: "PUBLIC".into(), recovery_mode: false, is_ai: false,
+        canonical_subject_id: "test".into(),
+        subject_type: SubjectType::Human,
+        groups: vec![],
+        capabilities: vec![],
+        session_class: "PUBLIC".into(),
+        recovery_mode: false,
+        is_ai: false,
     };
     assert_eq!(subj.subject_type, SubjectType::Human);
 
     let intent = UserIntentClass::AiAssistRequest;
-    assert_eq!(serde_json::to_string(&intent).unwrap(), "\"AI_ASSIST_REQUEST\"");
+    assert_eq!(
+        serde_json::to_string(&intent).unwrap(),
+        "\"AI_ASSIST_REQUEST\""
+    );
 }
 
 // Test 4
@@ -90,7 +114,10 @@ fn test_closed_enum_serde_roundtrip() {
 
     let effect = RuleEffect::Allow;
     assert_eq!(serde_json::to_string(&effect).unwrap(), "\"ALLOW\"");
-    assert_eq!(serde_json::from_str::<RuleEffect>("\"ALLOW\"").unwrap(), effect);
+    assert_eq!(
+        serde_json::from_str::<RuleEffect>("\"ALLOW\"").unwrap(),
+        effect
+    );
 
     let dec = Decision::Allow;
     let back: Decision = serde_json::from_str(&serde_json::to_string(&dec).unwrap()).unwrap();
@@ -100,7 +127,8 @@ fn test_closed_enum_serde_roundtrip() {
     assert_eq!(serde_json::to_string(&grade).unwrap(), "\"E5\"");
 
     let scope = ApprovalScope::ExactRequestHash;
-    let back: ApprovalScope = serde_json::from_str(&serde_json::to_string(&scope).unwrap()).unwrap();
+    let back: ApprovalScope =
+        serde_json::from_str(&serde_json::to_string(&scope).unwrap()).unwrap();
     assert_eq!(back, scope);
 
     let ac = ApproverClass::Human;
@@ -141,9 +169,13 @@ fn test_policy_bundle_wire_format() {
         signature_ed25519: vec![0u8; 64],
         created_at: chrono::Utc::now(),
         rules: vec![PolicyRule {
-            rule_id: "rule-001".to_string(), reason_code: "test-allow".to_string(),
-            subjects: vec!["human_operator".to_string()], actions: vec!["read".to_string()],
-            conditions: vec![], effect: RuleEffect::Allow, priority: 100,
+            rule_id: "rule-001".to_string(),
+            reason_code: "test-allow".to_string(),
+            subjects: vec!["human_operator".to_string()],
+            actions: vec!["read".to_string()],
+            conditions: vec![],
+            effect: RuleEffect::Allow,
+            priority: 100,
             scope: RuleScope::PerSubjectType,
             constraints: Some(Constraints::default()),
             approval: None,
@@ -164,7 +196,9 @@ fn test_evidence_payload_json_schema() {
     assert!(json_str.contains("action_type"));
 
     let receipt = ReceiptBuilder::new(
-        RecordType::ActionReceived, RetentionClass::Standard24M, "test-subject",
+        RecordType::ActionReceived,
+        RetentionClass::Standard24M,
+        "test-subject",
     )
     .with_payload(payload)
     .seal(None)

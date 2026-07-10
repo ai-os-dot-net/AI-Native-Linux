@@ -265,11 +265,7 @@ impl DistributedCognitiveRouter {
     /// agent registry. If separation is violated or any agent is missing, the
     /// verdict is Rejected. Otherwise, the verdict is Accepted.
     pub fn multi_agent_coordination(&self, task: &CrossAgentTask) -> CrossAgentResult {
-        let planner_binding = self.agent_registry.get(&task.planner_subject);
-        let executor_binding = self.agent_registry.get(&task.executor_subject);
-        let reviewer_binding = self.agent_registry.get(&task.reviewer_subject);
-
-        if planner_binding.is_none() {
+        let Some(planner_binding) = self.agent_registry.get(&task.planner_subject) else {
             return CrossAgentResult {
                 task_id: task.task_id.clone(),
                 verdict: CrossAgentVerdict::Rejected,
@@ -278,8 +274,8 @@ impl DistributedCognitiveRouter {
                     task.planner_subject
                 ),
             };
-        }
-        if executor_binding.is_none() {
+        };
+        let Some(executor_binding) = self.agent_registry.get(&task.executor_subject) else {
             return CrossAgentResult {
                 task_id: task.task_id.clone(),
                 verdict: CrossAgentVerdict::Rejected,
@@ -288,8 +284,8 @@ impl DistributedCognitiveRouter {
                     task.executor_subject
                 ),
             };
-        }
-        if reviewer_binding.is_none() {
+        };
+        let Some(reviewer_binding) = self.agent_registry.get(&task.reviewer_subject) else {
             return CrossAgentResult {
                 task_id: task.task_id.clone(),
                 verdict: CrossAgentVerdict::Rejected,
@@ -298,11 +294,11 @@ impl DistributedCognitiveRouter {
                     task.reviewer_subject
                 ),
             };
-        }
+        };
 
-        let planner_host = &planner_binding.unwrap().host_id;
-        let executor_host = &executor_binding.unwrap().host_id;
-        let reviewer_host = &reviewer_binding.unwrap().host_id;
+        let planner_host = &planner_binding.host_id;
+        let executor_host = &executor_binding.host_id;
+        let reviewer_host = &reviewer_binding.host_id;
 
         if !self.validate_separation(planner_host, executor_host, reviewer_host) {
             return CrossAgentResult {
@@ -341,7 +337,13 @@ impl DistributedCognitiveRouter {
 mod tests {
     use super::*;
 
-    fn make_host(id: &str, models: &[&str], vram: u64, latency: u64, cores: u32) -> HostCognitionProfile {
+    fn make_host(
+        id: &str,
+        models: &[&str],
+        vram: u64,
+        latency: u64,
+        cores: u32,
+    ) -> HostCognitionProfile {
         HostCognitionProfile {
             host_id: id.to_string(),
             available_models: models.iter().map(|s| s.to_string()).collect(),

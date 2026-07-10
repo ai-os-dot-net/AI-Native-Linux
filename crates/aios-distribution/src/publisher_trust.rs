@@ -524,11 +524,7 @@ impl ReputationEngine {
     /// - `ManualOverride` sets the score directly, bypassing deltas.
     /// - `TierChanged` is recorded in the audit trail but does not affect the
     ///   score or counters.
-    pub fn record_event(
-        &mut self,
-        publisher_id: &PublisherId,
-        event: ReputationEvent,
-    ) {
+    pub fn record_event(&mut self, publisher_id: &PublisherId, event: ReputationEvent) {
         let reputation = self
             .reputations
             .entry(publisher_id.clone())
@@ -610,7 +606,9 @@ impl ReputationEngine {
     /// no events have been recorded for them.
     #[must_use]
     pub fn calculate_score(&self, publisher_id: &PublisherId) -> Option<u8> {
-        self.reputations.get(publisher_id).map(|r| r.reputation_score)
+        self.reputations
+            .get(publisher_id)
+            .map(|r| r.reputation_score)
     }
 
     /// Returns the current trust tier for a publisher, or `None` if
@@ -702,8 +700,14 @@ mod tests {
             TrustTier::from_reputation_score(60),
             TrustTier::CommunityTrusted
         );
-        assert_eq!(TrustTier::from_reputation_score(61), TrustTier::AiosVerified);
-        assert_eq!(TrustTier::from_reputation_score(85), TrustTier::AiosVerified);
+        assert_eq!(
+            TrustTier::from_reputation_score(61),
+            TrustTier::AiosVerified
+        );
+        assert_eq!(
+            TrustTier::from_reputation_score(85),
+            TrustTier::AiosVerified
+        );
         assert_eq!(TrustTier::from_reputation_score(86), TrustTier::AiosCore);
         assert_eq!(TrustTier::from_reputation_score(100), TrustTier::AiosCore);
     }
@@ -1112,7 +1116,10 @@ mod tests {
             evidence: Some("blake3:abc123".into()),
         };
         assert_eq!(rotation.rotation_index, 1);
-        assert_eq!(rotation.old_key_ref, PackageSigningKeyId("pks:test:old".into()));
+        assert_eq!(
+            rotation.old_key_ref,
+            PackageSigningKeyId("pks:test:old".into())
+        );
         assert!(rotation.evidence.is_some());
     }
 

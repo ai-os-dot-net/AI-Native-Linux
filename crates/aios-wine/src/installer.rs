@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use aios_evidence::RecordType;
 use chrono::Utc;
@@ -74,6 +74,9 @@ pub fn capture_installer(
         source: detect_source_from_path(&config.installer_path),
     };
 
+    let source = serde_json::to_value(manifest.source)
+        .map_err(|e| WineError::install_failed(manager.prefix_id.to_string(), e.to_string()))?;
+
     let _evidence = evidence
         .emit(
             RecordType::ActionReceived,
@@ -82,7 +85,7 @@ pub fn capture_installer(
                 "prefix_id": manager.prefix_id.to_string(),
                 "app_name": app_name,
                 "version": manifest.version,
-                "source": serde_json::to_value(manifest.source).expect("serialize"),
+                "source": source,
                 "silent_install": config.silent,
             }),
         )
@@ -97,8 +100,8 @@ pub fn capture_installer(
     Ok(manifest)
 }
 
-pub fn generate_desktop_entry(app_name: &str, exe_path: &PathBuf) -> DesktopEntry {
-    DesktopEntry::new(app_name, exe_path.clone())
+pub fn generate_desktop_entry(app_name: &str, exe_path: &Path) -> DesktopEntry {
+    DesktopEntry::new(app_name, exe_path.to_path_buf())
 }
 
 pub fn record_app_manifest(
@@ -123,11 +126,11 @@ pub fn record_app_manifest(
     Ok(())
 }
 
-fn detect_app_version(_installer_path: &PathBuf) -> String {
+fn detect_app_version(_installer_path: &Path) -> String {
     String::from("1.0.0")
 }
 
-fn detect_source_from_path(installer_path: &PathBuf) -> WineAppSource {
+fn detect_source_from_path(installer_path: &Path) -> WineAppSource {
     if let Some(ext) = installer_path.extension() {
         match ext.to_str() {
             Some("msi") => WineAppSource::MsiInstaller,

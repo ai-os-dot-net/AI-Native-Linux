@@ -8,7 +8,7 @@ const BASE32_ALPHABET: &[u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 /// Encodes `data` as a base32 string (RFC 4648, no padding).
 fn encode_base32(data: &[u8]) -> String {
-    let mut output = String::with_capacity((data.len() * 8 + 4) / 5);
+    let mut output = String::with_capacity((data.len() * 8).div_ceil(5));
     let mut buffer = 0u16;
     let mut bits = 0u8;
 

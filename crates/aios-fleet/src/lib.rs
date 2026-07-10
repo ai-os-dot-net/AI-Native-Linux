@@ -34,8 +34,8 @@ pub use cluster_overlay::{
 };
 pub use cluster_root::ClusterTrustRoot;
 pub use distributed_evidence::{
-    ClusterCheckpoint, ConsistencyState, DagError, DagNode, DistributedEvidenceLog,
-    HostChainHead, ProofScheme,
+    ClusterCheckpoint, ConsistencyState, DagError, DagNode, DistributedEvidenceLog, HostChainHead,
+    ProofScheme,
 };
 pub use distribution_rollout::{
     DistributionSource, FleetDistributionRollout, FleetRolloutRecordType, HostInstallStatus,
@@ -43,8 +43,8 @@ pub use distribution_rollout::{
     RolloutStrategy, RolloutSummary,
 };
 pub use enums::{
-    ClusterOverlayMode, ClusterRole, ClusterTrustScope, FleetMembershipState,
-    RemoteRoutingClass, RemoteRoutingReason, TrustDelegationDirection,
+    ClusterOverlayMode, ClusterRole, ClusterTrustScope, FleetMembershipState, RemoteRoutingClass,
+    RemoteRoutingReason, TrustDelegationDirection,
 };
 pub use error::MembershipError;
 pub use evidence::FleetRecordType;
@@ -64,9 +64,9 @@ pub use membership::FleetMembership;
 pub use membership_driver::FleetMembershipDriver as MembershipDriver;
 pub use quorum::QuorumManager;
 pub use remote_execution::{
-    AIOS_FLEET_SUBJECT, FleetEvidenceEmitter, InMemoryFleetEvidenceLog, NoopFleetEvidenceEmitter,
-    PolicyDecision, RemoteExecutionError, RemoteExecutionJob, RemoteJobState,
-    RemoteWorkloadRouter, WorkloadRef,
+    FleetEvidenceEmitter, InMemoryFleetEvidenceLog, NoopFleetEvidenceEmitter, PolicyDecision,
+    RemoteExecutionError, RemoteExecutionJob, RemoteJobState, RemoteWorkloadRouter, WorkloadRef,
+    AIOS_FLEET_SUBJECT,
 };
 pub use remote_routing::RemoteWorkloadRouting;
 pub use remote_sandbox::{

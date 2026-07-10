@@ -23,13 +23,11 @@ pub mod enums;
 pub mod manifest;
 pub mod publish;
 
-pub use builder::{
-    BoilerplateProjectGenerator, BuilderError, CapsuleBuilder, ProjectTemplate,
-};
+pub use builder::{BoilerplateProjectGenerator, BuilderError, CapsuleBuilder, ProjectTemplate};
 pub use cli::{SdkCommands, SdkConfig, SdkEnvironment};
 pub use enums::{CapabilityDeclarationFormat, SdkCommand, SdkTarget};
 pub use manifest::{
-    CapabilityManifest, EvidenceRecordDeclaration, ManifestGenerator,
-    ManifestValidationError, ManifestValidator, RuntimeRequirement, TypedActionDeclaration,
+    CapabilityManifest, EvidenceRecordDeclaration, ManifestGenerator, ManifestValidationError,
+    ManifestValidator, RuntimeRequirement, TypedActionDeclaration,
 };
 pub use publish::{PublishError, PublishPipeline, PublishState, RegistryEndpoint};

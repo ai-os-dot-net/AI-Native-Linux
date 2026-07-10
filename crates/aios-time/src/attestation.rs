@@ -34,7 +34,10 @@ impl TimeAttestation {
     ) -> TimeTrustGrade {
         if sources.is_empty() {
             TimeTrustGrade::UntrustedLocal
-        } else if sources.iter().all(|s| matches!(s, TrustedTimeSource::TpmTick)) {
+        } else if sources
+            .iter()
+            .all(|s| matches!(s, TrustedTimeSource::TpmTick))
+        {
             TimeTrustGrade::MonotonicOnly
         } else if agreeing_count >= 2 {
             TimeTrustGrade::AttestedQuorum
@@ -76,7 +79,10 @@ mod tests {
 
     #[test]
     fn multiple_agreeing_yields_attested_quorum() {
-        let sources = vec![TrustedTimeSource::NtpAuthenticated, TrustedTimeSource::Roughtime];
+        let sources = vec![
+            TrustedTimeSource::NtpAuthenticated,
+            TrustedTimeSource::Roughtime,
+        ];
         assert_eq!(
             TimeAttestation::grade_from_sources(&sources, 2),
             TimeTrustGrade::AttestedQuorum

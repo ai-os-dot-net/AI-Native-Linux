@@ -82,7 +82,9 @@ impl BootChainProbe {
     /// Returns [`HardeningError::FeatureUnavailable`] if the sysfs interface
     /// is not mounted.
     pub fn check_secure_boot(&self) -> Result<BootChainResult, HardeningError> {
-        let efivar = std::path::Path::new("/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c");
+        let efivar = std::path::Path::new(
+            "/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c",
+        );
         let (status, observed, remediation) = if efivar.exists() {
             let contents = std::fs::read(efivar).unwrap_or_default();
             let enabled = contents.len() > 4 && contents.get(4) == Some(&0x01);
@@ -124,14 +126,16 @@ impl BootChainProbe {
     pub fn check_kernel_lockdown(&self) -> Result<BootChainResult, HardeningError> {
         let lockdown_path = std::path::Path::new("/sys/kernel/security/lockdown");
         let (status, observed, remediation) = if lockdown_path.exists() {
-            let contents =
-                std::fs::read_to_string(lockdown_path).unwrap_or_default();
+            let contents = std::fs::read_to_string(lockdown_path).unwrap_or_default();
             let mode = contents.trim();
             if mode == "none" {
                 (
                     HardeningProbeStatus::Failed,
                     format!("Kernel lockdown mode is '{mode}'"),
-                    Some("Enable kernel lockdown via kernel command line: lockdown=integrity".to_string()),
+                    Some(
+                        "Enable kernel lockdown via kernel command line: lockdown=integrity"
+                            .to_string(),
+                    ),
                 )
             } else {
                 (

@@ -48,10 +48,7 @@ mod tests {
 
     #[test]
     fn parse_helm_chart() {
-        assert_eq!(
-            parse_workload("Chart.yaml"),
-            WorkloadImporter::HelmImporter
-        );
+        assert_eq!(parse_workload("Chart.yaml"), WorkloadImporter::HelmImporter);
     }
 
     #[test]

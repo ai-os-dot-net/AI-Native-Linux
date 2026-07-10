@@ -46,16 +46,17 @@ pub use in_memory_boundary::InMemoryRecoveryBoundary;
 pub use ipc::{HealCommand, HealCommandChannel, HealCommandResponse};
 pub use kernel::{CandidateId, CandidateState, KernelCandidate, KernelManifest};
 pub use kernel_pipeline::KernelPipelineDriver;
-pub use mode::{HealingCapability, RecoveryMode, RecoveryMutableScope, RecoveryState, RecoverySubBoundary};
+pub use mode::{
+    HealingCapability, RecoveryMode, RecoveryMutableScope, RecoveryState, RecoverySubBoundary,
+};
 pub use policy_adapter::RecoveryPolicyHydratorEnhancer;
 pub use recovery_guard::RecoveryGuard;
 pub use registry::{ComponentIsolationLevel, ComponentRegistry, RegistryEntry};
 pub use runtime_adapter::RecoveryRuntimeAdapter;
 pub use self_healing::{
-    ComponentHealingConfig, ComponentHealingTracker, ComponentHealthState,
-    ComponentSnapshot, HealAction, HealActionKind,
-    PanicContext, PanicSeverity, RestartBoundary,
-    RestartPolicy, SelfHealingPolicy, SELF_HEALING_SUBJECT,
+    ComponentHealingConfig, ComponentHealingTracker, ComponentHealthState, ComponentSnapshot,
+    HealAction, HealActionKind, PanicContext, PanicSeverity, RestartBoundary, RestartPolicy,
+    SelfHealingPolicy, SELF_HEALING_SUBJECT,
 };
 pub use self_healing_driver::{
     HealCycleResult, HealExecutionResult, InMemorySelfHealingDriver, SelfHealingDriver,

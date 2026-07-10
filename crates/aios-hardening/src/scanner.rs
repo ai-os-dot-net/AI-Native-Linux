@@ -1,13 +1,11 @@
 use chrono::{DateTime, Utc};
 use ulid::Ulid;
 
-use crate::enums::{
-    HardeningProbeStatus, HardeningStandard, ProbeClass, ProbeSeverity,
-};
+use crate::enums::{HardeningProbeStatus, HardeningStandard, ProbeClass, ProbeSeverity};
 use crate::error::HardeningError;
 use crate::probes::{
-    BootChainProbe, BootChainResult, CryptoProbe, CryptoResult, MacProbe,
-    MacResult, ServiceProbe, ServiceResult,
+    BootChainProbe, BootChainResult, CryptoProbe, CryptoResult, MacProbe, MacResult, ServiceProbe,
+    ServiceResult,
 };
 
 /// A single probe execution outcome, abstracted across probe types.
@@ -50,10 +48,10 @@ impl ProbeResult {
     #[must_use]
     pub fn status(&self) -> HardeningProbeStatus {
         match self {
-            Self::Boot(r) => r.status.clone(),
-            Self::Mac(r) => r.status.clone(),
-            Self::Service(r) => r.status.clone(),
-            Self::Crypto(r) => r.status.clone(),
+            Self::Boot(r) => r.status,
+            Self::Mac(r) => r.status,
+            Self::Service(r) => r.status,
+            Self::Crypto(r) => r.status,
         }
     }
 
@@ -174,15 +172,9 @@ impl HardeningScanner {
     ///
     /// Returns [`HardeningError::InvalidProfile`] if the profile label
     /// is not recognized.
-    pub fn scan(
-        &self,
-        profile_label: &str,
-    ) -> Result<HardeningScanResult, HardeningError> {
+    pub fn scan(&self, profile_label: &str) -> Result<HardeningScanResult, HardeningError> {
         match profile_label {
-            "DEV_RELAXED"
-            | "SECURE_DEFAULT"
-            | "STIG_ALIGNED"
-            | "AIRGAP_HIGH" => {}
+            "DEV_RELAXED" | "SECURE_DEFAULT" | "STIG_ALIGNED" | "AIRGAP_HIGH" => {}
             other => {
                 return Err(HardeningError::InvalidProfile {
                     profile_id: other.to_string(),
@@ -239,32 +231,21 @@ impl HardeningScanner {
         })
     }
 
-    fn collect_boot_probes(
-        &self,
-        results: &mut Vec<ProbeResult>,
-    ) -> Result<(), HardeningError> {
+    fn collect_boot_probes(&self, results: &mut Vec<ProbeResult>) -> Result<(), HardeningError> {
         results.push(ProbeResult::Boot(self.boot_probe.check_tpm_pcr()?));
         results.push(ProbeResult::Boot(self.boot_probe.check_secure_boot()?));
-        results.push(ProbeResult::Boot(
-            self.boot_probe.check_kernel_lockdown()?,
-        ));
+        results.push(ProbeResult::Boot(self.boot_probe.check_kernel_lockdown()?));
         Ok(())
     }
 
-    fn collect_mac_probes(
-        &self,
-        results: &mut Vec<ProbeResult>,
-    ) -> Result<(), HardeningError> {
+    fn collect_mac_probes(&self, results: &mut Vec<ProbeResult>) -> Result<(), HardeningError> {
         results.push(ProbeResult::Mac(self.mac_probe.check_selinux_enforcing()?));
         results.push(ProbeResult::Mac(self.mac_probe.check_policy_version()?));
         results.push(ProbeResult::Mac(self.mac_probe.check_avc_denials()?));
         Ok(())
     }
 
-    fn collect_crypto_probes(
-        &self,
-        results: &mut Vec<ProbeResult>,
-    ) -> Result<(), HardeningError> {
+    fn collect_crypto_probes(&self, results: &mut Vec<ProbeResult>) -> Result<(), HardeningError> {
         results.push(ProbeResult::Crypto(self.crypto_probe.check_fips_enabled()?));
         results.push(ProbeResult::Crypto(
             self.crypto_probe.check_openssl_fips_provider()?,
@@ -272,10 +253,7 @@ impl HardeningScanner {
         Ok(())
     }
 
-    fn collect_service_probes(
-        &self,
-        results: &mut Vec<ProbeResult>,
-    ) -> Result<(), HardeningError> {
+    fn collect_service_probes(&self, results: &mut Vec<ProbeResult>) -> Result<(), HardeningError> {
         for service_name in &self.profile_services {
             results.push(ProbeResult::Service(
                 self.service_probe.check_service_hardening(service_name)?,
@@ -359,7 +337,12 @@ mod tests {
     #[test]
     fn scan_all_valid_profiles() {
         let scanner = HardeningScanner::new();
-        for label in &["DEV_RELAXED", "SECURE_DEFAULT", "STIG_ALIGNED", "AIRGAP_HIGH"] {
+        for label in &[
+            "DEV_RELAXED",
+            "SECURE_DEFAULT",
+            "STIG_ALIGNED",
+            "AIRGAP_HIGH",
+        ] {
             let result = scanner.scan(label);
             assert!(result.is_ok(), "scan failed for {label}");
             let r = result.unwrap();
@@ -398,8 +381,7 @@ mod tests {
 
     #[test]
     fn scanner_with_custom_services() {
-        let scanner = HardeningScanner::new()
-            .with_services(vec!["custom.service".into()]);
+        let scanner = HardeningScanner::new().with_services(vec!["custom.service".into()]);
         let result = scanner.scan("SECURE_DEFAULT").unwrap();
         let service_count = result
             .probe_results

@@ -15,11 +15,7 @@ pub struct FleetMembership {
 
 impl FleetMembership {
     #[must_use]
-    pub fn new(
-        membership_id: String,
-        host_id: String,
-        cluster_id: String,
-    ) -> Self {
+    pub fn new(membership_id: String, host_id: String, cluster_id: String) -> Self {
         Self {
             membership_id,
             host_id,
@@ -206,14 +202,8 @@ mod tests {
     #[test]
     fn fsm_invalid_transitions() {
         let m = mk_membership(FleetMembershipState::Discovered);
-        assert_eq!(
-            m.transition(FleetMembershipState::Enrolled),
-            None
-        );
-        assert_eq!(
-            m.transition(FleetMembershipState::Expelled),
-            None
-        );
+        assert_eq!(m.transition(FleetMembershipState::Enrolled), None);
+        assert_eq!(m.transition(FleetMembershipState::Expelled), None);
     }
 
     #[test]

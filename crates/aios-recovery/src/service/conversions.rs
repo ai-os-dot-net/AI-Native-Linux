@@ -77,12 +77,8 @@ pub fn recovery_error_to_status(err: &RecoveryError) -> Status {
         | RecoveryError::Internal(_)
         | RecoveryError::SelfHealingPolicyInvalid(_)
         | RecoveryError::SelfHealingRecoveryNotActive(_)
-        | RecoveryError::SelfHealingComponentUnknown(_) => {
-            Status::internal(err.to_string())
-        }
-        RecoveryError::SelfHealingEscalationRequired { .. } => {
-            Status::unavailable(err.to_string())
-        }
+        | RecoveryError::SelfHealingComponentUnknown(_) => Status::internal(err.to_string()),
+        RecoveryError::SelfHealingEscalationRequired { .. } => Status::unavailable(err.to_string()),
     }
 }
 

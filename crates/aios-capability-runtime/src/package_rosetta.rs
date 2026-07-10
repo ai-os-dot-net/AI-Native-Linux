@@ -314,7 +314,8 @@ impl PackageRegistry {
             _ => return false,
         };
         self.shadow_installs.remove(passport_id);
-        self.passports.insert(passport_id.to_string(), shadow.passport);
+        self.passports
+            .insert(passport_id.to_string(), shadow.passport);
         true
     }
 
@@ -438,7 +439,10 @@ mod tests {
             "cap_sys_admin".to_string(),
             "cap_net_admin".to_string(),
         ]);
-        let result = registry.intake(PackageFormat::Deb, "/var/cache/apt/archives/nginx_1.24.0-1_amd64.deb");
+        let result = registry.intake(
+            PackageFormat::Deb,
+            "/var/cache/apt/archives/nginx_1.24.0-1_amd64.deb",
+        );
         match result {
             ShadowResult::Installed(passport) => {
                 assert_eq!(passport.name, "nginx_1.24.0-1_amd64");
@@ -578,12 +582,20 @@ mod tests {
     #[test]
     fn passport_id_is_deterministic() {
         let a = PackagePassport::new(
-            "nginx".into(), "1.24.0".into(), PackageFormat::Deb,
-            "abc".into(), vec![], vec![],
+            "nginx".into(),
+            "1.24.0".into(),
+            PackageFormat::Deb,
+            "abc".into(),
+            vec![],
+            vec![],
         );
         let b = PackagePassport::new(
-            "nginx".into(), "1.24.0".into(), PackageFormat::Deb,
-            "def".into(), vec![], vec![],
+            "nginx".into(),
+            "1.24.0".into(),
+            PackageFormat::Deb,
+            "def".into(),
+            vec![],
+            vec![],
         );
         assert_eq!(a.passport_id(), b.passport_id());
         assert_eq!(a.passport_id(), "nginx:1.24.0:Deb");
@@ -635,8 +647,12 @@ mod tests {
     #[test]
     fn canonical_body_excludes_signature() {
         let passport = PackagePassport::new(
-            "test".into(), "1.0".into(), PackageFormat::Deb,
-            "hash123".into(), vec![1, 2, 3], vec!["net_admin".into()],
+            "test".into(),
+            "1.0".into(),
+            PackageFormat::Deb,
+            "hash123".into(),
+            vec![1, 2, 3],
+            vec!["net_admin".into()],
         );
         let body = passport.canonical_body();
         let body_str = String::from_utf8_lossy(&body);

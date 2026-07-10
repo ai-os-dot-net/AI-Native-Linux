@@ -33,11 +33,7 @@ impl MobileApprovalState {
     pub fn is_terminal(self) -> bool {
         matches!(
             self,
-            Self::Consumed
-                | Self::Expired
-                | Self::Declined
-                | Self::Rejected
-                | Self::Revoked
+            Self::Consumed | Self::Expired | Self::Declined | Self::Rejected | Self::Revoked
         )
     }
 }

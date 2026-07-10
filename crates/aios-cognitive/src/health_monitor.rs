@@ -344,13 +344,8 @@ async fn run_single_sweep(
             _ => continue,
         };
 
-        let new_state = compute_new_state(
-            tracker.current_state,
-            healthy,
-            latency_ms,
-            tracker,
-            config,
-        );
+        let new_state =
+            compute_new_state(tracker.current_state, healthy, latency_ms, tracker, config);
 
         tracker.last_latency_ms = latency_ms;
         tracker.last_checked = Utc::now();
@@ -405,9 +400,21 @@ async fn check_ollama(
 
     match result {
         Ok(Ok(true)) => (true, latency_ms, None),
-        Ok(Ok(false)) => (false, latency_ms, Some("ollama health check returned false".into())),
-        Ok(Err(e)) => (false, latency_ms, Some(format!("ollama health check error: {e}"))),
-        Err(_elapsed) => (false, latency_ms, Some("ollama health check timed out".into())),
+        Ok(Ok(false)) => (
+            false,
+            latency_ms,
+            Some("ollama health check returned false".into()),
+        ),
+        Ok(Err(e)) => (
+            false,
+            latency_ms,
+            Some(format!("ollama health check error: {e}")),
+        ),
+        Err(_elapsed) => (
+            false,
+            latency_ms,
+            Some("ollama health check timed out".into()),
+        ),
     }
 }
 
@@ -422,9 +429,21 @@ async fn check_vllm(
 
     match result {
         Ok(Ok(true)) => (true, latency_ms, None),
-        Ok(Ok(false)) => (false, latency_ms, Some("vllm health check returned false".into())),
-        Ok(Err(e)) => (false, latency_ms, Some(format!("vllm health check error: {e}"))),
-        Err(_elapsed) => (false, latency_ms, Some("vllm health check timed out".into())),
+        Ok(Ok(false)) => (
+            false,
+            latency_ms,
+            Some("vllm health check returned false".into()),
+        ),
+        Ok(Err(e)) => (
+            false,
+            latency_ms,
+            Some(format!("vllm health check error: {e}")),
+        ),
+        Err(_elapsed) => (
+            false,
+            latency_ms,
+            Some("vllm health check timed out".into()),
+        ),
     }
 }
 
@@ -472,11 +491,10 @@ fn compute_new_state(
     }
 }
 
-/// Run a full sweep and return a `HealthReport` (used by `get_report` / tests).
+/// Run a full sweep and return a `HealthReport` for tests.
+#[cfg(test)]
 #[must_use]
-pub fn build_report(
-    trackers: &[BackendTracker],
-) -> HealthReport {
+fn build_report(trackers: &[BackendTracker]) -> HealthReport {
     let mut backends = HashMap::new();
     for t in trackers {
         backends.insert(
@@ -573,8 +591,8 @@ mod tests {
         let tracker = BackendTracker::new(ProviderClass::Ollama, ModelBackendKind::LocalGpu);
         let new_state = compute_new_state(
             BackendHealthState::Healthy,
-            true,  // healthy
-            250,   // latency above threshold
+            true, // healthy
+            250,  // latency above threshold
             &tracker,
             &config,
         );
@@ -686,7 +704,10 @@ mod tests {
             Arc::new(CircuitBreakerRegistry::new_with_defaults()),
             Arc::new(RouterState::new()),
         );
-        assert_eq!(monitor.config.check_interval, std::time::Duration::from_secs(10));
+        assert_eq!(
+            monitor.config.check_interval,
+            std::time::Duration::from_secs(10)
+        );
         assert_eq!(monitor.config.timeout, std::time::Duration::from_secs(2));
     }
 
@@ -753,8 +774,8 @@ mod tests {
 
         let new_state = compute_new_state(
             BackendHealthState::DegradedLatency,
-            true,  // healthy
-            250,   // still above threshold
+            true, // healthy
+            250,  // still above threshold
             &tracker,
             &config,
         );

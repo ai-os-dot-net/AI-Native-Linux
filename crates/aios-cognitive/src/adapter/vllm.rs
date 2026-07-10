@@ -324,7 +324,7 @@ impl VllmAdapter {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(timeout_seconds))
             .build()
-            .expect("reqwest::Client::builder with standard config must not fail");
+            .unwrap_or_else(|_| reqwest::Client::new());
 
         Self {
             base_url: base_url.to_string(),
@@ -337,10 +337,7 @@ impl VllmAdapter {
     /// Attach a cognitive evidence emitter for automatic `MODEL_CALL`
     /// receipts on every `complete()` call.
     #[must_use]
-    pub fn with_evidence_emitter(
-        mut self,
-        emitter: Arc<CognitiveEvidenceEmitter>,
-    ) -> Self {
+    pub fn with_evidence_emitter(mut self, emitter: Arc<CognitiveEvidenceEmitter>) -> Self {
         self.evidence_emitter = Some(emitter);
         self
     }
@@ -375,8 +372,6 @@ impl VllmAdapter {
             .map_err(|e| {
                 if e.is_timeout() {
                     VllmError::Timeout
-                } else if e.is_connect() {
-                    VllmError::ConnectionFailed(e.to_string())
                 } else {
                     VllmError::ConnectionFailed(e.to_string())
                 }
@@ -391,14 +386,13 @@ impl VllmAdapter {
             });
         }
 
-        let parsed: VllmCompletionResponse =
-            response.json().await.map_err(|e| {
-                if e.is_timeout() {
-                    VllmError::Timeout
-                } else {
-                    VllmError::ParseError(e.to_string())
-                }
-            })?;
+        let parsed: VllmCompletionResponse = response.json().await.map_err(|e| {
+            if e.is_timeout() {
+                VllmError::Timeout
+            } else {
+                VllmError::ParseError(e.to_string())
+            }
+        })?;
 
         let latency_ms = start.elapsed().as_millis() as u64;
 
@@ -443,8 +437,6 @@ impl VllmAdapter {
             .map_err(|e| {
                 if e.is_timeout() {
                     VllmError::Timeout
-                } else if e.is_connect() {
-                    VllmError::ConnectionFailed(e.to_string())
                 } else {
                     VllmError::ConnectionFailed(e.to_string())
                 }
@@ -459,14 +451,13 @@ impl VllmAdapter {
             });
         }
 
-        let parsed: VllmChatCompletionResponse =
-            response.json().await.map_err(|e| {
-                if e.is_timeout() {
-                    VllmError::Timeout
-                } else {
-                    VllmError::ParseError(e.to_string())
-                }
-            })?;
+        let parsed: VllmChatCompletionResponse = response.json().await.map_err(|e| {
+            if e.is_timeout() {
+                VllmError::Timeout
+            } else {
+                VllmError::ParseError(e.to_string())
+            }
+        })?;
 
         let latency_ms = start.elapsed().as_millis() as u64;
 
@@ -518,8 +509,6 @@ impl VllmAdapter {
             .map_err(|e| {
                 if e.is_timeout() {
                     VllmError::Timeout
-                } else if e.is_connect() {
-                    VllmError::ConnectionFailed(e.to_string())
                 } else {
                     VllmError::ConnectionFailed(e.to_string())
                 }
@@ -561,8 +550,6 @@ impl VllmAdapter {
             .map_err(|e| {
                 if e.is_timeout() {
                     VllmError::Timeout
-                } else if e.is_connect() {
-                    VllmError::ConnectionFailed(e.to_string())
                 } else {
                     VllmError::ConnectionFailed(e.to_string())
                 }
@@ -576,14 +563,13 @@ impl VllmAdapter {
             )));
         }
 
-        let parsed: VllmModelListResponse =
-            response.json().await.map_err(|e| {
-                if e.is_timeout() {
-                    VllmError::Timeout
-                } else {
-                    VllmError::ParseError(e.to_string())
-                }
-            })?;
+        let parsed: VllmModelListResponse = response.json().await.map_err(|e| {
+            if e.is_timeout() {
+                VllmError::Timeout
+            } else {
+                VllmError::ParseError(e.to_string())
+            }
+        })?;
 
         Ok(parsed.data)
     }
@@ -745,7 +731,10 @@ mod tests {
         assert_eq!(parsed.object, "text_completion");
         assert_eq!(parsed.model, "meta-llama/Llama-3.1-8B");
         assert_eq!(parsed.choices.len(), 1);
-        assert_eq!(parsed.choices[0].text, "The sky is blue because of Rayleigh scattering.");
+        assert_eq!(
+            parsed.choices[0].text,
+            "The sky is blue because of Rayleigh scattering."
+        );
         assert_eq!(parsed.choices[0].index, 0);
         assert_eq!(parsed.choices[0].finish_reason.as_deref(), Some("stop"));
         let usage = parsed.usage.expect("usage present");
@@ -852,7 +841,10 @@ mod tests {
         assert_eq!(parsed.object, "chat.completion");
         assert_eq!(parsed.choices.len(), 1);
         assert_eq!(parsed.choices[0].message.role, "assistant");
-        assert!(parsed.choices[0].message.content.contains("systems programming"));
+        assert!(parsed.choices[0]
+            .message
+            .content
+            .contains("systems programming"));
         assert_eq!(parsed.choices[0].finish_reason.as_deref(), Some("stop"));
         let usage = parsed.usage.expect("usage present");
         assert_eq!(usage.prompt_tokens, 20);

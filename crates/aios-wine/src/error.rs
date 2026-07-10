@@ -44,7 +44,10 @@ impl WineError {
     }
 
     #[must_use]
-    pub fn prefix_creation_failed(capsule_id: impl Into<String>, detail: impl Into<String>) -> Self {
+    pub fn prefix_creation_failed(
+        capsule_id: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
         Self::PrefixCreationFailed {
             capsule_id: capsule_id.into(),
             detail: detail.into(),

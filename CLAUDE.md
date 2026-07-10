@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **AIOS — AI-Native Linux Distribution.** A real Linux distribution whose distinguishing layer is a Unified Cognitive Shell: a cognitive core, policy kernel, and append-only evidence log on top of a standard Linux substrate. Human goals become typed, policy-checked, verified system actions.
 
-The Rev.2 L0–L10 layer model is now **implemented** (Rev.2 FULL-REAL): 19 Rust crates under `crates/` (a Cargo workspace), 4475 workspace tests passing (0 failed), all four cargo gates green (check / test / clippy `-D warnings` / fmt). It is **not** yet a bootable ISO or released distribution and has no CI workflow. **M20 discharged the last deferred surfaces:** the L5 Cognitive Core agent/plan/memory gRPC methods (`aios-cognitive`, T-199) and the 22 Tier-3 cross-layer verification primitives (`aios-verification`, T-200) are now REAL and tested. Active spec work is the Rev.3 forward pack (`003.AI-OS.NET--SPECREV.3/`, S16–S28, CONTRACT-grade).
+The Rev.2 L0–L10 layer model is **implemented** (Rev.2 FULL-REAL, milestones M1–M20 closed), and the Rev.3/sprint work (Rev.4–Rev.13) has since grown the workspace to **34 Rust crates** under `crates/` (one Cargo workspace) and added a **bootable ISO build system** under `distro/` — a GRUB2 ISO booting in QEMU, with a KDE Plasma desktop variant (SDDM autologin). CI runs on the self-hosted GitLab via `.gitlab-ci.yml` (Rev.12: check → test → lint → build → assemble → verify); GitHub Actions are disabled — GitHub is a mirror only. All four cargo gates must stay green: check / test / clippy `-D warnings` / fmt.
 
 ## Repository layout
 
@@ -36,13 +36,19 @@ The Rev.2 L0–L10 layer model is now **implemented** (Rev.2 FULL-REAL): 19 Rust
 │   └── XX_Cross_Cutting/               # contracts shared by multiple layers
 │
 ├── 003.AI-OS.NET--SPECREV.3/           # Rev.3 forward spec (S16–S28, CONTRACT-grade)
-├── Cargo.toml                          # Rust workspace root (19 member crates)
-├── crates/                             # Rev.2 implementation — 19 crates (aios-action … aios-distribution)
+├── Cargo.toml                          # Rust workspace root (34 member crates)
+├── crates/                             # implementation — 34 crates (aios-action … aios-sdk)
+├── distro/                             # ISO build system, installer, first-boot, cloud images
+│   ├── build/                          # build-aios-iso.sh, Makefile, CI scripts, gate tests
+│   ├── aios-boot/                      # rootfs layout, initramfs, kernel config
+│   ├── installer/                      # aios-installer.sh, aios-quick-install.sh
+│   ├── first-boot/                     # first-boot Rust binary (own Cargo.toml)
+│   └── cloud/                          # cloud-init + Packer images
 ├── tools/                              # tooling incl. Capella traceability
 ├── site/                               # public Astro site for ai-os.net
 ├── docs/                               # private working docs (gitignored — funding/grant research)
 ├── logo/                               # brand source assets (gitignored)
-├── MILESTONES.md                        # milestone log (M1–M19 closed)
+├── MILESTONES.md                        # milestone log (M1–M20 closed)
 ├── README.md                            # top-level navigation
 ├── CLAUDE.md                            # this file
 ├── ai-os-logo-home.png
@@ -50,6 +56,40 @@ The Rev.2 L0–L10 layer model is now **implemented** (Rev.2 FULL-REAL): 19 Rust
 ```
 
 Each layer folder starts with `00_overview.md` (responsibility, invariants, dependencies, sub-specs) and numbered sub-spec files (`01_<topic>.md`, `02_<topic>.md`, ...). All 52 Rev.2 sub-specs are contract-grade and implemented across the `crates/` workspace (see `MILESTONES.md`).
+
+## Common commands
+
+All four cargo gates must pass before any commit (this is the milestone closure rule as well):
+
+```bash
+cargo check --workspace                      # gate 1 — typecheck
+cargo test --workspace                       # gate 2 — all workspace tests
+cargo clippy --workspace -- -D warnings      # gate 3 — lint, warnings are errors
+cargo fmt --all -- --check                   # gate 4 — formatting
+
+# Single crate / single test
+cargo test -p aios-policy                    # one crate
+cargo test -p aios-policy test_name          # one test by name substring
+cargo test -p aios-fs --test m5_closure      # one integration-test file
+
+cargo bench -p <crate> --no-run              # benches must compile where present
+```
+
+ISO / distribution builds run through `distro/build/` (needs xorriso, squashfs-tools, mtools, busybox-static, cpio/xz — see `build-deps-check.sh`):
+
+```bash
+cd distro/build
+make check-deps        # verify host build dependencies
+make iso               # build release ISO (wraps build-aios-iso.sh)
+make verify            # verify built ISO structure
+./qemu-boot-smoke.sh   # QEMU boot smoke test
+./tests/test-rev12-*.sh  # distribution gate tests
+```
+
+## Git / CI workflow
+
+- **Push to the `gitlab` remote** (`git@192.168.1.180:platform/ai-native-linux.git`) — this triggers GitLab CI (`.gitlab-ci.yml`, stages: check → test → lint → build → assemble → verify). Do **not** push directly to GitHub remotes (`origin`, `personal`) — they are mirrors; GitHub Actions are disabled.
+- Milestone closure requires: all sub-specs `REAL` (E2+), 4 gates green, closure-invariant test file (no `todo!()`/`unimplemented!()` in src/), version bump `0.0.1` → `0.1.0` on the closed crate(s). See `MILESTONES.md`.
 
 ## Authoritative source of truth
 
@@ -130,14 +170,12 @@ record the full evidence chain → show the result in a renderer.
 
 Acceptance criteria for the prototype are enumerated in §22 — use them as the test plan, not as suggestions.
 
-## Implementation state (Rev.2 FULL-REAL)
+## Implementation state
 
-- **Git initialized.** Branch `main` at HEAD `6259a26`, pushed to `origin` (`ai-os-dot-net/AI-Native-Linux`); a `personal` mirror also exists.
-- **Cargo workspace exists.** Root `Cargo.toml` defines 19 member crates under `crates/` (`aios-action` … `aios-distribution`); 18 at v0.1.0, `aios-action` at v0.0.1 (workspace default). Place new crates under `crates/` per the layer they implement.
-- **Tests + gates green.** 4473 workspace tests pass (0 failed); all four cargo gates pass (check / test / clippy `-D warnings` / fmt). There is **no CI workflow yet** (`.github/workflows` absent) — gates run locally.
-- **`.gitignore` present.** `target/`, build artefacts, snapshot dirs, `logo/`, and `docs/` (private funding research) are ignored.
-- **Deferred surfaces discharged (M20):** the L5 Cognitive Core agent/plan/memory gRPC methods (`crates/aios-cognitive/src/service/server.rs`, T-199) and the 22 Tier-3 cross-layer verification primitives (`crates/aios-verification/src/primitives/tier3.rs`, T-200) are now REAL and tested. Tier-3 primitives resolve through an injected `StateProbe` (`StdStateProbe` returns `PROBE_ERROR` when no source is wired; tests inject `MockStateProbe`); wiring production `StateProbe` adapters to live L2/L4/L8/L9 state remains a deployment task.
-- **Still missing for a real distro:** a bootable installer ISO / released distribution, and a CI pipeline. Rev.3 (`003.AI-OS.NET--SPECREV.3`, S16–S28) is specification-stage CONTRACT only.
+- **Cargo workspace:** 34 member crates under `crates/` (`aios-action` … `aios-sdk`), Rust 1.94, edition 2021, `unsafe_code = "deny"` workspace-wide. Place new crates under `crates/` per the layer they implement and register them in the root `Cargo.toml` members list.
+- **Rev.2 FULL-REAL:** milestones M1–M20 closed (see `MILESTONES.md`). M20 discharged the last deferred surfaces — the L5 Cognitive Core agent/plan/memory gRPC methods (`crates/aios-cognitive/src/service/server.rs`) and the 22 Tier-3 verification primitives (`crates/aios-verification/src/primitives/tier3.rs`, injected `StateProbe`; production adapters to live L2/L4/L8/L9 state remain a deployment task).
+- **Sprint revisions (Rev.4–Rev.13):** post-M20 work landed as `sprint/revN` commits — live cognition (Rev.5), daily-driver desktop with KDE Wayland/Wine/Waydroid/eBPF/voice (Rev.6), fleet/cluster (Rev.7), hardening + marketplace (Rev.8–9), autonomy (Rev.10), bootable GRUB2 ISO QEMU-verified + KDE Plasma desktop ISO (Rev.11). Rev.12 (distribution pipeline) and Rev.13 (openSUSE Leap 16.0 enterprise base) are specified in `distro/build/REV12-DISTRIBUTION-SPEC.md` and `REV13-ENTERPRISE-SPEC.md` with gate tests under `distro/build/tests/`.
+- **Remotes:** `gitlab` (push target, CI), `origin` = `ai-os-dot-net/AI-Native-Linux` (GitHub mirror), `personal` (GitHub mirror). Rev.3 spec pack (`003.AI-OS.NET--SPECREV.3`, S16–S28) is CONTRACT-grade specification.
 
 ## Communication
 
@@ -147,7 +185,7 @@ The user is a Bulgarian non-programmer infrastructure operator (see `~/CLAUDE.md
 
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **055.AI-OS.NET--LINUX-AI** (21487 symbols, 52400 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **055.AI-OS.NET--LINUX-AI** (30529 symbols, 72131 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

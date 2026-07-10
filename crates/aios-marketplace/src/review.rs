@@ -1,7 +1,7 @@
-use chrono::{DateTime, Utc};
-use ulid::Ulid;
 use crate::enums::CapabilityReviewDecision;
 use crate::error::MarketplaceError;
+use chrono::{DateTime, Utc};
+use ulid::Ulid;
 
 /// A capability review record (S11.2 §8.1).
 #[derive(Debug, Clone)]
@@ -78,7 +78,7 @@ impl CapabilityReviewEngine {
 
         let review = CapabilityReview::new(lid, rid);
         self.reviews.push(review);
-        Ok(self.reviews.last().unwrap())
+        Ok(&self.reviews[self.reviews.len() - 1])
     }
 
     pub fn complete_review(
@@ -94,7 +94,9 @@ impl CapabilityReviewEngine {
             .ok_or_else(|| MarketplaceError::ReviewNotFound(review_id.to_string()))?;
 
         if review.is_complete() {
-            return Err(MarketplaceError::ReviewAlreadyCompleted(review_id.to_string()));
+            return Err(MarketplaceError::ReviewAlreadyCompleted(
+                review_id.to_string(),
+            ));
         }
 
         review.decision = Some(decision);
@@ -208,7 +210,11 @@ mod tests {
         let r = engine.start_review("lst-1", "reviewer:alice").unwrap();
         let rid = r.review_id.clone();
         engine
-            .complete_review(&rid, CapabilityReviewDecision::RejectedWithFeedback, "denied")
+            .complete_review(
+                &rid,
+                CapabilityReviewDecision::RejectedWithFeedback,
+                "denied",
+            )
             .ok();
         let result = engine.appeal_review(&rid, "unfair review");
         assert!(result.is_ok());

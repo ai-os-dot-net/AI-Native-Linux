@@ -13,9 +13,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ulid::Ulid;
 
-use crate::k8s_operator::{
-    K8sOperator, K8sResourceRequest, K8sWorkloadDescriptor,
-};
+use crate::k8s_operator::{K8sOperator, K8sResourceRequest, K8sWorkloadDescriptor};
 use crate::passport::CloudNativePassport;
 
 // ---------------------------------------------------------------------------
@@ -101,21 +99,12 @@ pub struct ValueConstraint {
 // ---------------------------------------------------------------------------
 
 /// Values supplied to a Helm chart for rendering.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HelmValues {
     /// Key-value overrides (simulated).
     pub values: HashMap<String, serde_json::Value>,
     /// Raw YAML values file content.
     pub raw_yaml: String,
-}
-
-impl Default for HelmValues {
-    fn default() -> Self {
-        Self {
-            values: HashMap::new(),
-            raw_yaml: String::new(),
-        }
-    }
 }
 
 impl HelmValues {
@@ -547,10 +536,7 @@ impl HelmController {
     // -- Rollback ----------------------------------------------------------
 
     /// Rollback a release to its previous revision.
-    pub fn rollback(
-        &mut self,
-        release_id: Ulid,
-    ) -> Result<HelmRelease, HelmControllerError> {
+    pub fn rollback(&mut self, release_id: Ulid) -> Result<HelmRelease, HelmControllerError> {
         let release = self
             .releases
             .get_mut(&release_id)
@@ -602,7 +588,9 @@ impl HelmController {
             .ok_or(HelmControllerError::ReleaseNotFound(release_id))?;
 
         for wl_id in &release.workloads {
-            if let Ok(()) = operator.set_workload_state(*wl_id, crate::k8s_operator::WorkloadState::Terminated) {
+            if let Ok(()) =
+                operator.set_workload_state(*wl_id, crate::k8s_operator::WorkloadState::Terminated)
+            {
                 // Workload terminated successfully
             }
         }
@@ -631,11 +619,7 @@ impl HelmController {
             .get(&release_id)
             .ok_or(HelmControllerError::ReleaseNotFound(release_id))?;
 
-        let states: Vec<HelmReleaseState> = release
-            .history
-            .iter()
-            .map(|r| r.state)
-            .collect();
+        let states: Vec<HelmReleaseState> = release.history.iter().map(|r| r.state).collect();
 
         Ok(states)
     }
@@ -749,7 +733,6 @@ mod hex {
 mod tests {
     use super::*;
     use crate::enums::K8sProfile;
-    use crate::k8s_operator::K8sResourceRequest;
 
     fn make_chart(name: &str, signed: bool) -> HelmChartDescriptor {
         HelmChartDescriptor {
@@ -811,7 +794,7 @@ mod tests {
 
         let descriptors = ctrl.render_chart("myapp", &values, "default").unwrap();
         assert!(
-            descriptors.len() >= 1,
+            !descriptors.is_empty(),
             "render should produce at least the main workload"
         );
     }
@@ -881,7 +864,10 @@ mod tests {
         let _upgraded = ctrl.upgrade(rid, &v2, &mut op).unwrap();
 
         let rolled_back = ctrl.rollback(rid).unwrap();
-        assert_eq!(rolled_back.revision, 1, "rollback should restore revision 1");
+        assert_eq!(
+            rolled_back.revision, 1,
+            "rollback should restore revision 1"
+        );
         assert_eq!(rolled_back.state, HelmReleaseState::RolledBack);
     }
 
@@ -906,7 +892,9 @@ mod tests {
 
         let mut op = make_operator();
         let v1 = HelmValues::new().with_value("replicaCount", serde_json::json!(1));
-        let release = ctrl.install("history-app", "default", &v1, &mut op).unwrap();
+        let release = ctrl
+            .install("history-app", "default", &v1, &mut op)
+            .unwrap();
         let rid = release.release_id;
 
         let v2 = HelmValues::new().with_value("replicaCount", serde_json::json!(2));
@@ -934,7 +922,10 @@ mod tests {
         let release = ctrl.install("purge-me", "default", &v1, &mut op).unwrap();
         let rid = release.release_id;
 
-        assert!(!release.workloads.is_empty(), "release should have workloads");
+        assert!(
+            !release.workloads.is_empty(),
+            "release should have workloads"
+        );
         ctrl.uninstall(rid, &mut op).unwrap();
 
         let purged = ctrl.get_release(rid).unwrap();
@@ -951,8 +942,12 @@ mod tests {
         ctrl.add_chart(make_chart("b", true)).unwrap();
 
         let mut op = make_operator();
-        let _ = ctrl.install("a", "default", &HelmValues::new(), &mut op).unwrap();
-        let _ = ctrl.install("b", "default", &HelmValues::new(), &mut op).unwrap();
+        let _ = ctrl
+            .install("a", "default", &HelmValues::new(), &mut op)
+            .unwrap();
+        let _ = ctrl
+            .install("b", "default", &HelmValues::new(), &mut op)
+            .unwrap();
 
         assert_eq!(ctrl.list_releases().len(), 2);
     }

@@ -177,12 +177,15 @@ impl DagNode {
         let node_id = blake3::hash(canonical.as_bytes()).to_hex().to_string();
 
         let signature = signing_key.sign(node_id.as_bytes());
-        let signature_hex: String = signature.to_bytes().iter()
-            .fold(String::with_capacity(128), |mut acc, b| {
-                use std::fmt::Write;
-                let _ = write!(&mut acc, "{b:02x}");
-                acc
-            });
+        let signature_hex: String =
+            signature
+                .to_bytes()
+                .iter()
+                .fold(String::with_capacity(128), |mut acc, b| {
+                    use std::fmt::Write;
+                    let _ = write!(&mut acc, "{b:02x}");
+                    acc
+                });
 
         Ok(Self {
             node_id,
@@ -305,12 +308,15 @@ impl ClusterCheckpoint {
         let checkpoint_id = blake3::hash(preimage.as_bytes()).to_hex().to_string();
 
         let signature = cluster_root_key.sign(merkle_root.as_bytes());
-        let sig_hex: String = signature.to_bytes().iter()
-            .fold(String::with_capacity(128), |mut acc, b| {
-                use std::fmt::Write;
-                let _ = write!(&mut acc, "{b:02x}");
-                acc
-            });
+        let sig_hex: String =
+            signature
+                .to_bytes()
+                .iter()
+                .fold(String::with_capacity(128), |mut acc, b| {
+                    use std::fmt::Write;
+                    let _ = write!(&mut acc, "{b:02x}");
+                    acc
+                });
 
         Ok(Self {
             checkpoint_id,
@@ -539,15 +545,12 @@ impl DistributedEvidenceLog {
         cluster_root_key: &SigningKey,
     ) -> Result<&ClusterCheckpoint, DagError> {
         let merkle_root = compute_merkle_root(&self.dag_nodes)?;
-        let checkpoint = ClusterCheckpoint::new(
-            merkle_root,
-            cluster_root_key,
-            ProofScheme::MerkleInclusion,
-        )?;
+        let checkpoint =
+            ClusterCheckpoint::new(merkle_root, cluster_root_key, ProofScheme::MerkleInclusion)?;
         self.checkpoints.push(checkpoint);
-        Ok(self.checkpoints.last().ok_or_else(|| {
-            DagError::EncodingFailure("checkpoint push failed".to_owned())
-        })?)
+        self.checkpoints
+            .last()
+            .ok_or_else(|| DagError::EncodingFailure("checkpoint push failed".to_owned()))
     }
 
     /// Verify that a DAG node is included in a checkpoint via Merkle proof.
@@ -575,11 +578,8 @@ impl DistributedEvidenceLog {
                 detail: "checkpoint not found".to_owned(),
             })?;
 
-        let computed_root = compute_merkle_root_from_proof(
-            node_id.to_owned(),
-            proof_siblings,
-            proof_index,
-        );
+        let computed_root =
+            compute_merkle_root_from_proof(node_id.to_owned(), proof_siblings, proof_index);
 
         if computed_root != checkpoint.merkle_root {
             return Err(DagError::InclusionProofFailed {
@@ -657,11 +657,7 @@ impl DistributedEvidenceLog {
     fn collect_ancestry(&self, start_hash: &str) -> Vec<Hash> {
         let mut ancestors = Vec::new();
         let mut current = start_hash.to_owned();
-        loop {
-            let node = match self.dag_nodes.iter().find(|n| n.node_id == current) {
-                Some(n) => n,
-                None => break,
-            };
+        while let Some(node) = self.dag_nodes.iter().find(|n| n.node_id == current) {
             if let Some(first_parent) = node.parents.first() {
                 ancestors.push(first_parent.clone());
                 current = first_parent.clone();
@@ -693,10 +689,7 @@ impl DistributedEvidenceLog {
             let recomputed = node.recompute_node_id()?;
             if recomputed != node.node_id {
                 return Err(DagError::InconsistentMerge {
-                    fork_point: format!(
-                        "node_id mismatch in foreign DAG node {}",
-                        node.node_id
-                    ),
+                    fork_point: format!("node_id mismatch in foreign DAG node {}", node.node_id),
                 });
             }
 
@@ -713,10 +706,7 @@ impl DistributedEvidenceLog {
 
             if has_conflict {
                 return Err(DagError::InconsistentMerge {
-                    fork_point: format!(
-                        "node {} has conflicting parent references",
-                        node.node_id
-                    ),
+                    fork_point: format!("node {} has conflicting parent references", node.node_id),
                 });
             }
 
@@ -736,10 +726,7 @@ impl DistributedEvidenceLog {
     /// Build a Merkle inclusion proof for a node against a checkpoint.
     ///
     /// Returns the sibling hashes and the leaf index within the tree.
-    pub fn build_inclusion_proof(
-        &self,
-        node_id: &str,
-    ) -> Result<(Vec<Hash>, usize), DagError> {
+    pub fn build_inclusion_proof(&self, node_id: &str) -> Result<(Vec<Hash>, usize), DagError> {
         let pos = self
             .dag_nodes
             .iter()
@@ -792,7 +779,7 @@ fn build_merkle_tree(leaves: &[Hash]) -> Hash {
     let mut current: Vec<Hash> = leaves.to_vec();
 
     while current.len() > 1 {
-        let mut next = Vec::with_capacity((current.len() + 1) / 2);
+        let mut next = Vec::with_capacity(current.len().div_ceil(2));
         for chunk in current.chunks(2) {
             let left = &chunk[0];
             let right = chunk.get(1).unwrap_or(left);
@@ -816,14 +803,18 @@ fn build_merkle_proof(leaves: &[Hash], leaf_index: usize) -> (Vec<Hash>, Hash) {
     let mut idx = leaf_index;
 
     while current.len() > 1 {
-        let sibling_idx = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
+        let sibling_idx = if idx.is_multiple_of(2) {
+            idx + 1
+        } else {
+            idx - 1
+        };
         if let Some(sibling) = current.get(sibling_idx) {
             siblings.push(sibling.clone());
         } else {
             siblings.push(current[idx].clone());
         }
 
-        let mut next = Vec::with_capacity((current.len() + 1) / 2);
+        let mut next = Vec::with_capacity(current.len().div_ceil(2));
         for chunk in current.chunks(2) {
             let left = &chunk[0];
             let right = chunk.get(1).unwrap_or(left);
@@ -844,15 +835,11 @@ fn build_merkle_proof(leaves: &[Hash], leaf_index: usize) -> (Vec<Hash>, Hash) {
 }
 
 /// Reconstruct Merkle root from a leaf hash + sibling proof path.
-fn compute_merkle_root_from_proof(
-    leaf_hash: Hash,
-    siblings: &[Hash],
-    mut index: usize,
-) -> Hash {
+fn compute_merkle_root_from_proof(leaf_hash: Hash, siblings: &[Hash], mut index: usize) -> Hash {
     let mut current = leaf_hash;
 
     for sibling in siblings {
-        let combined = if index % 2 == 0 {
+        let combined = if index.is_multiple_of(2) {
             format!("{current}|{sibling}")
         } else {
             format!("{sibling}|{current}")
@@ -924,13 +911,7 @@ mod tests {
     fn dag_node_creation_and_hashing() {
         let (sk, vk) = test_keypair();
         let segment = blake3::hash(b"segment_1").to_hex().to_string();
-        let node = DagNode::new(
-            "host_01".into(),
-            segment,
-            vec![],
-            &sk,
-        )
-        .expect("new");
+        let node = DagNode::new("host_01".into(), segment, vec![], &sk).expect("new");
         assert_eq!(node.node_id.len(), 64);
         node.verify_signature(&vk).expect("verify");
     }
@@ -953,13 +934,8 @@ mod tests {
         let seg_b = blake3::hash(b"b").to_hex().to_string();
 
         let node_a = DagNode::new("host_01".into(), seg_a, vec![], &sk_a).expect("a");
-        let node_b = DagNode::new(
-            "host_01".into(),
-            seg_b,
-            vec![node_a.node_id.clone()],
-            &sk_b,
-        )
-        .expect("b");
+        let node_b =
+            DagNode::new("host_01".into(), seg_b, vec![node_a.node_id.clone()], &sk_b).expect("b");
 
         assert_eq!(node_b.parents.len(), 1);
         assert_eq!(node_b.parents[0], node_a.node_id);
@@ -1058,7 +1034,11 @@ mod tests {
         log.replicate_from_peer(peer_node, "host_01", &local_head)
             .expect("replicate");
 
-        let replicated = log.dag_nodes.iter().find(|n| n.host_id == "host_02").expect("exists");
+        let replicated = log
+            .dag_nodes
+            .iter()
+            .find(|n| n.host_id == "host_02")
+            .expect("exists");
         assert!(replicated.parents.contains(&local_head));
     }
 
@@ -1086,19 +1066,12 @@ mod tests {
 
         for i in 0..4u8 {
             let seg = blake3::hash(&[i]).to_hex().to_string();
-            let node = DagNode::new(
-                format!("host_{i}"),
-                seg,
-                vec![],
-                &host_sk,
-            )
-            .expect("n");
+            let node = DagNode::new(format!("host_{i}"), seg, vec![], &host_sk).expect("n");
             log.add_node(node).expect("add");
         }
 
         let checkpoint = log.sign_checkpoint(&cluster_sk).expect("sign");
         let cp_id = checkpoint.checkpoint_id.clone();
-        drop(checkpoint);
 
         let target = log.dag_nodes[0].node_id.clone();
         let (proof, idx) = log.build_inclusion_proof(&target).expect("build proof");
@@ -1130,28 +1103,19 @@ mod tests {
 
         // Host A child (parent = a1)
         let seg_a2 = blake3::hash(b"a2").to_hex().to_string();
-        let n_a2 = DagNode::new(
-            "host_01".into(),
-            seg_a2,
-            vec![n_a1.node_id],
-            &sk_a,
-        )
-        .expect("a2");
+        let n_a2 = DagNode::new("host_01".into(), seg_a2, vec![n_a1.node_id], &sk_a).expect("a2");
         log.add_node(n_a2).expect("add a2");
 
         // Host B child (parent = b1)
         let seg_b2 = blake3::hash(b"b2").to_hex().to_string();
-        let n_b2 = DagNode::new(
-            "host_02".into(),
-            seg_b2,
-            vec![n_b1.node_id],
-            &sk_b,
-        )
-        .expect("b2");
+        let n_b2 = DagNode::new("host_02".into(), seg_b2, vec![n_b1.node_id], &sk_b).expect("b2");
         log.add_node(n_b2).expect("add b2");
 
         let result = log.detect_forks("host_01", "host_02").expect("detect");
-        assert!(result.is_some(), "fork should be detected between unrelated hosts");
+        assert!(
+            result.is_some(),
+            "fork should be detected between unrelated hosts"
+        );
 
         assert!(matches!(
             log.consistency,
@@ -1208,13 +1172,7 @@ mod tests {
 
         // Attempting to add the same node again fails (append-only enforcement).
         let seg2 = blake3::hash(b"s2").to_hex().to_string();
-        let node2 = DagNode::new(
-            "host_01".into(),
-            seg2,
-            vec![node_id],
-            &sk,
-        )
-        .expect("n2");
+        let node2 = DagNode::new("host_01".into(), seg2, vec![node_id], &sk).expect("n2");
         log.add_node(node2).expect("add child");
 
         assert_eq!(log.node_count(), 2);
@@ -1233,7 +1191,7 @@ mod tests {
         let (sk, _vk) = test_keypair();
         let seg = blake3::hash(b"s").to_hex().to_string();
         let node = DagNode::new("host_01".into(), seg, vec![], &sk).expect("n");
-        let root = compute_merkle_root(&[node.clone()]).expect("root");
+        let root = compute_merkle_root(std::slice::from_ref(&node)).expect("root");
         assert_eq!(root.len(), 64);
         assert_ne!(root, blake3::hash(b"").to_hex().to_string());
     }

@@ -51,33 +51,24 @@ impl WaydroidEvidenceEmitter for InMemoryWaydroidEvidenceEmitter {
             .with_payload(payload);
 
         let previous = {
-            let chain = self
-                .chain
-                .lock()
-                .map_err(|e| WaydroidError::waydroid_not_found(format!(
-                    "chain lock poisoned: {e}"
-                )))?;
+            let chain = self.chain.lock().map_err(|e| {
+                WaydroidError::waydroid_not_found(format!("chain lock poisoned: {e}"))
+            })?;
             chain.receipts().last().cloned()
         };
 
-        let receipt = builder
-            .seal(previous.as_ref())
-            .map_err(|e| WaydroidError::waydroid_not_found(format!(
-                "evidence build failed: {e}"
-            )))?;
+        let receipt = builder.seal(previous.as_ref()).map_err(|e| {
+            WaydroidError::waydroid_not_found(format!("evidence build failed: {e}"))
+        })?;
 
         let mut chain = self
             .chain
             .lock()
-            .map_err(|e| WaydroidError::waydroid_not_found(format!(
-                "chain lock poisoned: {e}"
-            )))?;
+            .map_err(|e| WaydroidError::waydroid_not_found(format!("chain lock poisoned: {e}")))?;
 
         chain
             .append(receipt.clone())
-            .map_err(|e| WaydroidError::waydroid_not_found(format!(
-                "chain append failed: {e}"
-            )))?;
+            .map_err(|e| WaydroidError::waydroid_not_found(format!("chain append failed: {e}")))?;
 
         Ok(receipt)
     }

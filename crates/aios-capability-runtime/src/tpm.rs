@@ -79,7 +79,6 @@ use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use strum_macros::{EnumCount, EnumIter};
 
 use super::capsule_namespace::CapsuleId;
 
@@ -249,7 +248,12 @@ pub struct PcrRegister {
 impl PcrRegister {
     /// Create a new PCR register. Returns `None` if `index >= 24`.
     #[must_use]
-    pub fn new(index: u8, bank: PcrBank, value: PcrValue, label: impl Into<String>) -> Option<Self> {
+    pub fn new(
+        index: u8,
+        bank: PcrBank,
+        value: PcrValue,
+        label: impl Into<String>,
+    ) -> Option<Self> {
         if index >= 24 {
             return None;
         }
@@ -311,10 +315,7 @@ impl fmt::Display for PcrRegister {
         write!(
             f,
             "PCR{:02}[{}] {} = {}",
-            self.index,
-            self.bank,
-            self.label,
-            self.value
+            self.index, self.bank, self.label, self.value
         )
     }
 }
@@ -540,7 +541,10 @@ impl GoldenPcrValues {
             .and_then(|s| s.as_str())
             .map(|s| Self::hex_decode(s))
             .unwrap_or_else(|| Some(Vec::new()))?;
-        let created = v.get("created_at_secs").and_then(|t| t.as_u64()).unwrap_or(0);
+        let created = v
+            .get("created_at_secs")
+            .and_then(|t| t.as_u64())
+            .unwrap_or(0);
         Some(Self {
             version,
             bank,
@@ -881,11 +885,7 @@ impl BootIntegrityVerifier {
     /// - `Unknown` if the quote is missing required fields, expired, or
     ///   golden values are absent for requested PCRs.
     #[must_use]
-    pub fn verify(
-        &self,
-        quote: &TpmQuote,
-        golden: &GoldenPcrValues,
-    ) -> BootPostureReport {
+    pub fn verify(&self, quote: &TpmQuote, golden: &GoldenPcrValues) -> BootPostureReport {
         let quote_digest_hex = quote.quote_digest.to_hex();
         let golden_version = golden.version.clone();
 
@@ -960,16 +960,16 @@ impl BootIntegrityVerifier {
                     // golden value for the PCR index as sufficient for a
                     // "match". A real implementation would compare
                     // reconstructed composite digests.
-                    (true, format!("PCR{:02} present in quote and golden", pcr_idx))
+                    (
+                        true,
+                        format!("PCR{:02} present in quote and golden", pcr_idx),
+                    )
                 }
                 None => {
                     all_matched = false;
                     (
                         false,
-                        format!(
-                            "PCR{:02} in quote has no golden reference value",
-                            pcr_idx
-                        ),
+                        format!("PCR{:02} in quote has no golden reference value", pcr_idx),
                     )
                 }
             };
@@ -1143,7 +1143,9 @@ mod tests {
         let hex = val.to_hex();
         assert_eq!(hex.len(), 64);
         assert!(!hex.contains("0x"));
-        assert!(hex.chars().all(|c| c.is_ascii_hexdigit() && !c.is_uppercase() || c.is_ascii_lowercase()));
+        assert!(hex
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase() || c.is_ascii_lowercase()));
     }
 
     #[test]
@@ -1225,8 +1227,8 @@ mod tests {
 
     #[test]
     fn pcr_register_display_includes_all_fields() {
-        let reg = PcrRegister::new(7, PcrBank::Sha256, pcr_zero(), "SecureBoot")
-            .expect("valid register");
+        let reg =
+            PcrRegister::new(7, PcrBank::Sha256, pcr_zero(), "SecureBoot").expect("valid register");
         let s = format!("{}", reg);
         assert!(s.contains("PCR07"));
         assert!(s.contains("SHA256"));
@@ -1277,8 +1279,26 @@ mod tests {
 
     #[test]
     fn tpm_quote_comparison_is_structural() {
-        let q1 = TpmQuote::new(vec![0, 1], PcrBank::Sha256, pcr_zero(), vec![], vec![1], 100, "a", "l");
-        let q2 = TpmQuote::new(vec![0, 1], PcrBank::Sha256, pcr_zero(), vec![], vec![1], 100, "a", "l");
+        let q1 = TpmQuote::new(
+            vec![0, 1],
+            PcrBank::Sha256,
+            pcr_zero(),
+            vec![],
+            vec![1],
+            100,
+            "a",
+            "l",
+        );
+        let q2 = TpmQuote::new(
+            vec![0, 1],
+            PcrBank::Sha256,
+            pcr_zero(),
+            vec![],
+            vec![1],
+            100,
+            "a",
+            "l",
+        );
         assert_eq!(q1, q2);
     }
 
@@ -1309,8 +1329,9 @@ mod tests {
     fn golden_pcr_values_creation() {
         let mut values: HashMap<u8, PcrValue> = HashMap::new();
         values.insert(0, pcr_zero());
-        let golden = GoldenPcrValues::new("v1.0", PcrBank::Sha256, values.clone(), Vec::new(), 1000)
-            .expect("valid golden");
+        let golden =
+            GoldenPcrValues::new("v1.0", PcrBank::Sha256, values.clone(), Vec::new(), 1000)
+                .expect("valid golden");
         assert_eq!(golden.version, "v1.0");
         assert_eq!(golden.bank, PcrBank::Sha256);
         assert_eq!(golden.len(), 1);
@@ -1336,7 +1357,10 @@ mod tests {
         assert_eq!(golden.version, "v1.2");
         assert_eq!(golden.bank, PcrBank::Sha256);
         assert_eq!(golden.len(), 3);
-        assert_eq!(golden.manifest_signature, GoldenPcrValues::hex_decode("aabbcc").unwrap());
+        assert_eq!(
+            golden.manifest_signature,
+            GoldenPcrValues::hex_decode("aabbcc").unwrap()
+        );
         assert_eq!(golden.created_at_secs, 9000);
     }
 
@@ -1387,8 +1411,14 @@ signature: deadbeef
     #[test]
     fn golden_pcr_values_iter_visits_all_entries() {
         let mut values: HashMap<u8, PcrValue> = HashMap::new();
-        values.insert(0, pcr_val("aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"));
-        values.insert(7, pcr_val("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"));
+        values.insert(
+            0,
+            pcr_val("aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"),
+        );
+        values.insert(
+            7,
+            pcr_val("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"),
+        );
         let golden = GoldenPcrValues::new("v1", PcrBank::Sha256, values, Vec::new(), 0).unwrap();
         let mut seen: Vec<u8> = golden.iter().map(|(idx, _)| *idx).collect();
         seen.sort_unstable();
@@ -1577,12 +1607,7 @@ signature: deadbeef
             quote_value: Some(pcr_zero()),
             description: "PCR00 matches".into(),
         }];
-        let report = BootPostureReport::trusted(
-            details.clone(),
-            "abc123",
-            "v1.0",
-            "all good",
-        );
+        let report = BootPostureReport::trusted(details.clone(), "abc123", "v1.0", "all good");
         assert!(report.posture.is_trusted());
         assert_eq!(report.matched_count(), 1);
         assert_eq!(report.mismatched_count(), 0);
@@ -1599,12 +1624,7 @@ signature: deadbeef
             quote_value: None,
             description: "PCR03 missing from quote".into(),
         }];
-        let report = BootPostureReport::untrusted(
-            details,
-            "def456",
-            "v2.0",
-            "mismatch",
-        );
+        let report = BootPostureReport::untrusted(details, "def456", "v2.0", "mismatch");
         assert!(!report.posture.is_trusted());
         assert_eq!(report.posture, BootPosture::Untrusted);
         assert_eq!(report.matched_count(), 0);
@@ -1618,11 +1638,7 @@ signature: deadbeef
     #[test]
     fn root_integrity_evidence_from_report() {
         let report = BootPostureReport::trusted(vec![], "digest", "v1", "ok");
-        let evidence = RootIntegrityEvidence::from_report(
-            "ev-001",
-            CapsuleId(42),
-            report,
-        );
+        let evidence = RootIntegrityEvidence::from_report("ev-001", CapsuleId(42), report);
         assert_eq!(evidence.evidence_id, "ev-001");
         assert_eq!(evidence.capsule_id, CapsuleId(42));
         assert!(evidence.posture.is_trusted());

@@ -29,6 +29,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 use ulid::Ulid;
@@ -36,9 +37,7 @@ use ulid::Ulid;
 use crate::desktop_event::Hash;
 use crate::enums::{EbpfAuthorRole, EbpfProgramState, EbpfProgramType};
 use crate::error::{EbpfError, EbpfResult};
-use crate::evidence::{
-    EbpfEvidenceEmitter, EbpfEvidenceRecord,
-};
+use crate::evidence::{EbpfEvidenceEmitter, EbpfEvidenceRecord};
 use crate::inv025_enforcement::{
     enforce_ai_author_role, enforce_signature_chain_present, enforce_valid_state_transition,
     EbpfSignature,
@@ -171,10 +170,7 @@ impl EbpfProgramRegistry {
 
     /// Create a new registry with an evidence emitter.
     #[must_use]
-    pub fn with_evidence_emitter(
-        capacity: usize,
-        emitter: Arc<dyn EbpfEvidenceEmitter>,
-    ) -> Self {
+    pub fn with_evidence_emitter(capacity: usize, emitter: Arc<dyn EbpfEvidenceEmitter>) -> Self {
         Self {
             programs: Mutex::new(HashMap::with_capacity(capacity)),
             capacity,
@@ -201,12 +197,9 @@ impl EbpfProgramRegistry {
     /// Returns [`EbpfError::AiAuthorRejected`] if author is `AiProposedNever`.
     /// Returns [`EbpfError::SignatureInvalid`] if signature chain is empty.
     pub fn register(&self, descriptor: EbpfProgramDescriptor) -> EbpfResult<()> {
-        let mut guard = self
-            .programs
-            .lock()
-            .map_err(|_| EbpfError::RegistryFull {
-                capacity: self.capacity,
-            })?;
+        let mut guard = self.programs.lock().map_err(|_| EbpfError::RegistryFull {
+            capacity: self.capacity,
+        })?;
 
         if guard.len() >= self.capacity {
             return Err(EbpfError::RegistryFull {
@@ -216,9 +209,7 @@ impl EbpfProgramRegistry {
 
         let id_str = descriptor.program_id.to_string();
         if guard.contains_key(&descriptor.program_id) {
-            return Err(EbpfError::ProgramAlreadyLoaded {
-                program_id: id_str,
-            });
+            return Err(EbpfError::ProgramAlreadyLoaded { program_id: id_str });
         }
 
         info!(
@@ -258,22 +249,32 @@ impl EbpfProgramRegistry {
     /// Returns [`EbpfError::ProgramNotFound`] if the ID is not in the registry.
     /// Returns [`EbpfError::InvalidState`] if the program is not in `Registered` state.
     pub fn mark_loaded(&self, program_id: ProgramId) -> EbpfResult<()> {
-        let mut guard = self
-            .programs
-            .lock()
-            .map_err(|_| EbpfError::ProgramNotFound {
-                program_id: program_id.to_string(),
-            })?;
+        let program_hash = {
+            let mut guard = self
+                .programs
+                .lock()
+                .map_err(|_| EbpfError::ProgramNotFound {
+                    program_id: program_id.to_string(),
+                })?;
 
-        let descriptor = guard
-            .get_mut(&program_id)
-            .ok_or_else(|| EbpfError::ProgramNotFound {
-                program_id: program_id.to_string(),
-            })?;
+            let descriptor =
+                guard
+                    .get_mut(&program_id)
+                    .ok_or_else(|| EbpfError::ProgramNotFound {
+                        program_id: program_id.to_string(),
+                    })?;
 
-        enforce_valid_state_transition(descriptor.state, "load", &program_id.to_string())?;
-        descriptor.state = EbpfProgramState::Loaded;
-        debug!(program_id = %program_id, "marked loaded");
+            enforce_valid_state_transition(descriptor.state, "load", &program_id.to_string())?;
+            descriptor.state = EbpfProgramState::Loaded;
+            debug!(program_id = %program_id, "marked loaded");
+            descriptor.program_hash_hex()
+        };
+
+        self.emit_evidence(EbpfEvidenceRecord::EbpfProgramLoaded {
+            program_id: program_id.to_string(),
+            program_hash,
+            timestamp: Utc::now(),
+        });
 
         Ok(())
     }
@@ -285,22 +286,32 @@ impl EbpfProgramRegistry {
     /// Returns [`EbpfError::ProgramNotFound`] if the ID is not in the registry.
     /// Returns [`EbpfError::InvalidState`] if the program is not in `Loaded` state.
     pub fn mark_attached(&self, program_id: ProgramId) -> EbpfResult<()> {
-        let mut guard = self
-            .programs
-            .lock()
-            .map_err(|_| EbpfError::ProgramNotFound {
-                program_id: program_id.to_string(),
-            })?;
+        let attached_to = {
+            let mut guard = self
+                .programs
+                .lock()
+                .map_err(|_| EbpfError::ProgramNotFound {
+                    program_id: program_id.to_string(),
+                })?;
 
-        let descriptor = guard
-            .get_mut(&program_id)
-            .ok_or_else(|| EbpfError::ProgramNotFound {
-                program_id: program_id.to_string(),
-            })?;
+            let descriptor =
+                guard
+                    .get_mut(&program_id)
+                    .ok_or_else(|| EbpfError::ProgramNotFound {
+                        program_id: program_id.to_string(),
+                    })?;
 
-        enforce_valid_state_transition(descriptor.state, "attach", &program_id.to_string())?;
-        descriptor.state = EbpfProgramState::Attached;
-        debug!(program_id = %program_id, "marked attached");
+            enforce_valid_state_transition(descriptor.state, "attach", &program_id.to_string())?;
+            descriptor.state = EbpfProgramState::Attached;
+            debug!(program_id = %program_id, "marked attached");
+            descriptor.attached_to.clone()
+        };
+
+        self.emit_evidence(EbpfEvidenceRecord::EbpfProgramAttached {
+            program_id: program_id.to_string(),
+            attached_to,
+            timestamp: Utc::now(),
+        });
 
         Ok(())
     }
@@ -341,22 +352,30 @@ impl EbpfProgramRegistry {
     /// Returns [`EbpfError::ProgramNotFound`] if the ID is not in the registry.
     /// Returns [`EbpfError::InvalidState`] if not in a detachable state.
     pub fn mark_detached(&self, program_id: ProgramId) -> EbpfResult<()> {
-        let mut guard = self
-            .programs
-            .lock()
-            .map_err(|_| EbpfError::ProgramNotFound {
-                program_id: program_id.to_string(),
-            })?;
+        {
+            let mut guard = self
+                .programs
+                .lock()
+                .map_err(|_| EbpfError::ProgramNotFound {
+                    program_id: program_id.to_string(),
+                })?;
 
-        let descriptor = guard
-            .get_mut(&program_id)
-            .ok_or_else(|| EbpfError::ProgramNotFound {
-                program_id: program_id.to_string(),
-            })?;
+            let descriptor =
+                guard
+                    .get_mut(&program_id)
+                    .ok_or_else(|| EbpfError::ProgramNotFound {
+                        program_id: program_id.to_string(),
+                    })?;
 
-        enforce_valid_state_transition(descriptor.state, "detach", &program_id.to_string())?;
-        descriptor.state = EbpfProgramState::Detached;
-        debug!(program_id = %program_id, "marked detached");
+            enforce_valid_state_transition(descriptor.state, "detach", &program_id.to_string())?;
+            descriptor.state = EbpfProgramState::Detached;
+            debug!(program_id = %program_id, "marked detached");
+        }
+
+        self.emit_evidence(EbpfEvidenceRecord::EbpfProgramDetached {
+            program_id: program_id.to_string(),
+            timestamp: Utc::now(),
+        });
 
         Ok(())
     }
@@ -418,10 +437,7 @@ impl EbpfProgramRegistry {
     /// Return the number of registered programs.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.programs
-            .lock()
-            .map(|guard| guard.len())
-            .unwrap_or(0)
+        self.programs.lock().map(|guard| guard.len()).unwrap_or(0)
     }
 
     /// Return `true` if the registry is empty.
@@ -663,7 +679,10 @@ mod tests {
 
         // Registered -> Loaded
         registry.mark_loaded(id).expect("load");
-        assert_eq!(registry.get(id).expect("get").state, EbpfProgramState::Loaded);
+        assert_eq!(
+            registry.get(id).expect("get").state,
+            EbpfProgramState::Loaded
+        );
 
         // Loaded -> Attached
         registry.mark_attached(id).expect("attach");
@@ -707,7 +726,10 @@ mod tests {
         let id = desc.program_id;
         registry.register(desc).expect("register");
         registry.mark_failed(id).expect("mark_failed");
-        assert_eq!(registry.get(id).expect("get").state, EbpfProgramState::Failed);
+        assert_eq!(
+            registry.get(id).expect("get").state,
+            EbpfProgramState::Failed
+        );
     }
 
     #[test]
@@ -830,22 +852,9 @@ mod tests {
         let id = desc.program_id;
         registry.register(desc).expect("register");
 
-        // Manually emit evidence on state changes
-        use chrono::Utc;
-        registry.emit_evidence(EbpfEvidenceRecord::EbpfProgramLoaded {
-            program_id: id.to_string(),
-            program_hash: hex::encode(hash),
-            timestamp: Utc::now(),
-        });
-        registry.emit_evidence(EbpfEvidenceRecord::EbpfProgramAttached {
-            program_id: id.to_string(),
-            attached_to: "tracepoint".into(),
-            timestamp: Utc::now(),
-        });
-        registry.emit_evidence(EbpfEvidenceRecord::EbpfProgramDetached {
-            program_id: id.to_string(),
-            timestamp: Utc::now(),
-        });
+        registry.mark_loaded(id).expect("load");
+        registry.mark_attached(id).expect("attach");
+        registry.mark_detached(id).expect("detach");
 
         assert_eq!(emitter.record_count(), 3);
     }

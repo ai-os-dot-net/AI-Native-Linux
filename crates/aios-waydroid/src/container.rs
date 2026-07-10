@@ -6,9 +6,7 @@ use tracing::{debug, info, warn};
 
 use crate::error::WaydroidError;
 use crate::evidence::WaydroidEvidenceEmitter;
-use crate::{
-    AndroidAppState, AndroidGPUClass, WaydroidContainerState, WaydroidImageChannel,
-};
+use crate::{AndroidAppState, AndroidGPUClass, WaydroidContainerState, WaydroidImageChannel};
 
 const WAYDROID_DATA_ROOT: &str = "/var/lib/aios/waydroid";
 
@@ -26,7 +24,6 @@ pub struct WaydroidContainer {
 }
 
 impl WaydroidContainer {
-    #[must_use]
     pub fn new(capsule_id: ulid::Ulid) -> Result<Self, WaydroidError> {
         let container_id = ulid::Ulid::new();
         let data_path = PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
@@ -44,7 +41,6 @@ impl WaydroidContainer {
         })
     }
 
-    #[must_use]
     pub fn new_with_emitter(
         capsule_id: ulid::Ulid,
         emitter: Arc<dyn WaydroidEvidenceEmitter>,
@@ -301,10 +297,9 @@ mod tests {
     fn container_start_emits_evidence() {
         let capsule_id = ulid::Ulid::new();
         let emitter = Arc::new(InMemoryWaydroidEvidenceEmitter::new());
-        let mut container =
-            WaydroidContainer::new_with_emitter(capsule_id, emitter.clone()).expect("new container");
-        container.data_path =
-            PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
+        let mut container = WaydroidContainer::new_with_emitter(capsule_id, emitter.clone())
+            .expect("new container");
+        container.data_path = PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
 
         let result = container.start();
         assert!(result.is_ok());
@@ -317,8 +312,7 @@ mod tests {
     fn container_stop_from_running_works() {
         let capsule_id = ulid::Ulid::new();
         let mut container = WaydroidContainer::new(capsule_id).expect("new container");
-        container.data_path =
-            PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
+        container.data_path = PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
         container.container_state = WaydroidContainerState::Running;
 
         let result = container.stop();
@@ -330,8 +324,7 @@ mod tests {
     fn container_stop_from_stopped_fails() {
         let capsule_id = ulid::Ulid::new();
         let mut container = WaydroidContainer::new(capsule_id).expect("new container");
-        container.data_path =
-            PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
+        container.data_path = PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
 
         let result = container.stop();
         assert!(result.is_err());
@@ -341,8 +334,7 @@ mod tests {
     fn container_suspend_from_running_works() {
         let capsule_id = ulid::Ulid::new();
         let mut container = WaydroidContainer::new(capsule_id).expect("new container");
-        container.data_path =
-            PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
+        container.data_path = PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
         container.container_state = WaydroidContainerState::Running;
 
         let result = container.suspend();
@@ -354,8 +346,7 @@ mod tests {
     fn container_suspend_from_stopped_fails() {
         let capsule_id = ulid::Ulid::new();
         let mut container = WaydroidContainer::new(capsule_id).expect("new container");
-        container.data_path =
-            PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
+        container.data_path = PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
 
         let result = container.suspend();
         assert!(result.is_err());
@@ -365,8 +356,7 @@ mod tests {
     fn start_from_suspended_works() {
         let capsule_id = ulid::Ulid::new();
         let mut container = WaydroidContainer::new(capsule_id).expect("new container");
-        container.data_path =
-            PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
+        container.data_path = PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
         container.container_state = WaydroidContainerState::Suspended;
 
         let result = container.start();
@@ -378,8 +368,7 @@ mod tests {
     fn already_running_error_when_start_called_twice() {
         let capsule_id = ulid::Ulid::new();
         let mut container = WaydroidContainer::new(capsule_id).expect("new container");
-        container.data_path =
-            PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
+        container.data_path = PathBuf::from(format!("{WAYDROID_DATA_ROOT}/{capsule_id}/"));
         container.container_state = WaydroidContainerState::Running;
 
         let result = container.start();

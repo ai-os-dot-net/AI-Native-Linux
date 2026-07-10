@@ -698,7 +698,7 @@ impl FleetMembershipDriver {
         if enrolled_count == 0 {
             return 1;
         }
-        (enrolled_count * 2 + 2) / 3
+        (enrolled_count * 2).div_ceil(3)
     }
 
     fn verify_tpm_attestation(
@@ -816,16 +816,6 @@ mod tests {
         (mid, membership)
     }
 
-    fn discover_and_register(
-        driver: &mut FleetMembershipDriver,
-        host_id: &str,
-    ) -> (Ulid, FleetMembership) {
-        let (mid, membership) = discover_host(driver, host_id);
-        let (_sk, vk) = mk_host_keypair();
-        driver.register_host_key(host_id, vk);
-        (mid, membership)
-    }
-
     // ---------------------------------------------------------------
     // FSM Transition Tests
     // ---------------------------------------------------------------
@@ -877,8 +867,6 @@ mod tests {
         let (mid, _member) = discover_host(&mut driver, "host_inv_02");
         driver.invite(&mid, mk_coordinator_id()).unwrap();
 
-        let (sk, _vk) = mk_host_keypair();
-        let cluster_id = driver.cluster_root.cluster_id.clone();
         let sig = Signature::from_bytes(&[0xCDu8; 64]);
 
         let result = driver.enroll(&mid, sig);
@@ -1633,7 +1621,7 @@ mod tests {
     #[test]
     fn test_get_membership_by_host() {
         let mut driver = mk_driver();
-        let (mid, member) = discover_host(&mut driver, "host_lookup");
+        let (_mid, member) = discover_host(&mut driver, "host_lookup");
         let found = driver.get_membership_by_host("host_lookup").unwrap();
         assert_eq!(found.membership_id, member.membership_id);
     }

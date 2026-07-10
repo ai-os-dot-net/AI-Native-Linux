@@ -12,7 +12,12 @@ use serde::{Deserialize, Serialize};
 use strum_macros::{EnumCount, EnumIter};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DataClassification { Public, Internal, Confidential, Restricted }
+pub enum DataClassification {
+    Public,
+    Internal,
+    Confidential,
+    Restricted,
+}
 
 impl DataClassification {
     pub fn requires_encryption(&self) -> bool {
@@ -30,9 +35,19 @@ impl DataClassification {
 
     pub fn max_level(a: Self, b: Self) -> Self {
         use DataClassification::*;
-        let to_ord = |c: Self| -> u8 { match c { Public => 0, Internal => 1, Confidential => 2, Restricted => 3 } };
+        let to_ord = |c: Self| -> u8 {
+            match c {
+                Public => 0,
+                Internal => 1,
+                Confidential => 2,
+                Restricted => 3,
+            }
+        };
         match to_ord(a).max(to_ord(b)) {
-            0 => Public, 1 => Internal, 2 => Confidential, _ => Restricted,
+            0 => Public,
+            1 => Internal,
+            2 => Confidential,
+            _ => Restricted,
         }
     }
 }
@@ -50,11 +65,19 @@ impl CryptoShredKey {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        Self { key_id, algorithm, created_at }
+        Self {
+            key_id,
+            algorithm,
+            created_at,
+        }
     }
 
     pub fn new_with_time(key_id: String, algorithm: String, created_at: u64) -> Self {
-        Self { key_id, algorithm, created_at }
+        Self {
+            key_id,
+            algorithm,
+            created_at,
+        }
     }
 
     pub fn destroy(&self, request: &ShredRequest) -> ShredEvidence {
@@ -86,11 +109,21 @@ impl ShredRequest {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        Self { data_id, reason, created_at: now, destroyed_at: 0 }
+        Self {
+            data_id,
+            reason,
+            created_at: now,
+            destroyed_at: 0,
+        }
     }
 
     pub fn new_full(data_id: String, reason: String, created_at: u64, destroyed_at: u64) -> Self {
-        Self { data_id, reason, created_at, destroyed_at }
+        Self {
+            data_id,
+            reason,
+            created_at,
+            destroyed_at,
+        }
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -143,7 +176,12 @@ pub struct AuditEntry {
 
 impl AuditEntry {
     pub fn new(timestamp: u64, action: String, data_id: String, evidence_id: String) -> Self {
-        Self { timestamp, action, data_id, evidence_id }
+        Self {
+            timestamp,
+            action,
+            data_id,
+            evidence_id,
+        }
     }
 }
 
@@ -153,21 +191,36 @@ pub struct AuditTrail {
 }
 
 impl AuditTrail {
-    pub fn new() -> Self { Self { entries: Vec::new() } }
-
-    pub fn record(&mut self, entry: AuditEntry) { self.entries.push(entry); }
-
-    pub fn query_by_data_id(&self, data_id: &str) -> Vec<&AuditEntry> {
-        self.entries.iter().filter(|e| e.data_id == data_id).collect()
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
     }
 
-    pub fn len(&self) -> usize { self.entries.len() }
+    pub fn record(&mut self, entry: AuditEntry) {
+        self.entries.push(entry);
+    }
 
-    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+    pub fn query_by_data_id(&self, data_id: &str) -> Vec<&AuditEntry> {
+        self.entries
+            .iter()
+            .filter(|e| e.data_id == data_id)
+            .collect()
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 }
 
 impl Default for AuditTrail {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -180,14 +233,25 @@ pub struct ExportBundle {
 
 impl ExportBundle {
     pub fn new(subject_id: String, generated_at: u64) -> Self {
-        Self { subject_id, generated_at, entries: Vec::new(), signature: None }
+        Self {
+            subject_id,
+            generated_at,
+            entries: Vec::new(),
+            signature: None,
+        }
     }
 
-    pub fn add_entry(&mut self, entry: AuditEntry) { self.entries.push(entry); }
+    pub fn add_entry(&mut self, entry: AuditEntry) {
+        self.entries.push(entry);
+    }
 
-    pub fn sign(&mut self, sig: Vec<u8>) { self.signature = Some(sig); }
+    pub fn sign(&mut self, sig: Vec<u8>) {
+        self.signature = Some(sig);
+    }
 
-    pub fn entry_count(&self) -> usize { self.entries.len() }
+    pub fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
 }
 
 // ── Data Governance Types (R3-W1.8) ───────────────────────────────────────
@@ -239,7 +303,12 @@ impl RetentionPolicy {
         class: RetentionClass,
         requires_approval_for_delete: bool,
     ) -> Self {
-        Self { duration_seconds, auto_delete, class, requires_approval_for_delete }
+        Self {
+            duration_seconds,
+            auto_delete,
+            class,
+            requires_approval_for_delete,
+        }
     }
 
     pub fn is_expired(&self, stored_at: u64, now: u64) -> bool {
@@ -263,7 +332,13 @@ impl DataSubject {
         shred_key_id: String,
         registered_at: u64,
     ) -> Self {
-        Self { user_id, categories, shred_key_id, registered_at, shredded: false }
+        Self {
+            user_id,
+            categories,
+            shred_key_id,
+            registered_at,
+            shredded: false,
+        }
     }
 }
 
@@ -288,7 +363,10 @@ pub struct DataGovernanceRegistry {
 
 impl DataGovernanceRegistry {
     pub fn new() -> Self {
-        Self { subjects: HashMap::new(), policies: HashMap::new() }
+        Self {
+            subjects: HashMap::new(),
+            policies: HashMap::new(),
+        }
     }
 
     pub fn register_subject(
@@ -514,7 +592,13 @@ impl CryptoShredRequest {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        Self { subject_id, data_categories, shred_scope, evidence_retention_only, created_at }
+        Self {
+            subject_id,
+            data_categories,
+            shred_scope,
+            evidence_retention_only,
+            created_at,
+        }
     }
 
     #[must_use]
@@ -525,7 +609,13 @@ impl CryptoShredRequest {
         evidence_retention_only: bool,
         created_at: u64,
     ) -> Self {
-        Self { subject_id, data_categories, shred_scope, evidence_retention_only, created_at }
+        Self {
+            subject_id,
+            data_categories,
+            shred_scope,
+            evidence_retention_only,
+            created_at,
+        }
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -567,7 +657,12 @@ impl DataResidencyConstraint {
         encryption_required: bool,
         audit_log_required: bool,
     ) -> Self {
-        Self { data_category, allowed_regions, encryption_required, audit_log_required }
+        Self {
+            data_category,
+            allowed_regions,
+            encryption_required,
+            audit_log_required,
+        }
     }
 
     #[must_use]
@@ -586,11 +681,14 @@ pub struct DataResidencyPolicy {
 impl DataResidencyPolicy {
     #[must_use]
     pub fn new() -> Self {
-        Self { constraints: HashMap::new() }
+        Self {
+            constraints: HashMap::new(),
+        }
     }
 
     pub fn add_constraint(&mut self, constraint: DataResidencyConstraint) {
-        self.constraints.insert(constraint.data_category, constraint);
+        self.constraints
+            .insert(constraint.data_category, constraint);
     }
 
     #[must_use]
@@ -628,7 +726,6 @@ impl DataResidencyEnforcer {
         Self { policy }
     }
 
-    #[must_use]
     pub fn check_residency(
         &self,
         category: DataCategory,
@@ -641,7 +738,6 @@ impl DataResidencyEnforcer {
         Ok(constraint.allows_region(region))
     }
 
-    #[must_use]
     pub fn validate_transfer(
         &self,
         category: DataCategory,
@@ -748,7 +844,6 @@ impl GdprAuditExporter {
         Self
     }
 
-    #[must_use]
     pub fn generate_export(
         &self,
         subject_id: String,
@@ -786,7 +881,6 @@ impl GdprAuditExporter {
         ))
     }
 
-    #[must_use]
     pub fn verify_export(&self, export: &GdprAuditExport) -> Result<bool, String> {
         if export.export_id.is_empty() {
             return Err("export_id must not be empty".into());
@@ -841,6 +935,7 @@ pub struct CryptoShredEvidence {
 
 impl CryptoShredEvidence {
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         evidence_id: String,
         subject_id: String,
@@ -940,9 +1035,10 @@ impl RightToBeForgottenPipeline {
 
     /// Mark data as shredded in the registry (already done by execute_shred).
     pub fn mark_data_as_shredded(&mut self, subject_id: &str) -> Result<bool, String> {
-        let subject = self.registry.get_subject(subject_id).ok_or_else(|| {
-            format!("subject '{}' not found", subject_id)
-        })?;
+        let subject = self
+            .registry
+            .get_subject(subject_id)
+            .ok_or_else(|| format!("subject '{}' not found", subject_id))?;
         Ok(subject.shredded)
     }
 
@@ -1035,7 +1131,10 @@ mod tests {
             DataClassification::Internal
         );
         assert_eq!(
-            DataClassification::max_level(DataClassification::Confidential, DataClassification::Restricted),
+            DataClassification::max_level(
+                DataClassification::Confidential,
+                DataClassification::Restricted
+            ),
             DataClassification::Restricted
         );
         assert_eq!(
@@ -1112,9 +1211,24 @@ mod tests {
         let mut trail = AuditTrail::new();
         assert!(trail.is_empty());
 
-        trail.record(AuditEntry::new(1000, "SHRED".into(), "data-a".into(), "ev-1".into()));
-        trail.record(AuditEntry::new(2000, "EXPORT".into(), "data-a".into(), "ev-2".into()));
-        trail.record(AuditEntry::new(3000, "SHRED".into(), "data-b".into(), "ev-3".into()));
+        trail.record(AuditEntry::new(
+            1000,
+            "SHRED".into(),
+            "data-a".into(),
+            "ev-1".into(),
+        ));
+        trail.record(AuditEntry::new(
+            2000,
+            "EXPORT".into(),
+            "data-a".into(),
+            "ev-2".into(),
+        ));
+        trail.record(AuditEntry::new(
+            3000,
+            "SHRED".into(),
+            "data-b".into(),
+            "ev-3".into(),
+        ));
 
         assert_eq!(trail.len(), 3);
         assert_eq!(trail.query_by_data_id("data-a").len(), 2);
@@ -1125,8 +1239,18 @@ mod tests {
     #[test]
     fn export_bundle_lifecycle() {
         let mut bundle = ExportBundle::new("subject-1".into(), 5000);
-        bundle.add_entry(AuditEntry::new(1000, "SHRED".into(), "data-z".into(), "ev-z".into()));
-        bundle.add_entry(AuditEntry::new(2000, "CLASSIFY".into(), "data-y".into(), "ev-y".into()));
+        bundle.add_entry(AuditEntry::new(
+            1000,
+            "SHRED".into(),
+            "data-z".into(),
+            "ev-z".into(),
+        ));
+        bundle.add_entry(AuditEntry::new(
+            2000,
+            "CLASSIFY".into(),
+            "data-y".into(),
+            "ev-y".into(),
+        ));
 
         assert_eq!(bundle.entry_count(), 2);
         assert!(bundle.signature.is_none());
@@ -1194,14 +1318,18 @@ mod tests {
         );
 
         assert_eq!(registry.subject_count(), 1);
-        let subject = registry.get_subject("user-a").unwrap_or_else(|| panic!("absent"));
+        let subject = registry
+            .get_subject("user-a")
+            .unwrap_or_else(|| panic!("absent"));
         assert!(!subject.shredded);
         assert_eq!(subject.shred_key_id, "key-a");
 
         let result = registry.execute_shred("user-a");
         assert_eq!(result, ShredResult::Shredded);
 
-        let subject = registry.get_subject("user-a").unwrap_or_else(|| panic!("absent"));
+        let subject = registry
+            .get_subject("user-a")
+            .unwrap_or_else(|| panic!("absent"));
         assert!(subject.shredded);
         assert!(subject.shred_key_id.is_empty());
     }
@@ -1249,8 +1377,12 @@ mod tests {
         let result = registry.execute_shred("alice");
         assert_eq!(result, ShredResult::Shredded);
 
-        let alice = registry.get_subject("alice").unwrap_or_else(|| panic!("absent"));
-        let bob = registry.get_subject("bob").unwrap_or_else(|| panic!("absent"));
+        let alice = registry
+            .get_subject("alice")
+            .unwrap_or_else(|| panic!("absent"));
+        let bob = registry
+            .get_subject("bob")
+            .unwrap_or_else(|| panic!("absent"));
         assert!(alice.shredded);
         assert!(!bob.shredded);
         assert_eq!(bob.shred_key_id, "k-bob");
@@ -1333,12 +1465,7 @@ mod tests {
 
     #[test]
     fn retention_policy_new_full_sets_all_fields() {
-        let policy = RetentionPolicy::new_full(
-            3600,
-            true,
-            RetentionClass::LegalHold,
-            true,
-        );
+        let policy = RetentionPolicy::new_full(3600, true, RetentionClass::LegalHold, true);
         assert_eq!(policy.duration_seconds, 3600);
         assert!(policy.auto_delete);
         assert_eq!(policy.class, RetentionClass::LegalHold);
@@ -1351,7 +1478,10 @@ mod tests {
     fn crypto_shred_scope_labels() {
         assert_eq!(CryptoShredScope::SubjectAll.label(), "SUBJECT_ALL");
         assert_eq!(CryptoShredScope::ObjectSet.label(), "OBJECT_SET");
-        assert_eq!(CryptoShredScope::DataClassSubset.label(), "DATA_CLASS_SUBSET");
+        assert_eq!(
+            CryptoShredScope::DataClassSubset.label(),
+            "DATA_CLASS_SUBSET"
+        );
     }
 
     // ── ResidencyRegion enum tests ────────────────────────────────────────
@@ -1458,7 +1588,9 @@ mod tests {
         assert_eq!(policy.len(), 1);
         assert!(!policy.is_empty());
 
-        let c = policy.get_constraint(DataCategory::Health).expect("constraint present");
+        let c = policy
+            .get_constraint(DataCategory::Health)
+            .expect("constraint present");
         assert!(c.encryption_required);
         assert!(c.allows_region(ResidencyRegion::Eu));
 
@@ -1479,15 +1611,23 @@ mod tests {
 
         let enforcer = DataResidencyEnforcer::new(policy);
 
-        assert!(enforcer.check_residency(DataCategory::Financial, ResidencyRegion::Eu).expect("ok"));
-        assert!(!enforcer.check_residency(DataCategory::Financial, ResidencyRegion::Us).expect("ok"));
-        assert!(enforcer.check_residency(DataCategory::Personal, ResidencyRegion::Eu).is_err());
+        assert!(enforcer
+            .check_residency(DataCategory::Financial, ResidencyRegion::Eu)
+            .expect("ok"));
+        assert!(!enforcer
+            .check_residency(DataCategory::Financial, ResidencyRegion::Us)
+            .expect("ok"));
+        assert!(enforcer
+            .check_residency(DataCategory::Personal, ResidencyRegion::Eu)
+            .is_err());
 
-        assert!(enforcer.validate_transfer(
-            DataCategory::Financial,
-            ResidencyRegion::Eu,
-            ResidencyRegion::Uk,
-        ).expect("ok"));
+        assert!(enforcer
+            .validate_transfer(
+                DataCategory::Financial,
+                ResidencyRegion::Eu,
+                ResidencyRegion::Uk,
+            )
+            .expect("ok"));
 
         let transfer_err = enforcer.validate_transfer(
             DataCategory::Financial,
@@ -1565,14 +1705,21 @@ mod tests {
     #[test]
     fn gdpr_audit_exporter_generate_and_verify() {
         let exporter = GdprAuditExporter::new();
-        let entries = vec![AuditEntry::new(1000, "TEST".into(), "data-x".into(), "ev-x".into())];
+        let entries = vec![AuditEntry::new(
+            1000,
+            "TEST".into(),
+            "data-x".into(),
+            "ev-x".into(),
+        )];
 
-        let export = exporter.generate_export(
-            "subj-exp".into(),
-            vec![DataCategory::Personal],
-            AuditExportFormat::Json,
-            entries,
-        ).expect("generate");
+        let export = exporter
+            .generate_export(
+                "subj-exp".into(),
+                vec![DataCategory::Personal],
+                AuditExportFormat::Json,
+                entries,
+            )
+            .expect("generate");
         assert!(export.export_id.starts_with("audex_"));
         assert_eq!(export.subject_id, "subj-exp");
 
@@ -1582,16 +1729,25 @@ mod tests {
     #[test]
     fn gdpr_audit_exporter_sign_export() {
         let exporter = GdprAuditExporter::new();
-        let entries = vec![AuditEntry::new(2000, "TEST".into(), "data-y".into(), "ev-y".into())];
+        let entries = vec![AuditEntry::new(
+            2000,
+            "TEST".into(),
+            "data-y".into(),
+            "ev-y".into(),
+        )];
 
-        let export = exporter.generate_export(
-            "subj-sign".into(),
-            vec![DataCategory::Sensitive],
-            AuditExportFormat::Pdf,
-            entries,
-        ).expect("generate");
+        let export = exporter
+            .generate_export(
+                "subj-sign".into(),
+                vec![DataCategory::Sensitive],
+                AuditExportFormat::Pdf,
+                entries,
+            )
+            .expect("generate");
 
-        let signed = exporter.sign_export(export, b"sig-12345".to_vec()).expect("sign");
+        let signed = exporter
+            .sign_export(export, b"sig-12345".to_vec())
+            .expect("sign");
         assert!(signed.is_signed());
     }
 
@@ -1599,12 +1755,14 @@ mod tests {
     fn gdpr_audit_exporter_rejects_empty_signature() {
         let exporter = GdprAuditExporter::new();
         let entries = vec![];
-        let export = exporter.generate_export(
-            "subj-bad".into(),
-            vec![DataCategory::Personal],
-            AuditExportFormat::Json,
-            entries,
-        ).expect("generate");
+        let export = exporter
+            .generate_export(
+                "subj-bad".into(),
+                vec![DataCategory::Personal],
+                AuditExportFormat::Json,
+                entries,
+            )
+            .expect("generate");
 
         let result = exporter.sign_export(export, vec![]);
         assert!(result.is_err());
@@ -1704,22 +1862,26 @@ mod tests {
         let subject = pipeline.resolve_subject("user-rtbf").expect("found");
         assert_eq!(subject.shred_key_id, "csk_key_001");
 
-        let shred_result = pipeline.shred_per_subject_keys("user-rtbf", 3000).expect("shred");
+        let shred_result = pipeline
+            .shred_per_subject_keys("user-rtbf", 3000)
+            .expect("shred");
         assert_eq!(shred_result, ShredResult::Shredded);
 
         let is_shredded = pipeline.mark_data_as_shredded("user-rtbf").expect("marked");
         assert!(is_shredded);
 
-        let evidence = pipeline.emit_crypto_shredded_evidence(
-            "user-rtbf",
-            "req-rtbf-001",
-            vec!["csk_key_001".into()],
-            2,
-            2,
-            0,
-            "COMPLETED",
-            4000,
-        ).expect("evidence");
+        let evidence = pipeline
+            .emit_crypto_shredded_evidence(
+                "user-rtbf",
+                "req-rtbf-001",
+                vec!["csk_key_001".into()],
+                2,
+                2,
+                0,
+                "COMPLETED",
+                4000,
+            )
+            .expect("evidence");
         assert!(evidence.is_complete_shred());
         assert_eq!(pipeline.evidence_count(), 1);
         assert!(pipeline.audit_entry_count() > 0);

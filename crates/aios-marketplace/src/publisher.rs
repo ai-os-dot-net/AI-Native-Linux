@@ -1,6 +1,6 @@
-use ulid::Ulid;
 use crate::enums::PublisherTier;
 use crate::error::MarketplaceError;
+use ulid::Ulid;
 
 /// A publisher registered in the AIOS marketplace.
 #[derive(Debug, Clone)]
@@ -60,13 +60,17 @@ impl PublisherRegistry {
     }
 
     pub fn register(&mut self, publisher: Publisher) -> Result<&Publisher, MarketplaceError> {
-        if self.publishers.iter().any(|p| p.publisher_id == publisher.publisher_id) {
+        if self
+            .publishers
+            .iter()
+            .any(|p| p.publisher_id == publisher.publisher_id)
+        {
             return Err(MarketplaceError::PublisherAlreadyRegistered(
                 publisher.publisher_id,
             ));
         }
         self.publishers.push(publisher);
-        Ok(self.publishers.last().unwrap())
+        Ok(&self.publishers[self.publishers.len() - 1])
     }
 
     pub fn verify(
@@ -139,7 +143,9 @@ impl PublisherRegistry {
     }
 
     pub fn find(&self, publisher_id: &str) -> Option<&Publisher> {
-        self.publishers.iter().find(|p| p.publisher_id == publisher_id)
+        self.publishers
+            .iter()
+            .find(|p| p.publisher_id == publisher_id)
     }
 
     #[must_use]

@@ -14,16 +14,7 @@ use strum_macros::{EnumCount as EnumCountMacro, EnumIter};
 /// session telemetry — capturing process exec, network flows, GPU buffers,
 /// Wayland protocol messages, etc.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    EnumIter,
-    EnumCountMacro,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCountMacro,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EbpfProgramType {
@@ -47,16 +38,7 @@ pub enum EbpfProgramType {
 /// Any state can transition to Detached (back to Registered).
 /// Any state can transition to Failed.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    EnumIter,
-    EnumCountMacro,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCountMacro,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EbpfProgramState {
@@ -88,16 +70,7 @@ pub enum EbpfProgramState {
 ///   variant exists as a sentinel — no program with this role can be
 ///   registered.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    EnumIter,
-    EnumCountMacro,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCountMacro,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EbpfAuthorRole {
@@ -115,16 +88,7 @@ pub enum EbpfAuthorRole {
 /// tracepoints for process lifecycle, kprobes for syscalls, network hooks,
 /// GPU driver traces, Wayland compositor hooks, etc.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    EnumIter,
-    EnumCountMacro,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCountMacro,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum DesktopEventClass {
@@ -156,16 +120,7 @@ pub enum DesktopEventClass {
 /// telemetry classifier. The grade determines downstream action:
 /// audit-only, elevation to policy kernel, or immediate blocking.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    EnumIter,
-    EnumCountMacro,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumCountMacro,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EbpfEvidenceGrade {
@@ -241,8 +196,7 @@ mod tests {
                 format!("\"{expected_str}\""),
                 "variant {variant:?}"
             );
-            let back: DesktopEventClass =
-                serde_json::from_str(&serialized).expect("deserialize");
+            let back: DesktopEventClass = serde_json::from_str(&serialized).expect("deserialize");
             assert_eq!(*variant, back);
         }
     }

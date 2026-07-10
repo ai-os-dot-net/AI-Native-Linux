@@ -32,9 +32,7 @@ use aios_sandbox::SandboxProfile;
 ///
 /// Ordered from weakest (most permissive) to strongest (most restrictive).
 /// The integer discriminant encodes the strictness ordinal.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SecurityProfileLevel {
     /// Developer workstation — minimal enforcement, maximum flexibility.
@@ -205,19 +203,20 @@ impl CrossHostSandboxFloor {
     /// This is the primary entry point when full `SandboxProfile` structs
     /// are not yet available (e.g., during the proposal phase when only
     /// floor labels are known).
-    #[must_use]
     pub fn compute_from_labels(
         origin_floor_label: &str,
         target_floor_label: &str,
     ) -> Result<StricterOf, CrossHostSandboxError> {
-        let origin = SecurityProfileLevel::from_label(origin_floor_label)
-            .ok_or_else(|| CrossHostSandboxError::UnknownProfileLabel {
+        let origin = SecurityProfileLevel::from_label(origin_floor_label).ok_or_else(|| {
+            CrossHostSandboxError::UnknownProfileLabel {
                 label: origin_floor_label.to_string(),
-            })?;
-        let target = SecurityProfileLevel::from_label(target_floor_label)
-            .ok_or_else(|| CrossHostSandboxError::UnknownProfileLabel {
+            }
+        })?;
+        let target = SecurityProfileLevel::from_label(target_floor_label).ok_or_else(|| {
+            CrossHostSandboxError::UnknownProfileLabel {
                 label: target_floor_label.to_string(),
-            })?;
+            }
+        })?;
         let result = StricterOf::new(origin, target);
 
         // INV-026: effective must be >= target
@@ -306,7 +305,9 @@ mod tests {
     fn is_at_least_semantics() {
         assert!(SecurityProfileLevel::AirgapHigh.is_at_least(SecurityProfileLevel::DevRelaxed));
         assert!(SecurityProfileLevel::StigAligned.is_at_least(SecurityProfileLevel::SecureDefault));
-        assert!(SecurityProfileLevel::SecureDefault.is_at_least(SecurityProfileLevel::SecureDefault));
+        assert!(
+            SecurityProfileLevel::SecureDefault.is_at_least(SecurityProfileLevel::SecureDefault)
+        );
         assert!(!SecurityProfileLevel::DevRelaxed.is_at_least(SecurityProfileLevel::StigAligned));
     }
 
@@ -380,14 +381,8 @@ mod tests {
 
     #[test]
     fn display_is_label() {
-        assert_eq!(
-            SecurityProfileLevel::DevRelaxed.to_string(),
-            "DEV_RELAXED"
-        );
-        assert_eq!(
-            SecurityProfileLevel::AirgapHigh.to_string(),
-            "AIRGAP_HIGH"
-        );
+        assert_eq!(SecurityProfileLevel::DevRelaxed.to_string(), "DEV_RELAXED");
+        assert_eq!(SecurityProfileLevel::AirgapHigh.to_string(), "AIRGAP_HIGH");
     }
 
     // -----------------------------------------------------------------------
@@ -457,10 +452,7 @@ mod tests {
 
     #[test]
     fn compute_effective_sandbox_from_profiles() {
-        let result = CrossHostSandboxFloor::compute_from_labels(
-            "STIG_ALIGNED",
-            "SECURE_DEFAULT",
-        );
+        let result = CrossHostSandboxFloor::compute_from_labels("STIG_ALIGNED", "SECURE_DEFAULT");
         assert!(result.is_ok());
         let resolved = result.unwrap();
         assert!(resolved.target_floor_respected());
@@ -469,10 +461,7 @@ mod tests {
 
     #[test]
     fn compute_from_labels_valid() {
-        let result = CrossHostSandboxFloor::compute_from_labels(
-            "DEV_RELAXED",
-            "STIG_ALIGNED",
-        );
+        let result = CrossHostSandboxFloor::compute_from_labels("DEV_RELAXED", "STIG_ALIGNED");
         assert!(result.is_ok());
         let resolved = result.unwrap();
         assert_eq!(resolved.effective, SecurityProfileLevel::StigAligned);
@@ -482,8 +471,7 @@ mod tests {
 
     #[test]
     fn compute_from_labels_invalid_label() {
-        let result =
-            CrossHostSandboxFloor::compute_from_labels("INVALID", "SECURE_DEFAULT");
+        let result = CrossHostSandboxFloor::compute_from_labels("INVALID", "SECURE_DEFAULT");
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(format!("{err}").contains("INVALID"));
@@ -491,8 +479,7 @@ mod tests {
 
     #[test]
     fn compute_from_labels_equal_floors() {
-        let result =
-            CrossHostSandboxFloor::compute_from_labels("AIRGAP_HIGH", "AIRGAP_HIGH");
+        let result = CrossHostSandboxFloor::compute_from_labels("AIRGAP_HIGH", "AIRGAP_HIGH");
         assert!(result.is_ok());
         let resolved = result.unwrap();
         assert_eq!(resolved.effective, SecurityProfileLevel::AirgapHigh);

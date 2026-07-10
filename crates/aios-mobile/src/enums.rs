@@ -43,7 +43,18 @@ pub enum MobileFormFactor {
 
 /// Risk band assigned to a mobile approval request.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, EnumIter, EnumCount,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumIter,
+    EnumCount,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ApprovalRiskBand {
