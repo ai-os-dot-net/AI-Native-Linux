@@ -220,6 +220,8 @@ r13-opensuse-rootfs:
   needs:
     - distro-shell-tests
   before_script:
+    # Stale repo metadata in the leap image → 404 on mirrors; clean first
+    - zypper clean -a
     - zypper --non-interactive refresh
     - zypper --non-interactive install --no-recommends gzip tar jq
   script:

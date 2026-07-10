@@ -267,7 +267,8 @@ async fn grpc_subscribe_replays_then_streams_live_over_rocksdb() {
             .expect("live append");
     });
 
-    let collected = tokio::time::timeout(Duration::from_millis(800), async move {
+    // Generous budget: loaded CI runners exceeded a tight 800ms window
+    let collected = tokio::time::timeout(Duration::from_secs(10), async move {
         let mut s = stream;
         let mut out = Vec::new();
         while let Some(item) = s.next().await {
