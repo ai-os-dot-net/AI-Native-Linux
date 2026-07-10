@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use aios_action::ActionId;
 use aios_verification::{
-    InMemoryVerificationEngine, LocalProbe, PrimitiveInvocation, StdStateProbe,
+    InMemoryVerificationEngine, LocalProbe, PrimitiveInvocation, PrimitiveResult, StdStateProbe,
     VerificationContext, VerificationDuration, VerificationDurationUnit, VerificationExecutor,
     VerificationGrammar, VerificationPrimitive, VerificationStatus,
 };
@@ -442,7 +442,21 @@ async fn same_grammar_context_and_probe_are_deterministic_except_generated_metad
     let second = executor.execute(&grammar, &context).await;
 
     assert_eq!(first.status, second.status);
-    assert_eq!(first.per_primitive, second.per_primitive);
+    // elapsed_ms is generated metadata (wall clock) — normalize before comparing
+    fn strip_elapsed(results: &[PrimitiveResult]) -> Vec<PrimitiveResult> {
+        results
+            .iter()
+            .cloned()
+            .map(|mut result| {
+                result.elapsed_ms = 0;
+                result
+            })
+            .collect()
+    }
+    assert_eq!(
+        strip_elapsed(&first.per_primitive),
+        strip_elapsed(&second.per_primitive)
+    );
     assert_eq!(first.intent_id, second.intent_id);
     assert_eq!(first.action_id, second.action_id);
     Ok(())

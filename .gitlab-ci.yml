@@ -96,7 +96,8 @@ distro-shell-tests:
     - command -v shellcheck >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq shellcheck)
     - shellcheck --version
   script:
-    - shellcheck
+    # -S warning: info/style findings (e.g. SC2317 trap-invoked functions) don't block
+    - shellcheck -S warning
       distro/build/build-aios-iso.sh
       distro/build/build-opensuse-rootfs.sh
       distro/build/ci-build-all.sh
