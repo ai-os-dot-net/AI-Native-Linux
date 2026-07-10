@@ -77,6 +77,8 @@ cargo-check:
 cargo-test:
   stage: test
   image: ${AIOS_RUST_CI_IMAGE}
+  # 7k tests + test-binary builds share the runner with the rootfs job
+  timeout: 2h
   <<: *cargo_cache
   <<: *bootstrap_deps
   needs:
