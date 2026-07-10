@@ -240,9 +240,9 @@ r13-opensuse-rootfs:
     expire_in: 7 days
   rules:
     - if: '$AIOS_R13_ENTERPRISE_BUILD == "1"'
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      when: manual
-      allow_failure: false
+    # R12.1: rootfs builds automatically on main — assemble-iso consumes it,
+    # so the Rev12 ISO is bootable (not scaffold) and the QEMU gate is real.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
 
 # ==========================================================================
 # STAGE 5 — ASSEMBLE ISO (main push only)
@@ -250,42 +250,92 @@ r13-opensuse-rootfs:
 assemble-iso:
   stage: assemble
   image: ${AIOS_RUST_CI_IMAGE}
+  timeout: 3h
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-cargo"
+    policy: pull
+    paths:
+      - .cargo/registry/
+      - .cargo/git/
+      - target/
   needs:
-    - cargo-release
+    - job: cargo-release
+      artifacts: true
+    - job: r13-opensuse-rootfs
+      artifacts: true
   before_script:
     - xorriso -version | head -1
+    # QEMU boot gate runs inside this job — install qemu on demand (KVM via runner device)
+    - command -v qemu-system-x86_64 >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq qemu-system-x86)
   script:
-    - chmod +x distro/build/build-aios-iso.sh distro/build/build-opensuse-rootfs.sh
+    - chmod +x distro/build/build-aios-iso.sh distro/build/qemu-boot-smoke.sh
+    # R12.1: unpack the openSUSE rootfs artifact — the ISO must be bootable, not scaffold
+    - export AIOS_BASE_ROOTFS="${AIOS_BASE_ROOTFS:-${R13_ROOTFS_DIR}}"
     - |
-      if [ -z "${AIOS_BASE_ROOTFS:-}" ] && [ "${AIOS_BUILD_OPENSUSE_ROOTFS:-0}" = "1" ]; then
-        export AIOS_BASE_ROOTFS="distro/build/out/rootfs-opensuse-leap-${AIOS_OPENSUSE_RELEASE:-16.0}-${AIOS_OPENSUSE_ARCH:-x86_64}"
-        ./distro/build/build-opensuse-rootfs.sh \
-          --output "${AIOS_BASE_ROOTFS}" \
-          --release "${AIOS_OPENSUSE_RELEASE:-16.0}" \
-          --arch "${AIOS_OPENSUSE_ARCH:-x86_64}" \
-          --package-set "${AIOS_OPENSUSE_PACKAGE_SET:-server}"
+      if [ ! -d "${AIOS_BASE_ROOTFS}" ] && [ -f "${R13_ROOTFS_TARBALL}" ]; then
+        mkdir -p "${AIOS_BASE_ROOTFS}"
+        tar -C "${AIOS_BASE_ROOTFS}" -xzf "${R13_ROOTFS_TARBALL}"
       fi
-      if [ -n "${AIOS_BASE_ROOTFS:-}" ]; then
-        ISO_ARGS="--release --output ${ISO_OUTPUT} --base-rootfs ${AIOS_BASE_ROOTFS}"
-        if [ "${AIOS_ENTERPRISE_RELEASE:-0}" = "1" ]; then
-          ISO_ARGS="${ISO_ARGS} --enterprise-release"
-        fi
-        ./distro/build/build-aios-iso.sh ${ISO_ARGS}
-      else
-        echo "WARNING: AIOS_BASE_ROOTFS not set; building scaffold packaging ISO, not a bootable Rev12 release ISO."
-        ./distro/build/build-aios-iso.sh --release --output "${ISO_OUTPUT}" --allow-scaffold-rootfs --kernel-firmware-source none
-      fi
+    - test -d "${AIOS_BASE_ROOTFS}" || { echo "ERROR: no base rootfs — refusing to ship a scaffold ISO"; exit 1; }
     - |
-      if [ "${AIOS_QEMU_BOOT_TEST:-0}" = "1" ]; then
-        ./distro/build/qemu-boot-smoke.sh --iso "${ISO_OUTPUT}" --timeout "${AIOS_QEMU_BOOT_TIMEOUT:-120}"
+      ISO_ARGS="--release --output ${ISO_OUTPUT} --base-rootfs ${AIOS_BASE_ROOTFS}"
+      if [ "${AIOS_ENTERPRISE_RELEASE:-0}" = "1" ]; then
+        ISO_ARGS="${ISO_ARGS} --enterprise-release"
+      fi
+      ./distro/build/build-aios-iso.sh ${ISO_ARGS}
+    # R12.7: QEMU live boot gate — blocking, on by default (KVM device from runner)
+    - |
+      if [ "${AIOS_QEMU_BOOT_TEST:-1}" = "1" ]; then
+        QEMU_FLAGS=""
+        [ -r /dev/kvm ] && [ -w /dev/kvm ] && QEMU_FLAGS="--kvm"
+        ./distro/build/qemu-boot-smoke.sh --iso "${ISO_OUTPUT}" ${QEMU_FLAGS} --timeout "${AIOS_QEMU_BOOT_TIMEOUT:-300}"
       else
-        echo "QEMU boot smoke skipped; set AIOS_QEMU_BOOT_TEST=1 after providing AIOS_BASE_ROOTFS."
+        echo "QEMU boot smoke explicitly disabled (AIOS_QEMU_BOOT_TEST=0)."
       fi
     - ls -lh "${ISO_OUTPUT}"
   artifacts:
     name: "${ISO_NAME}"
     paths:
       - "${ISO_OUTPUT}"
+      - distro/build/out/qemu-boot-smoke.log
+    expire_in: 7 days
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+
+# ==========================================================================
+# STAGE 6 — VERIFY: QEMU INSTALL GATE (R12.2 acceptance: install to blank
+# virtual disk + boot the installed system). allow_failure until the harness
+# has one proven green run, then flip to blocking.
+# ==========================================================================
+qemu-install-gate:
+  stage: verify
+  image: ${AIOS_RUST_CI_IMAGE}
+  timeout: 2h
+  allow_failure: true
+  needs:
+    - job: assemble-iso
+      artifacts: true
+  before_script:
+    - >
+      command -v qemu-system-x86_64 >/dev/null 2>&1 && command -v swtpm >/dev/null 2>&1 ||
+      (apt-get update -qq && apt-get install -y -qq qemu-system-x86 qemu-utils ovmf swtpm xorriso)
+  script:
+    - chmod +x distro/build/qemu-install-test.sh
+    # Extract live kernel/initrd from the ISO for direct-kernel autoinstall boot
+    - mkdir -p distro/build/out/iso-extract
+    - xorriso -osirrox on -indev "${ISO_OUTPUT}" -extract /live/vmlinuz distro/build/out/iso-extract/vmlinuz -extract /live/initrd.img distro/build/out/iso-extract/initrd.img
+    - |
+      QEMU_FLAGS=""
+      [ -r /dev/kvm ] && [ -w /dev/kvm ] && QEMU_FLAGS="--kvm"
+      ./distro/build/qemu-install-test.sh --iso "${ISO_OUTPUT}" \
+        --kernel distro/build/out/iso-extract/vmlinuz \
+        --initrd distro/build/out/iso-extract/initrd.img \
+        --swtpm ${QEMU_FLAGS}
+  artifacts:
+    when: always
+    name: "install-gate-logs-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - distro/build/out/*.log
     expire_in: 7 days
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
