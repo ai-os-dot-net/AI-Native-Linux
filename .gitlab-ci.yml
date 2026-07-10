@@ -47,11 +47,12 @@ variables:
     - rustc --version
     - cargo --version
     - c++ --version
-    # neurocad-ci-tools lacks protoc — install on demand (tonic build deps)
-    - command -v protoc >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq protobuf-compiler)
+    # neurocad-ci-tools lacks protoc (tonic) and libclang (rocksdb-sys bindgen
+    # for crates/aios-evidence, crates/aios-vault) — install on demand.
+    - >
+      (command -v protoc >/dev/null 2>&1 && ldconfig -p | grep -q libclang) ||
+      (apt-get update -qq && apt-get install -y -qq protobuf-compiler libclang-dev clang)
     - protoc --version
-    # The workspace uses protoc-bin-vendored, but libclang-dev is needed
-    # for rocksdb-sys bindings (crates/aios-evidence, crates/aios-vault).
 
 # ==========================================================================
 # STAGE 1 — CHECK (fast gate: catches compilation errors early)
