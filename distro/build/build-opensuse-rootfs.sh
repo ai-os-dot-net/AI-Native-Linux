@@ -142,6 +142,12 @@ esac
 
 [ -n "${OUTPUT}" ] \
     || OUTPUT="${REPO_ROOT}/distro/build/out/rootfs-opensuse-leap-${RELEASE}-${ARCH}"
+# Normalize to an absolute path so the --force safety allowlist below matches
+# CI-style relative paths (e.g. distro/build/out/rootfs-...).
+case "${OUTPUT}" in
+    /*) : ;;
+    *)  OUTPUT="${REPO_ROOT}/${OUTPUT}" ;;
+esac
 [ -n "${REPO_OSS}" ] \
     || REPO_OSS="https://download.opensuse.org/distribution/leap/${RELEASE}/repo/oss/"
 if [ -z "${REPO_UPDATE}" ]; then
