@@ -10,6 +10,12 @@ stages:
   - assemble
   - verify
 
+# Superseded pipelines are auto-canceled (project setting) — interruptible
+# lets that apply to already-running jobs too, so stale build containers
+# don't pile up on the runner disk.
+default:
+  interruptible: true
+
 variables:
   # Fast cache archiver — default zip took 45+ min on the ~60k-file target/ tree
   FF_USE_FASTZIP: "true"
