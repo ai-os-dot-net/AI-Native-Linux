@@ -3,7 +3,7 @@
   "current_milestone": "Enterprise plan: Фаза 0 стабилизация → Rev.12 дистрибуция → Rev.13 enterprise",
   "current_task_id": "TSK-PH0-001",
   "current_task_title": "Фаза 0: 4 cargo gates на 219 некомитнати промени + комит + push gitlab + CI",
-  "current_step": "cargo fmt PASS; cargo check running; clippy+test pending",
+  "current_step": "Фаза 0: всички 4 gates PASS (7001/0 след rebase); комит 8411934 пушнат към gitlab; CI pipeline 3238 pending — чакам резултат",
   "completed_steps": [
     "OS Research (7 modules, 5,781 lines)",
     "Rev.3 through Rev.7 (all prior milestones)",
@@ -15,7 +15,7 @@
     "INV-026: Host policy supremacy — unilateral withdrawal from any state",
     "4 pre-existing compilation errors fixed (serde/strum imports, Default derive)"
   ],
-  "last_verification_result": "fmt gate PASS 2026-07-10; other gates in progress",
+  "last_verification_result": "fmt/check/clippy PASS; test 7001 passed 0 failed (307 suites) на комит 8411934; предишен main CI (bf6f971) е failed — очаквано червено поле за поправка",
   "plan": {
     "phase0": "gates + commit + push gitlab + CI green",
     "phase1_rev12": [

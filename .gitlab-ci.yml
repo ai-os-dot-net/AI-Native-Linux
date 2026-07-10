@@ -14,7 +14,7 @@ variables:
   CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
   RUSTUP_HOME: "/usr/local/rustup"
   RUST_VERSION: "1.94"
-  AIOS_RUST_CI_IMAGE: "aios-rust-ci:1.94"
+  AIOS_RUST_CI_IMAGE: "192.168.1.180:5050/platform/ci-templates/neurocad-ci-tools:latest"
   RUSTC_BOOTSTRAP: "0"
   DEBIAN_FRONTEND: "noninteractive"
   # ISO naming convention: aios-rev12-<short-sha>-x86_64.iso
@@ -47,6 +47,8 @@ variables:
     - rustc --version
     - cargo --version
     - c++ --version
+    # neurocad-ci-tools lacks protoc — install on demand (tonic build deps)
+    - command -v protoc >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq protobuf-compiler)
     - protoc --version
     # The workspace uses protoc-bin-vendored, but libclang-dev is needed
     # for rocksdb-sys bindings (crates/aios-evidence, crates/aios-vault).
@@ -108,7 +110,11 @@ distro-shell-tests:
       distro/update/aios-update.sh
       distro/installer/aios-quick-install.sh
       distro/installer/aios-installer.sh
+      distro/installer/aios-autoinstall.sh
+      distro/build/qemu-install-test.sh
+      distro/build/tests/test-rev12-install-gate.sh
     - sh distro/build/tests/test-rev11-build.sh
+    - sh distro/build/tests/test-rev12-install-gate.sh
     - sh distro/build/tests/test-rev12-boot-gate.sh
     - sh distro/build/tests/test-rev12-release-metadata.sh
     - sh distro/build/tests/test-rev12-installer.sh
@@ -189,7 +195,7 @@ r13-opensuse-rootfs:
   stage: build
   image: ${OPENSUSE_CI_IMAGE}
   tags:
-    - docker
+    - aios
   timeout: 3h
   needs:
     - distro-shell-tests
@@ -273,7 +279,7 @@ r13-enterprise-iso:
   stage: assemble
   image: ${AIOS_RUST_CI_IMAGE}
   tags:
-    - docker
+    - aios
   timeout: 4h
   needs:
     - job: cargo-release
@@ -313,7 +319,7 @@ r13-qemu-boot-smoke:
   stage: verify
   image: ${AIOS_RUST_CI_IMAGE}
   tags:
-    - docker
+    - aios
   timeout: 30m
   needs:
     - job: r13-enterprise-iso
