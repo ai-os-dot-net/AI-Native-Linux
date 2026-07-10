@@ -173,7 +173,14 @@ cargo-fmt:
 cargo-release:
   stage: build
   image: ${AIOS_RUST_CI_IMAGE}
-  <<: *cargo_cache
+  # pull-only: re-archiving the multi-GB target/ tree blew the 1h job timeout
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-cargo"
+    policy: pull
+    paths:
+      - .cargo/registry/
+      - .cargo/git/
+      - target/
   <<: *bootstrap_deps
   needs:
     - cargo-test
