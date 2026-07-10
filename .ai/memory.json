@@ -3,7 +3,7 @@
   "current_milestone": "Enterprise plan: Фаза 0 стабилизация → Rev.12 дистрибуция → Rev.13 enterprise",
   "current_task_id": "TSK-PH0-001",
   "current_task_title": "Фаза 0: 4 cargo gates на 219 некомитнати промени + комит + push gitlab + CI",
-  "current_step": "Комит 1d11b26 готов локално (CI fix + QEMU install gate). Чака се операторът да махне lxc.apparmor.profile от CT130 и рестарт, после push+pipeline.",
+  "current_step": "СЕСИЯ ПРЕКЪСНАТА ПЛАНИРАНО (спиране PVE+NUC). Всичко комитнато до fe949e5 на gitlab/main. Pipeline 3827 (пълен R12 пакет) беше running — ще умре при спиране на PVE.",
   "completed_steps": [
     "OS Research (7 modules, 5,781 lines)",
     "Rev.3 through Rev.7 (all prior milestones)",
@@ -18,7 +18,7 @@
     "neurocad-ci-tools image няма protoc — инсталира се on-demand в before_script",
     "lxc.apparmor.profile: unconfined ЧУПИ вложен docker (не може да зареди docker-default профил); nesting=1 без override е правилното"
   ],
-  "last_verification_result": "fmt/check/clippy PASS; test 7001 passed 0 failed (307 suites) на комит 8411934; предишен main CI (bf6f971) е failed — очаквано червено поле за поправка",
+  "last_verification_result": "Локално: 4 cargo gates PASS (7001 теста), negative gates 17/17, metadata 56/56. CI: check/test/clippy/fmt/shell-tests/rootfs/release ВСИЧКИ зелени поне веднъж; assemble-iso недоказан (спрян на липсващ xorriso, фиксът е в fe949e5).",
   "plan": {
     "phase0": "gates + commit + push gitlab + CI green",
     "phase1_rev12": [
@@ -41,5 +41,12 @@
       "R13.8 CIS/STIG+CVE process"
     ],
     "exit_criteria": "REV12/REV13 spec exit criteria in distro/build/*.md"
-  }
+  },
+  "resume_instructions": [
+    "1. Провери pipeline на fe949e5: goriko-gitlab-api /projects/10/pipelines?per_page=3 — ако е failed/canceled от спирането, re-trigger с нов комит или изчакай следващ push",
+    "2. Runner: CT130 на PVE (192.168.1.217, runner_id 20, docker+KVM, insecure registry конфигуриран, apparmor пакет премахнат като CT102/109); onboot=1 — ще се вдигне сам с PVE",
+    "3. Първи неизминали стъпала: assemble-iso (ISO toolchain apt install добавен), QEMU boot gate (блокиращ), qemu-install-gate (allow_failure)",
+    "4. Локални тестове: ползвай TMPDIR=~/.tmp-aios (/tmp е пълен от NeuroCAD сесии)",
+    "5. Задачи: #1 Фаза 0 на 95% (чака зелен pipeline), #2/#3 в ход, вж. .ai/tasks.json и task списъка"
+  ]
 }
