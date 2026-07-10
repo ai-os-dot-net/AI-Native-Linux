@@ -102,6 +102,15 @@ cargo-test:
 distro-shell-tests:
   stage: test
   image: ${AIOS_RUST_CI_IMAGE}
+  # metadata gate does a scaffold debug build — reuse the cargo cache
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-cargo"
+    policy: pull
+    paths:
+      - .cargo/registry/
+      - .cargo/git/
+      - target/
+  timeout: 2h
   before_script:
     # neurocad-ci-tools lacks shellcheck — install on demand
     - command -v shellcheck >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq shellcheck)
@@ -128,8 +137,10 @@ distro-shell-tests:
       distro/installer/aios-autoinstall.sh
       distro/build/qemu-install-test.sh
       distro/build/tests/test-rev12-install-gate.sh
+      distro/build/tests/test-rev12-negative-gates.sh
     - sh distro/build/tests/test-rev11-build.sh
     - sh distro/build/tests/test-rev12-install-gate.sh
+    - sh distro/build/tests/test-rev12-negative-gates.sh
     - sh distro/build/tests/test-rev12-boot-gate.sh
     - sh distro/build/tests/test-rev12-release-metadata.sh
     - sh distro/build/tests/test-rev12-installer.sh

@@ -124,7 +124,9 @@ append_manifest_artifact() {
     local manifest="$1"
     local rel_path="$2"
     local abs_path="${ISO_DIR}/${rel_path}"
-    local comma="${3:-,}"
+    # ${3-,} (no colon): an explicitly-passed empty string means "no comma"
+    # for the final array element; ${3:-,} would wrongly re-add it.
+    local comma="${3-,}"
 
     if [ ! -f "${abs_path}" ]; then
         die "Release artifact missing during manifest generation: ${rel_path}"
@@ -267,6 +269,13 @@ fi
 
 if [ -n "${AIOS_SIGNATURE_SOURCE_DIR}" ] && [ ! -d "${AIOS_SIGNATURE_SOURCE_DIR}" ]; then
     die "Signature source directory not found: ${AIOS_SIGNATURE_SOURCE_DIR}"
+fi
+
+# Fail closed BEFORE the expensive build: required signatures can only come
+# from --signature-source-dir, so their absence is already known here. The
+# staging-time require_boot_signature gate remains as defense in depth.
+if [ "${AIOS_REQUIRE_BOOT_SIGNATURES}" = "1" ] && [ -z "${AIOS_SIGNATURE_SOURCE_DIR}" ]; then
+    die "Boot-chain signature required but missing: --require-boot-signatures needs --signature-source-dir"
 fi
 
 if [ -n "${BASE_ROOTFS}" ] && [ -f "${BASE_ROOTFS}/etc/aios/base-rootfs.env" ]; then
@@ -1609,6 +1618,35 @@ cat > "${AIOS_ISO_META_DIR}/boot-chain.json" <<EOF
 }
 EOF
 
+# R12.4: SBOM must cover Rust crates (workspace + dependency graph), not just
+# file artifacts. Emit CycloneDX library components with cargo purls.
+generate_rust_crate_components() {
+    command -v python3 >/dev/null 2>&1 || return 0
+    (cd "${REPO_ROOT}" && cargo metadata --format-version 1 --locked 2>/dev/null) | python3 -c '
+import json, sys
+try:
+    meta = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+comps = []
+for p in meta.get("packages", []):
+    name, ver = p.get("name"), p.get("version")
+    if not name or not ver:
+        continue
+    comps.append({
+        "type": "library",
+        "name": name,
+        "version": ver,
+        "purl": "pkg:cargo/{}@{}".format(name, ver),
+    })
+print(",\n".join("    " + json.dumps(c) for c in comps))
+'
+}
+RUST_CRATE_COMPONENTS="$(generate_rust_crate_components)"
+if [ -z "${RUST_CRATE_COMPONENTS}" ]; then
+    warn "SBOM: no Rust crate components generated (python3/cargo metadata unavailable)"
+fi
+
 cat > "${AIOS_ISO_META_DIR}/sbom.cdx.json" <<EOF
 {
   "bomFormat": "CycloneDX",
@@ -1629,6 +1667,7 @@ cat > "${AIOS_ISO_META_DIR}/sbom.cdx.json" <<EOF
     }
   },
   "components": [
+${RUST_CRATE_COMPONENTS}${RUST_CRATE_COMPONENTS:+,}
     {
       "type": "file",
       "name": "live/aios.squashfs",
@@ -1739,6 +1778,16 @@ cat > "${AIOS_ISO_META_DIR}/provenance.json" <<EOF
     "selinux_mode": "$(json_escape "${AIOS_SELINUX_MODE}")",
     "selinux_policy_status": "$(json_escape "${SELINUX_POLICY_STATUS}")",
     "boot_chain_signatures_required": ${BOOT_SIGNATURES_REQUIRED_TOML}
+  },
+  "outputs": [
+    { "path": "live/vmlinuz", "sha256": "$(file_sha256 "${ISO_DIR}/live/vmlinuz")" },
+    { "path": "live/initrd.img", "sha256": "$(file_sha256 "${ISO_DIR}/live/initrd.img")" },
+    { "path": "live/aios.squashfs", "sha256": "$(file_sha256 "${ISO_DIR}/live/aios.squashfs")" }
+  ],
+  "signature_identity": "$(json_escape "${AIOS_SIGNING_IDENTITY:-unsigned}")",
+  "signing": {
+    "identity": "$(json_escape "${AIOS_SIGNING_IDENTITY:-unsigned}")",
+    "required": ${BOOT_SIGNATURES_REQUIRED_TOML}
   }
 }
 EOF
