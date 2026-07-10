@@ -276,7 +276,7 @@ assemble-iso:
         mkdir -p "${AIOS_BASE_ROOTFS}"
         tar -C "${AIOS_BASE_ROOTFS}" -xzf "${R13_ROOTFS_TARBALL}"
       fi
-    - test -d "${AIOS_BASE_ROOTFS}" || { echo "ERROR: no base rootfs — refusing to ship a scaffold ISO"; exit 1; }
+    - 'test -d "${AIOS_BASE_ROOTFS}" || { echo "ERROR: no base rootfs — refusing to ship a scaffold ISO"; exit 1; }'
     - |
       ISO_ARGS="--release --output ${ISO_OUTPUT} --base-rootfs ${AIOS_BASE_ROOTFS}"
       if [ "${AIOS_ENTERPRISE_RELEASE:-0}" = "1" ]; then
