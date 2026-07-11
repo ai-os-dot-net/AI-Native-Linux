@@ -48,7 +48,6 @@ variables:
     paths:
       - .cargo/registry/
       - .cargo/git/
-      - target/
 
 # Shared build-dependency bootstrap for Rust workspace jobs
 .bootstrap_deps: &bootstrap_deps
@@ -109,7 +108,6 @@ distro-shell-tests:
     paths:
       - .cargo/registry/
       - .cargo/git/
-      - target/
   timeout: 2h
   before_script:
     # neurocad-ci-tools lacks shellcheck — install on demand
@@ -208,7 +206,6 @@ cargo-release:
     paths:
       - .cargo/registry/
       - .cargo/git/
-      - target/
   <<: *bootstrap_deps
   needs:
     - cargo-test
@@ -284,7 +281,6 @@ assemble-iso:
     paths:
       - .cargo/registry/
       - .cargo/git/
-      - target/
   needs:
     - job: cargo-release
       artifacts: true
