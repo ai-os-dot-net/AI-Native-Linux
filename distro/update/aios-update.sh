@@ -41,6 +41,11 @@ ROLLBACK_DIR="${AIOS_ROLLBACK_DIR:-/var/lib/aios/rollback}"
 REQUIRE_SIGNATURE="${AIOS_UPDATE_REQUIRE_SIGNATURE:-1}"
 HEALTH_COMMAND="${AIOS_UPDATE_HEALTH_COMMAND:-true}"
 BOOT_DEADLINE_SECONDS="${AIOS_UPDATE_BOOT_DEADLINE_SECONDS:-300}"
+ALLOW_RECOVERY_CHANNEL="${AIOS_ALLOW_RECOVERY_CHANNEL:-0}"
+
+# Closed set of valid enterprise channels (REV13-ENTERPRISE-SPEC.md §8). The
+# recovery channel is fail-closed: consuming it requires --allow-recovery-channel.
+CHANNEL_SET="release security staging recovery"
 
 VERIFIED_RELEASE_DIR=""
 VERIFIED_METADATA_JSON=""
@@ -65,7 +70,9 @@ Commands:
 
 Options:
   --repo DIR|file://DIR         Local repository root for verify/stage
-  --channel NAME                Channel name (default: release)
+  --channel NAME                Channel: release|security|staging|recovery
+                                (default: release)
+  --allow-recovery-channel      Permit --channel recovery (fail-closed otherwise)
   --trusted-key FILE            OpenSSL public key for detached signature checks
   --state-dir DIR               Update state directory (default: /var/lib/aios/update)
   --rollback-dir DIR            Rollback directory (default: /var/lib/aios/rollback)
@@ -74,6 +81,21 @@ Options:
                                 rolls back (default: 300)
   --no-signature                Lab-only mode; do not use for promoted releases
 EOF
+}
+
+# Enforce the closed channel set and the recovery-channel fail-closed policy.
+validate_channel() {
+    local channel="$1"
+    local valid
+    for valid in ${CHANNEL_SET}; do
+        if [ "${channel}" = "${valid}" ]; then
+            if [ "${channel}" = "recovery" ] && [ "${ALLOW_RECOVERY_CHANNEL}" != "1" ]; then
+                die "recovery channel requires --allow-recovery-channel (fail-closed)"
+            fi
+            return 0
+        fi
+    done
+    die "unknown channel: ${channel} (valid: ${CHANNEL_SET// /, })"
 }
 
 die() {
@@ -158,6 +180,8 @@ verify_release() {
     require_cmd jq
     require_cmd openssl
     require_cmd sha256sum
+
+    validate_channel "${CHANNEL}"
 
     root="$(repo_root)"
     channel_dir="${root}/channels/${CHANNEL}"
@@ -488,6 +512,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --repo)           REPO="$2"; shift 2 ;;
         --channel)        CHANNEL="$2"; shift 2 ;;
+        --allow-recovery-channel) ALLOW_RECOVERY_CHANNEL=1; shift ;;
         --trusted-key)    TRUSTED_KEY="$2"; shift 2 ;;
         --state-dir)      STATE_DIR="$2"; shift 2 ;;
         --rollback-dir)   ROLLBACK_DIR="$2"; shift 2 ;;

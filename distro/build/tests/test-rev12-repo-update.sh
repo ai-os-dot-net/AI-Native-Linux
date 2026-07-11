@@ -408,6 +408,174 @@ else
     fail "Linkage: --skip-linkage-check did not bypass the linkage check"
 fi
 
+# ---------------------------------------------------------------------------
+# R13.5 enterprise channels: closed channel set, staging->release promotion
+# (bytes identical), security channel, retention pruning that spares the
+# active + previous (rollback-target) release, and the recovery-channel
+# fail-closed policy.
+# ---------------------------------------------------------------------------
+msg "--- R13.5 enterprise channels / promotion / retention ---"
+
+chan_publish() { # repo channel id version artifact
+    "${PUBLISH_SCRIPT}" --repo-dir "$1" --channel "$2" --release-id "$3" \
+        --version "$4" --arch x86_64 --artifact "$5" \
+        --manifest "${MANIFEST}" --sbom "${SBOM}" --provenance "${PROVENANCE}" \
+        --signing-key "${KEY_FILE}" --signing-key-id test-key >/dev/null 2>&1
+}
+
+CH_REPO="${TMP_ROOT}/chan-repo"
+CH_ART="${TMP_ROOT}/chan-payload.iso"
+printf 'AIOS enterprise channel payload\n' > "${CH_ART}"
+
+# Publish into the staging channel.
+if chan_publish "${CH_REPO}" staging stg-1 0.2.0 "${CH_ART}"; then
+    pass "Channels: publish into staging succeeds"
+else
+    fail "Channels: publish into staging failed"
+fi
+
+STG_ID="$(jq -r '.release_id' "${CH_REPO}/channels/staging/current.json" 2>/dev/null || echo '')"
+if [ "${STG_ID}" = "stg-1" ]; then
+    pass "Channels: staging head records stg-1"
+else
+    fail "Channels: staging head is '${STG_ID}', expected stg-1"
+fi
+
+# Promote staging -> release WITHOUT rebuilding.
+if "${PUBLISH_SCRIPT}" promote \
+    --repo-dir "${CH_REPO}" --promote-from staging --channel release \
+    --signing-key "${KEY_FILE}" --signing-key-id test-key >/dev/null 2>&1; then
+    pass "Channels: promote staging -> release succeeds"
+else
+    fail "Channels: promote staging -> release failed"
+fi
+
+REL_ID="$(jq -r '.release_id' "${CH_REPO}/channels/release/current.json" 2>/dev/null || echo '')"
+STG_PAYLOAD="${CH_REPO}/releases/${STG_ID}/artifacts/$(basename "${CH_ART}")"
+REL_PAYLOAD="${CH_REPO}/releases/${REL_ID}/artifacts/$(basename "${CH_ART}")"
+if [ -f "${STG_PAYLOAD}" ] && [ -f "${REL_PAYLOAD}" ] \
+   && [ "$(sha256sum "${STG_PAYLOAD}" | awk '{print $1}')" = "$(sha256sum "${REL_PAYLOAD}" | awk '{print $1}')" ]; then
+    pass "Channels: promoted release payload is byte-identical (hash equal)"
+else
+    fail "Channels: promoted payload hash differs from source"
+fi
+
+# The promoted release must verify on the release channel with the public key.
+if "${UPDATE_SCRIPT}" verify --repo "${CH_REPO}" --channel release \
+    --trusted-key "${PUB_FILE}" >/dev/null 2>&1; then
+    pass "Channels: client verifies the promoted release on 'release'"
+else
+    fail "Channels: client rejected the promoted release on 'release'"
+fi
+
+# Promote must fail closed if source and target channel are the same.
+if "${PUBLISH_SCRIPT}" promote \
+    --repo-dir "${CH_REPO}" --promote-from release --channel release \
+    --signing-key "${KEY_FILE}" --signing-key-id test-key >/dev/null 2>&1; then
+    fail "Channels: promote accepted identical source/target channel"
+else
+    pass "Channels: promote rejects identical source/target channel"
+fi
+
+# Security channel publish + client verify.
+if chan_publish "${CH_REPO}" security sec-1 0.2.1 "${CH_ART}"; then
+    pass "Channels: publish into security succeeds"
+else
+    fail "Channels: publish into security failed"
+fi
+if "${UPDATE_SCRIPT}" verify --repo "${CH_REPO}" --channel security \
+    --trusted-key "${PUB_FILE}" >/dev/null 2>&1; then
+    pass "Channels: client verifies the security channel head"
+else
+    fail "Channels: client rejected the security channel head"
+fi
+
+# Repo evidence records publish + promote operations.
+if grep -q '"action":"promote"' "${CH_REPO}/evidence.jsonl" 2>/dev/null \
+   && grep -q '"action":"publish"' "${CH_REPO}/evidence.jsonl" 2>/dev/null; then
+    pass "Channels: repo evidence.jsonl records publish and promote"
+else
+    fail "Channels: repo evidence.jsonl missing publish/promote records"
+fi
+
+# Retention: publish r1..r4 to a release channel, retain 2, prune must delete
+# the two oldest superseded releases but keep the active (r4) and the previous
+# rollback-target (r3).
+RET_REPO="${TMP_ROOT}/ret-repo"
+chan_publish "${RET_REPO}" release r1 0.3.0 "${CH_ART}"
+chan_publish "${RET_REPO}" release r2 0.3.1 "${CH_ART}"
+chan_publish "${RET_REPO}" release r3 0.3.2 "${CH_ART}"
+chan_publish "${RET_REPO}" release r4 0.3.3 "${CH_ART}"
+
+if "${PUBLISH_SCRIPT}" prune --repo-dir "${RET_REPO}" --channel release --retain 2 >/dev/null 2>&1; then
+    pass "Retention: prune --retain 2 succeeds"
+else
+    fail "Retention: prune --retain 2 failed"
+fi
+
+if [ ! -e "${RET_REPO}/releases/r1" ] && [ ! -e "${RET_REPO}/releases/r2" ]; then
+    pass "Retention: two oldest superseded releases pruned"
+else
+    fail "Retention: oldest superseded releases were not pruned"
+fi
+
+RET_ACTIVE="$(jq -r '.release_id' "${RET_REPO}/channels/release/current.json" 2>/dev/null || echo '')"
+RET_PREV="$(jq -r '.release_id' "${RET_REPO}/channels/release/previous.json" 2>/dev/null || echo '')"
+if [ "${RET_ACTIVE}" = "r4" ] && [ -d "${RET_REPO}/releases/r4" ]; then
+    pass "Retention: active release r4 preserved"
+else
+    fail "Retention: active release r4 was not preserved"
+fi
+if [ "${RET_PREV}" = "r3" ] && [ -d "${RET_REPO}/releases/r3" ]; then
+    pass "Retention: previous (rollback-target) release r3 preserved"
+else
+    fail "Retention: previous release r3 was not preserved"
+fi
+
+# Retention floor: --retain 1 must clamp to 2 and never strand the repo below
+# the active + rollback pair.
+if "${PUBLISH_SCRIPT}" prune --repo-dir "${RET_REPO}" --channel release --retain 1 >/dev/null 2>&1 \
+   && [ -d "${RET_REPO}/releases/r4" ] && [ -d "${RET_REPO}/releases/r3" ]; then
+    pass "Retention: --retain 1 clamps to floor 2 (active + previous kept)"
+else
+    fail "Retention: --retain 1 did not respect the floor of 2"
+fi
+
+# Retention prune emits evidence.
+if grep -q '"action":"prune"' "${RET_REPO}/evidence.jsonl" 2>/dev/null; then
+    pass "Retention: prune emits repo evidence"
+else
+    fail "Retention: prune evidence missing"
+fi
+
+# Recovery channel is fail-closed on the client without --allow-recovery-channel.
+chan_publish "${CH_REPO}" recovery rec-1 0.2.9 "${CH_ART}"
+if "${UPDATE_SCRIPT}" verify --repo "${CH_REPO}" --channel recovery \
+    --trusted-key "${PUB_FILE}" >/dev/null 2>&1; then
+    fail "Recovery channel: client accepted recovery WITHOUT --allow-recovery-channel"
+else
+    pass "Recovery channel: client refuses recovery without --allow-recovery-channel"
+fi
+if "${UPDATE_SCRIPT}" verify --repo "${CH_REPO}" --channel recovery \
+    --allow-recovery-channel --trusted-key "${PUB_FILE}" >/dev/null 2>&1; then
+    pass "Recovery channel: client accepts recovery WITH --allow-recovery-channel"
+else
+    fail "Recovery channel: client rejected recovery even with the flag"
+fi
+
+# Unknown channels are rejected on both sides (closed set enforcement).
+if chan_publish "${CH_REPO}" bogus bad-1 0.0.1 "${CH_ART}"; then
+    fail "Closed set: publish accepted an unknown channel"
+else
+    pass "Closed set: publish rejects an unknown channel"
+fi
+if "${UPDATE_SCRIPT}" verify --repo "${CH_REPO}" --channel bogus \
+    --trusted-key "${PUB_FILE}" >/dev/null 2>&1; then
+    fail "Closed set: client accepted an unknown channel"
+else
+    pass "Closed set: client rejects an unknown channel"
+fi
+
 printf '\n'
 msg "=== Test Summary ==="
 printf '  Passed: %d\n' "${PASSED}"
