@@ -473,7 +473,16 @@ r13-enterprise-iso:
     expire_in: 30 days
   rules:
     - if: '$AIOS_R13_ENTERPRISE_BUILD == "1"'
+    # Same changes filter as r13-opensuse-rootfs: this job `needs` it, and a
+    # docs-only push that filters out the rootfs job while keeping this one
+    # makes pipeline creation fail with zero jobs (needs on a missing job).
     - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
       when: manual
       allow_failure: false
 
@@ -502,7 +511,14 @@ r13-qemu-boot-smoke:
     expire_in: 14 days
   rules:
     - if: '$AIOS_R13_ENTERPRISE_BUILD == "1" && $AIOS_R13_QEMU_BOOT_TEST == "1"'
+    # Mirrors r13-enterprise-iso (its `needs` target) — see comment there.
     - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
       when: manual
       allow_failure: false
 
