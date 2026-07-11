@@ -37,6 +37,7 @@ BASE_PACKAGES=(
     gzip
     xz
     systemd
+    systemd-sysvcompat
     dbus-1
     util-linux
     iproute2
