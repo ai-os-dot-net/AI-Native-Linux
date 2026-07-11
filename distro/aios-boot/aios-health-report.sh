@@ -1,0 +1,59 @@
+#!/bin/sh
+#
+# AI-OS.NET Rev.12 boot-time service health reporter.
+#
+# Emits EXACTLY ONE line to /dev/console so an external QEMU serial-log gate can
+# assert boot-time service health without a guest agent:
+#
+#   AIOS-HEALTH: RUNNING
+#   AIOS-HEALTH: DEGRADED failed=<comma-separated unit names>
+#
+# Staged to /usr/lib/aios/aios-health-report.sh and driven by
+# aios-health-report.service (oneshot, after aios.target + multi-user.target).
+#
+# POSIX sh only. Never fails the boot: always prints a single verdict line and
+# exits 0, even when systemctl is unavailable (e.g. scaffold rootfs).
+
+set -u
+
+CONSOLE="/dev/console"
+
+# Prefer the real console; fall back to stdout when it is not writable so the
+# line still lands in the journal / serial capture during testing.
+emit() {
+    if [ -w "${CONSOLE}" ] 2>/dev/null; then
+        printf '%s\n' "$*" > "${CONSOLE}" 2>/dev/null || printf '%s\n' "$*"
+    else
+        printf '%s\n' "$*"
+    fi
+}
+
+# No systemctl (scaffold / minimal rootfs): report degraded with an explicit
+# reason rather than pretending the system is healthy.
+if ! command -v systemctl >/dev/null 2>&1; then
+    emit "AIOS-HEALTH: DEGRADED failed=no-systemctl"
+    exit 0
+fi
+
+# Let systemd finish bringing the system up. is-system-running --wait blocks
+# until the manager leaves the 'starting' state, then exits non-zero for any
+# non-'running' final state (e.g. 'degraded'). We deliberately IGNORE that exit
+# code and instead inspect the actual failed-unit set below.
+systemctl is-system-running --wait >/dev/null 2>&1 || true
+
+# Collect the failed units. --no-legend drops the header/footer; each remaining
+# line starts with the unit name in column 1.
+failed_units="$(
+    systemctl --failed --no-legend --plain --no-pager 2>/dev/null \
+        | awk '{ print $1 }' \
+        | grep -v '^$' \
+        | paste -sd ',' -
+)"
+
+if [ -n "${failed_units}" ]; then
+    emit "AIOS-HEALTH: DEGRADED failed=${failed_units}"
+else
+    emit "AIOS-HEALTH: RUNNING"
+fi
+
+exit 0

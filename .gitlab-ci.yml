@@ -318,7 +318,7 @@ assemble-iso:
       if [ "${AIOS_QEMU_BOOT_TEST:-1}" = "1" ]; then
         QEMU_FLAGS=""
         [ -r /dev/kvm ] && [ -w /dev/kvm ] && QEMU_FLAGS="--kvm"
-        ./distro/build/qemu-boot-smoke.sh --iso "${ISO_OUTPUT}" ${QEMU_FLAGS} --timeout "${AIOS_QEMU_BOOT_TIMEOUT:-300}"
+        ./distro/build/qemu-boot-smoke.sh --iso "${ISO_OUTPUT}" ${QEMU_FLAGS} --require-health --timeout "${AIOS_QEMU_BOOT_TIMEOUT:-300}"
       else
         echo "QEMU boot smoke explicitly disabled (AIOS_QEMU_BOOT_TEST=0)."
       fi

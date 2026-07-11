@@ -67,6 +67,32 @@ check_not_grep() {
     fi
 }
 
+# Read a dotted JSON path (e.g. selinux.policy_source) from a file; empty on miss.
+json_field() {
+    _jf_file="$1"
+    _jf_path="$2"
+    python3 - "${_jf_file}" "${_jf_path}" <<'PY' 2>/dev/null || true
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        d = json.load(f)
+except Exception:
+    sys.exit(0)
+cur = d
+for key in sys.argv[2].split('.'):
+    if isinstance(cur, dict) and key in cur:
+        cur = cur[key]
+    else:
+        sys.exit(0)
+if isinstance(cur, bool):
+    print("true" if cur else "false")
+elif cur is None:
+    print("")
+else:
+    print(cur)
+PY
+}
+
 msg "=== AI-OS.NET Rev.12 Security Baseline Tests ==="
 
 for _entry in \
@@ -114,6 +140,20 @@ for _needle in \
 done
 
 check_grep "Build blocks enforcing without a binary policy" "${BUILD_SCRIPT}" 'SELinux enforcing requires --selinux-policy-source'
+
+msg "SELinux base-rootfs policy sourcing markers (R12.6)"
+for _needle in \
+    'SELINUX_POLICY_SOURCE' \
+    'SELINUX_POLICY_PRESENT' \
+    'SELINUX_POLICY_SHA256' \
+    'SELINUX_POLICY_REL_PATH' \
+    'base-rootfs' \
+    "policy/policy\\.\\*" \
+    'security=selinux selinux=1 enforcing=0'; do
+    check_grep "Build script SELinux marker: ${_needle}" "${BUILD_SCRIPT}" "${_needle}"
+done
+check_grep "openSUSE base ships a real SELinux policy package" \
+    "${BUILD_DIR}/build-opensuse-rootfs.sh" 'selinux-policy-targeted'
 check_grep "Build stages IMA policy into initramfs" "${BUILD_SCRIPT}" 'INITRAMFS_DIR}/etc/ima/ima-policy'
 check_grep "Build stages EVM policy into initramfs" "${BUILD_SCRIPT}" 'INITRAMFS_DIR}/etc/evm/evm-policy'
 
@@ -300,8 +340,110 @@ PY
         fi
     fi
 
+    # ── SELinux honesty (scaffold = NO policy present) ───────────────────────
+    # A scaffold build has no base rootfs and no --selinux-policy-source, so the
+    # only honest outcome is: policy_source=placeholder, policy_present=false,
+    # and the default GRUB entry carries NO selinux kernel args.
+    msg "SELinux scaffold honesty (no policy present)"
+    if [ -f "${SECURITY_JSON}" ]; then
+        _sel_source="$(json_field "${SECURITY_JSON}" selinux.policy_source)"
+        _sel_present="$(json_field "${SECURITY_JSON}" selinux.policy_present)"
+        _sel_sha="$(json_field "${SECURITY_JSON}" selinux.policy_sha256)"
+        if [ "${_sel_source}" = "placeholder" ] && [ "${_sel_present}" = "false" ]; then
+            pass "scaffold security.json honestly records policy_source=placeholder / policy_present=false"
+        else
+            fail "scaffold security.json dishonest (source='${_sel_source}' present='${_sel_present}')"
+        fi
+        if [ -z "${_sel_sha}" ]; then
+            pass "scaffold security.json has no fabricated policy sha256"
+        else
+            fail "scaffold security.json fabricated a policy sha256 for a placeholder ('${_sel_sha}')"
+        fi
+        _grub="${ISO_STAGING}/boot/grub/grub.cfg"
+        if [ -f "${_grub}" ] && grep -E 'loglevel=3' "${_grub}" | grep -q 'security=selinux'; then
+            fail "scaffold default GRUB entry carries selinux args without a policy"
+        else
+            pass "scaffold default GRUB entry carries NO selinux kernel args (correct for placeholder)"
+        fi
+    else
+        skip "SELinux scaffold honesty (security.json missing)"
+    fi
+
     if [ "${AIOS_TEST_KEEP_WORKDIR:-0}" != "1" ]; then
         rm -rf "${WORKDIR}"
+    fi
+
+    # ── SELinux present-policy proof (synthetic base rootfs) ──────────────────
+    # Build with a minimal base rootfs that already carries a genuine binary
+    # policy at /etc/selinux/targeted/policy/policy.NN (mirrors the R13.1 openSUSE
+    # selinux-policy-targeted layout). The build must KEEP that policy, record
+    # policy_source=base-rootfs with the real sha256, and put permissive selinux
+    # args on the default GRUB entry.
+    msg "SELinux present-policy proof (synthetic base rootfs)"
+    BASE_ROOTFS="$(mktemp -d "${TMPDIR:-/tmp}/aios-rev12-selinux-base.XXXXXX")"
+    B_WORK="$(mktemp -d "${TMPDIR:-/tmp}/aios-rev12-selinux-build.XXXXXX")"
+    B_STAGING="${B_WORK}/iso"
+    B_SECJSON="${B_STAGING}/aios/security.json"
+    B_GRUB="${B_STAGING}/boot/grub/grub.cfg"
+    # Minimal init + update deps so build-aios-iso accepts the base rootfs.
+    mkdir -p "${BASE_ROOTFS}/sbin" "${BASE_ROOTFS}/usr/bin" \
+        "${BASE_ROOTFS}/etc/selinux/targeted/policy"
+    printf '#!/bin/sh\nexec /sbin/init "$@"\n' > "${BASE_ROOTFS}/sbin/init"
+    chmod 755 "${BASE_ROOTFS}/sbin/init"
+    for _dep in bash jq openssl sha256sum; do
+        printf '#!/bin/sh\n:\n' > "${BASE_ROOTFS}/usr/bin/${_dep}"
+        chmod 755 "${BASE_ROOTFS}/usr/bin/${_dep}"
+    done
+    # Synthetic binary policy blob (deterministic content → known sha256).
+    head -c 4096 /dev/urandom > "${BASE_ROOTFS}/etc/selinux/targeted/policy/policy.35"
+    SYNTH_SHA="$(sha256sum "${BASE_ROOTFS}/etc/selinux/targeted/policy/policy.35" | awk '{print $1}')"
+
+    B_EXIT=0
+    AIOS_BUILD_WORKDIR="${B_WORK}" \
+        "${BUILD_SCRIPT}" \
+            --debug \
+            --base-rootfs "${BASE_ROOTFS}" \
+            --kernel-modules-source none \
+            --kernel-firmware-source none \
+            --output "${B_WORK}/aios-selinux-test.iso" \
+            --jobs "$(nproc 2>/dev/null || echo 2)" \
+            > "${B_WORK}/build.log" 2>&1 || B_EXIT=$?
+
+    if [ -f "${B_SECJSON}" ]; then
+        pass "present-policy build reached Step 11: security.json emitted (exit=${B_EXIT})"
+        _b_source="$(json_field "${B_SECJSON}" selinux.policy_source)"
+        _b_type="$(json_field "${B_SECJSON}" selinux.policy_type)"
+        _b_present="$(json_field "${B_SECJSON}" selinux.policy_present)"
+        _b_sha="$(json_field "${B_SECJSON}" selinux.policy_sha256)"
+        _b_path="$(json_field "${B_SECJSON}" selinux.policy_path)"
+        if [ "${_b_source}" = "base-rootfs" ] && [ "${_b_present}" = "true" ] && [ "${_b_type}" = "targeted" ]; then
+            pass "security.json records policy_source=base-rootfs, type=targeted, present=true"
+        else
+            fail "security.json wrong for base-rootfs policy (source='${_b_source}' type='${_b_type}' present='${_b_present}')"
+        fi
+        if [ "${_b_path}" = "/etc/selinux/targeted/policy/policy.35" ]; then
+            pass "security.json policy_path points at the real base-rootfs policy"
+        else
+            fail "security.json policy_path wrong ('${_b_path}')"
+        fi
+        if [ "${_b_sha}" = "${SYNTH_SHA}" ]; then
+            pass "security.json policy_sha256 matches the staged policy file (real hash)"
+        else
+            fail "security.json policy_sha256 mismatch (meta='${_b_sha}' file='${SYNTH_SHA}')"
+        fi
+        if [ -f "${B_GRUB}" ] && grep -E 'loglevel=3' "${B_GRUB}" | grep -q 'security=selinux selinux=1 enforcing=0'; then
+            pass "default GRUB entry carries permissive selinux args (security=selinux enforcing=0)"
+        else
+            fail "default GRUB entry missing permissive selinux args"
+        fi
+    else
+        fail "present-policy build did NOT reach Step 11 — security.json missing (exit=${B_EXIT})"
+        printf '  --- last 40 lines of build log ---\n' >&2
+        tail -n 40 "${B_WORK}/build.log" >&2 2>/dev/null || true
+    fi
+
+    if [ "${AIOS_TEST_KEEP_WORKDIR:-0}" != "1" ]; then
+        rm -rf "${BASE_ROOTFS}" "${B_WORK}"
     fi
 fi
 

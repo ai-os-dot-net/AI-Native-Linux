@@ -1,0 +1,15 @@
+[Unit]
+Description=AI-OS.NET Boot-Time Service Health Report
+Documentation=https://ai-os.net/docs/health
+Wants=aios.target multi-user.target
+After=aios.target multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/aios/aios-health-report.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

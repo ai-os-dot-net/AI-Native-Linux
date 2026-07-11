@@ -717,6 +717,19 @@ SYSTEMD_RESOLVED_DST="${ROOTFS_DIR}/etc/systemd"
 
 mkdir -p "${SYSTEMD_DST}" "${SYSTEMD_NETWORK_DST}"
 
+# Stage the boot-time service health reporter that aios-health-report.service
+# drives. Its ExecStart binary MUST exist in the rootfs or the ExecStart
+# validation gate below will fail the build (by design).
+HEALTH_REPORT_SRC="${REPO_ROOT}/distro/aios-boot/aios-health-report.sh"
+if [ -f "${HEALTH_REPORT_SRC}" ]; then
+    mkdir -p "${AIOS_LIB_DIR}"
+    cp "${HEALTH_REPORT_SRC}" "${AIOS_LIB_DIR}/aios-health-report.sh"
+    chmod 755 "${AIOS_LIB_DIR}/aios-health-report.sh"
+    info "Health reporter staged: /usr/lib/aios/aios-health-report.sh"
+else
+    die "Required health reporter missing: ${HEALTH_REPORT_SRC}"
+fi
+
 if [ -d "${SYSTEMD_SRC}" ]; then
     for svc in "${SYSTEMD_SRC}"/*.service; do
         if [ -f "${svc}" ]; then
@@ -739,6 +752,14 @@ fi
 # Create symlinks to enable services
 mkdir -p "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants"
 svc="aios.target"
+if [ -f "${SYSTEMD_DST}/${svc}" ]; then
+    ln -sf "../${svc}" "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/${svc}"
+    info "Enabled: ${svc}"
+fi
+
+# Enable the boot-time service health reporter so it runs on every boot and
+# emits its AIOS-HEALTH verdict to the console for the QEMU health gate.
+svc="aios-health-report.service"
 if [ -f "${SYSTEMD_DST}/${svc}" ]; then
     ln -sf "../${svc}" "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/${svc}"
     info "Enabled: ${svc}"
@@ -952,31 +973,80 @@ ok "Configuration files installed."
 
 step "Step 7: Installing security and integrity baseline"
 
-SELINUX_POLICY_DIR="${ROOTFS_DIR}/etc/selinux/aios/policy"
-mkdir -p "${SELINUX_POLICY_DIR}"
+# SELinux policy sourcing (R12.6). Precedence:
+#   1. --selinux-policy-source PATH  → operator-provided binary policy
+#   2. base-rootfs                   → a genuine policy already shipped by the
+#                                      R13.1 openSUSE base (selinux-policy-targeted
+#                                      stages /etc/selinux/<type>/policy/policy.<N>)
+#   3. placeholder                   → no policy anywhere; recorded honestly and
+#                                      SELinux stays OFF (no kernel args).
 SELINUX_POLICY_STATUS="placeholder"
+SELINUX_POLICY_SOURCE="placeholder"
+SELINUX_POLICY_TYPE="aios"
+SELINUX_POLICY_VERSION="33"
+SELINUX_POLICY_SHA256=""
+SELINUX_POLICY_PRESENT=false
 
-# SELinux config
-cat > "${ROOTFS_DIR}/etc/selinux/config" <<EOF
-# AI-OS.NET SELinux configuration
-SELINUX=${AIOS_SELINUX_MODE}
-SELINUXTYPE=aios
-EOF
+# Detect a real binary policy that the base rootfs already carries.
+BASE_SELINUX_POLICY=""
+if [ -d "${ROOTFS_DIR}/etc/selinux" ]; then
+    BASE_SELINUX_POLICY="$(find "${ROOTFS_DIR}/etc/selinux" -mindepth 3 -maxdepth 3 \
+        -type f -path '*/policy/policy.*' 2>/dev/null | sort | head -n1)"
+fi
 
 if [ -n "${AIOS_SELINUX_POLICY_SOURCE}" ]; then
+    # (1) Operator-provided binary policy — highest precedence.
+    SELINUX_POLICY_TYPE="aios"
+    SELINUX_POLICY_VERSION="33"
+    SELINUX_POLICY_DIR="${ROOTFS_DIR}/etc/selinux/aios/policy"
+    mkdir -p "${SELINUX_POLICY_DIR}"
     cp "${AIOS_SELINUX_POLICY_SOURCE}" "${SELINUX_POLICY_DIR}/policy.33"
     chmod 600 "${SELINUX_POLICY_DIR}/policy.33"
     SELINUX_POLICY_STATUS="provided-binary"
+    SELINUX_POLICY_SOURCE="provided-binary"
+    SELINUX_POLICY_PRESENT=true
+elif [ -n "${BASE_SELINUX_POLICY}" ]; then
+    # (2) Genuine policy already present in the base rootfs — keep it verbatim.
+    SELINUX_POLICY_DIR="$(dirname "${BASE_SELINUX_POLICY}")"
+    SELINUX_POLICY_TYPE="$(basename "$(dirname "${SELINUX_POLICY_DIR}")")"
+    SELINUX_POLICY_VERSION="${BASE_SELINUX_POLICY##*policy.}"
+    SELINUX_POLICY_STATUS="present"
+    SELINUX_POLICY_SOURCE="base-rootfs"
+    SELINUX_POLICY_PRESENT=true
 else
-    # Placeholder policy file (real policy is built by aios-selinux crate).
-    # The initramfs init script expects policy.33 at minimum.
+    # (3) No policy anywhere — honest placeholder. SELinux is NOT usable here;
+    #     the boot entry carries no selinux kernel args (fails open, not silently
+    #     "enforcing" against a stub). Replace with a real policy before enabling.
+    SELINUX_POLICY_TYPE="aios"
+    SELINUX_POLICY_VERSION="33"
+    SELINUX_POLICY_DIR="${ROOTFS_DIR}/etc/selinux/aios/policy"
+    mkdir -p "${SELINUX_POLICY_DIR}"
     cat > "${SELINUX_POLICY_DIR}/policy.33" <<'EOF'
 # AI-OS.NET SELinux Policy — Placeholder
 # This is a minimal binary policy stub.
-# Replace with the output of checkpolicy + semodule_package for production.
+# Replace with the output of checkpolicy + semodule_package for production,
+# or build on the R13.1 openSUSE base (selinux-policy-targeted) for a real policy.
 EOF
     chmod 644 "${SELINUX_POLICY_DIR}/policy.33"
 fi
+
+SELINUX_POLICY_REL_PATH="/etc/selinux/${SELINUX_POLICY_TYPE}/policy/policy.${SELINUX_POLICY_VERSION}"
+if [ "${SELINUX_POLICY_PRESENT}" = true ]; then
+    SELINUX_POLICY_SHA256="$(sha256sum "${SELINUX_POLICY_DIR}/policy.${SELINUX_POLICY_VERSION}" | awk '{print $1}')"
+fi
+
+# SELinux config — SELINUXTYPE tracks the real policy type; when no policy is
+# present the mode is forced to disabled so the target is honest and boots clean.
+if [ "${SELINUX_POLICY_PRESENT}" = true ]; then
+    SELINUX_CONFIG_MODE="${AIOS_SELINUX_MODE}"
+else
+    SELINUX_CONFIG_MODE="disabled"
+fi
+cat > "${ROOTFS_DIR}/etc/selinux/config" <<EOF
+# AI-OS.NET SELinux configuration
+SELINUX=${SELINUX_CONFIG_MODE}
+SELINUXTYPE=${SELINUX_POLICY_TYPE}
+EOF
 
 cat > "${ROOTFS_DIR}/etc/ima/ima-policy" <<'EOF'
 # AI-OS.NET Rev.12 IMA policy skeleton.
@@ -1022,8 +1092,12 @@ revision = 12
 
 [selinux]
 mode = "$(json_escape "${AIOS_SELINUX_MODE}")"
-policy = "/etc/selinux/aios/policy/policy.33"
+policy = "$(json_escape "${SELINUX_POLICY_REL_PATH}")"
+policy_type = "$(json_escape "${SELINUX_POLICY_TYPE}")"
+policy_source = "$(json_escape "${SELINUX_POLICY_SOURCE}")"
 policy_status = "$(json_escape "${SELINUX_POLICY_STATUS}")"
+policy_sha256 = "$(json_escape "${SELINUX_POLICY_SHA256}")"
+policy_present = ${SELINUX_POLICY_PRESENT}
 enforcing_ready = ${SELINUX_ENFORCING_TOML}
 
 [ima]
@@ -1070,6 +1144,8 @@ cat > "${ROOTFS_DIR}/etc/aios/evidence.d/security-baseline.json" <<EOF
   "profile": "$(json_escape "${AIOS_SECURITY_PROFILE}")",
   "selinux_mode": "$(json_escape "${AIOS_SELINUX_MODE}")",
   "selinux_policy_status": "$(json_escape "${SELINUX_POLICY_STATUS}")",
+  "selinux_policy_source": "$(json_escape "${SELINUX_POLICY_SOURCE}")",
+  "selinux_policy_type": "$(json_escape "${SELINUX_POLICY_TYPE}")",
   "ima_policy": "/etc/ima/ima-policy",
   "evm_policy": "/etc/evm/evm-policy",
   "dm_verity_policy": "/etc/aios/verity/rootfs-policy.json",
@@ -1115,6 +1191,26 @@ menuentry "AI-OS.NET Rev.12 Recovery Shell" {
     initrd /live/initrd.img
 }
 GRUBCFG
+
+# R12.6: put SELinux on the kernel command line of the DEFAULT entry ONLY when a
+# genuine policy is present. Default boot mode is PERMISSIVE (enforcing=0) so the
+# baseline logs AVCs without blocking — enforcing is opt-in via --selinux-mode
+# enforcing (which additionally requires a real policy). With no policy present
+# the entry carries NO selinux args (selinux=0 semantics — nothing to enforce).
+if [ "${SELINUX_POLICY_PRESENT}" = true ]; then
+    if [ "${AIOS_SELINUX_MODE}" = "enforcing" ]; then
+        SELINUX_KERNEL_CMDLINE="security=selinux selinux=1 enforcing=1"
+    else
+        SELINUX_KERNEL_CMDLINE="security=selinux selinux=1 enforcing=0"
+    fi
+    # loglevel=3 is unique to the default "Live" entry (debug uses loglevel=7,
+    # recovery has none) — inject only there.
+    sed -i "/loglevel=3/ s#aios\\.autonomous\\.level=advisory#aios.autonomous.level=advisory ${SELINUX_KERNEL_CMDLINE}#" \
+        "${ROOTFS_DIR}/boot/grub/grub.cfg"
+    info "SELinux kernel args on default boot entry: ${SELINUX_KERNEL_CMDLINE} (type=${SELINUX_POLICY_TYPE}, source=${SELINUX_POLICY_SOURCE})"
+else
+    info "No SELinux policy present — default boot entry carries no selinux kernel args (placeholder)."
+fi
 
 if ${HAS_GRUB2}; then
     info "grub2-mkrescue detected — ISO will be UEFI-bootable with GRUB2"
@@ -1420,10 +1516,11 @@ fi
 mkdir -p "${INITRAMFS_DIR}/etc/aios"
 cp "${REPO_ROOT}/distro/aios-boot/initramfs/aios-preinit" "${INITRAMFS_DIR}/etc/aios/preinit"
 mkdir -p "${INITRAMFS_DIR}/etc/ima" "${INITRAMFS_DIR}/etc/evm" \
-    "${INITRAMFS_DIR}/etc/aios/integrity.d" "${INITRAMFS_DIR}/etc/selinux/aios/policy"
+    "${INITRAMFS_DIR}/etc/aios/integrity.d" \
+    "${INITRAMFS_DIR}/etc/selinux/${SELINUX_POLICY_TYPE}/policy"
 cp "${ROOTFS_DIR}/etc/selinux/config" "${INITRAMFS_DIR}/etc/selinux/config"
-cp "${ROOTFS_DIR}/etc/selinux/aios/policy/policy.33" \
-    "${INITRAMFS_DIR}/etc/selinux/aios/policy/policy.33"
+cp "${ROOTFS_DIR}${SELINUX_POLICY_REL_PATH}" \
+    "${INITRAMFS_DIR}${SELINUX_POLICY_REL_PATH}"
 cp "${ROOTFS_DIR}/etc/ima/ima-policy" "${INITRAMFS_DIR}/etc/ima/ima-policy"
 cp "${ROOTFS_DIR}/etc/evm/evm-policy" "${INITRAMFS_DIR}/etc/evm/evm-policy"
 cp "${ROOTFS_DIR}/etc/aios/integrity.d/ima-policy" "${INITRAMFS_DIR}/etc/aios/integrity.d/ima-policy"
@@ -1651,8 +1748,12 @@ cat > "${AIOS_ISO_META_DIR}/security.json" <<EOF
   "profile": "$(json_escape "${AIOS_SECURITY_PROFILE}")",
   "selinux": {
     "configured_mode": "$(json_escape "${AIOS_SELINUX_MODE}")",
-    "policy_path": "/etc/selinux/aios/policy/policy.33",
+    "policy_path": "$(json_escape "${SELINUX_POLICY_REL_PATH}")",
+    "policy_type": "$(json_escape "${SELINUX_POLICY_TYPE}")",
+    "policy_source": "$(json_escape "${SELINUX_POLICY_SOURCE}")",
     "policy_status": "$(json_escape "${SELINUX_POLICY_STATUS}")",
+    "policy_sha256": "$(json_escape "${SELINUX_POLICY_SHA256}")",
+    "policy_present": ${SELINUX_POLICY_PRESENT},
     "enforcing_ready": ${SELINUX_ENFORCING_TOML}
   },
   "ima": {

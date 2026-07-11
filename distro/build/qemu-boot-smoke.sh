@@ -18,6 +18,7 @@ UEFI=false
 OVMF_CODE="${AIOS_OVMF_CODE:-}"
 DRY_RUN=false
 USE_KVM=false
+REQUIRE_HEALTH=false
 
 usage() {
     cat <<'EOF'
@@ -35,6 +36,8 @@ Options:
   --uefi                  Boot with OVMF UEFI firmware
   --ovmf-code PATH        OVMF_CODE.fd path for --uefi
   --kvm                   Use KVM acceleration when /dev/kvm is available
+  --require-health        Also require 'AIOS-HEALTH: RUNNING' in the serial log;
+                          an 'AIOS-HEALTH: DEGRADED' line fails the gate
   --dry-run               Print the QEMU command and exit without booting
   -h, --help              Show this help
 EOF
@@ -92,6 +95,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --kvm)
             USE_KVM=true
+            shift
+            ;;
+        --require-health)
+            REQUIRE_HEALTH=true
             shift
             ;;
         --dry-run)
@@ -247,8 +254,26 @@ SUCCESS_MARKERS=(
     'AI-OS\.NET'
 )
 
+HEALTH_RUNNING_MARKER='AIOS-HEALTH: RUNNING'
+HEALTH_DEGRADED_MARKER='AIOS-HEALTH: DEGRADED'
+
 if log_contains_any "${FAILURE_MARKERS[@]}"; then
     die "boot failure marker found in serial log: ${MATCHED_MARKER}"
+fi
+
+if ${REQUIRE_HEALTH}; then
+    # A DEGRADED verdict is an explicit failure — surface the failed units.
+    if grep -E -q -- "${HEALTH_DEGRADED_MARKER}" "${SERIAL_LOG}" 2>/dev/null; then
+        health_line="$(grep -E -- "${HEALTH_DEGRADED_MARKER}" "${SERIAL_LOG}" 2>/dev/null | tail -n1)"
+        die "boot-time service health DEGRADED: ${health_line}"
+    fi
+    if ! grep -E -q -- "${HEALTH_RUNNING_MARKER}" "${SERIAL_LOG}" 2>/dev/null; then
+        case "${QEMU_STATUS}" in
+            124) die "QEMU timed out before an AIOS-HEALTH verdict appeared" ;;
+            *)   die "--require-health set but no 'AIOS-HEALTH: RUNNING' line appeared in serial log" ;;
+        esac
+    fi
+    info "Boot-time service health OK: ${HEALTH_RUNNING_MARKER}"
 fi
 
 if log_contains_any "${SUCCESS_MARKERS[@]}"; then

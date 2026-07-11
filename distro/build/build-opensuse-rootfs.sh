@@ -56,6 +56,7 @@ BASE_PACKAGES=(
     lvm2
     policycoreutils
     restorecond
+    selinux-policy-targeted
     audit
     grub2
     grub2-x86_64-efi
