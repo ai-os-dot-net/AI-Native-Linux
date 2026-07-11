@@ -1524,6 +1524,27 @@ if [ -n "${STAGED_KERNEL_VERSION}" ] \
     cp -a "${ROOTFS_DIR}/usr/lib/modules/${STAGED_KERNEL_VERSION}" \
         "${INITRAMFS_DIR}/lib/modules/${STAGED_KERNEL_VERSION}" 2>/dev/null || \
         warn "Could not copy staged kernel modules into initramfs."
+
+    # busybox modprobe cannot read zstd-compressed modules (openSUSE ships
+    # .ko.zst) — decompress them in the initramfs copy and fix the module
+    # index files, or the live-media drivers (sr_mod/isofs) never load.
+    INITRAMFS_MOD_DIR="${INITRAMFS_DIR}/lib/modules/${STAGED_KERNEL_VERSION}"
+    if [ -d "${INITRAMFS_MOD_DIR}" ] \
+       && find "${INITRAMFS_MOD_DIR}" -name '*.ko.zst' -print -quit 2>/dev/null | grep -q .; then
+        if command -v zstd >/dev/null 2>&1; then
+            find "${INITRAMFS_MOD_DIR}" -name '*.ko.zst' -exec zstd -d -q --rm {} + \
+                || die "Failed to decompress .ko.zst modules for the initramfs"
+            for _modindex in "${INITRAMFS_MOD_DIR}"/modules.dep \
+                             "${INITRAMFS_MOD_DIR}"/modules.alias \
+                             "${INITRAMFS_MOD_DIR}"/modules.symbols \
+                             "${INITRAMFS_MOD_DIR}"/modules.builtin.modinfo; do
+                [ -f "${_modindex}" ] && sed -i 's/\.ko\.zst/\.ko/g' "${_modindex}"
+            done
+            info "Initramfs modules decompressed (.ko.zst → .ko) for busybox modprobe."
+        else
+            die "Initramfs modules are .ko.zst but zstd is unavailable — busybox modprobe cannot load them."
+        fi
+    fi
 fi
 
 # Copy preinit config to initramfs
