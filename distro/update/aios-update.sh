@@ -2,6 +2,31 @@
 set -euo pipefail
 
 # Verify, stage, activate, and roll back AI-OS.NET signed release updates.
+#
+# Boot-outcome contract (REV12-DISTRIBUTION-SPEC.md §7 — "Failed boot or failed
+# service-health must trigger rollback"). No daemons; everything is file/state
+# based under STATE_DIR / ROLLBACK_DIR:
+#
+#   activate      health-command passes -> current.json status becomes
+#                 'pending-boot-confirmation' and a boot-deadline marker
+#                 (STATE_DIR/pending-boot.json, schema aios.update_pending_boot.v1)
+#                 is written. The previous deployment (ROLLBACK_DIR/previous.json)
+#                 stays intact and bootable until the new one is confirmed.
+#   confirm-boot  Invoked by the systemd oneshot aios-update-confirm.service on a
+#                 successful boot (ConditionPathExists=STATE_DIR/pending-boot.json).
+#                 Transitions current.json status to 'confirmed', records the new
+#                 known-good deployment, and removes the pending marker.
+#   boot-check    Invoked early in boot / recovery. If the pending marker exists
+#                 and its deadline has passed while still unconfirmed, it rolls
+#                 back to the previous deployment and emits rollback evidence.
+#                 Within the window (or with no pending marker) it is a no-op.
+#
+# Systemd wiring (staged by build-aios-iso.sh):
+#   /usr/lib/aios/update/aios-update.sh            <- this client
+#   /etc/systemd/system/aios-update-confirm.service -> ExecStart=... confirm-boot
+# A recovery/early-boot hook should run `aios-update.sh boot-check` before the
+# desktop/target is reached so an unconfirmed, past-deadline deployment is
+# rolled back without operator action.
 
 COMMAND="${1:-}"
 if [ $# -gt 0 ]; then
@@ -15,6 +40,7 @@ STATE_DIR="${AIOS_UPDATE_STATE_DIR:-/var/lib/aios/update}"
 ROLLBACK_DIR="${AIOS_ROLLBACK_DIR:-/var/lib/aios/rollback}"
 REQUIRE_SIGNATURE="${AIOS_UPDATE_REQUIRE_SIGNATURE:-1}"
 HEALTH_COMMAND="${AIOS_UPDATE_HEALTH_COMMAND:-true}"
+BOOT_DEADLINE_SECONDS="${AIOS_UPDATE_BOOT_DEADLINE_SECONDS:-300}"
 
 VERIFIED_RELEASE_DIR=""
 VERIFIED_METADATA_JSON=""
@@ -27,20 +53,26 @@ usage() {
 Usage: aios-update.sh <command> [OPTIONS]
 
 Commands:
-  verify      Verify signed channel metadata, release metadata, signatures, hashes
-  stage       Verify and copy the release into the local staged update area
-  activate    Activate the staged release; rollback automatically on health failure
-  rollback    Restore the previous known-good deployment metadata
-  status      Print current/staged/previous deployment state
+  verify        Verify signed channel metadata, release metadata, signatures, hashes
+  stage         Verify and copy the release into the local staged update area
+  activate      Activate the staged release; rollback on health failure; then
+                mark it pending-boot-confirmation with a boot deadline
+  confirm-boot  Mark the pending deployment confirmed (run on successful boot)
+  boot-check    Roll back if the pending deployment is past its unconfirmed
+                boot deadline (run early in boot / recovery)
+  rollback      Restore the previous known-good deployment metadata
+  status        Print current/staged/previous/pending deployment state
 
 Options:
-  --repo DIR|file://DIR       Local repository root for verify/stage
-  --channel NAME             Channel name (default: release)
-  --trusted-key FILE         OpenSSL public key for detached signature checks
-  --state-dir DIR            Update state directory (default: /var/lib/aios/update)
-  --rollback-dir DIR         Rollback directory (default: /var/lib/aios/rollback)
-  --health-command COMMAND   Command run after activation (default: true)
-  --no-signature             Lab-only mode; do not use for promoted releases
+  --repo DIR|file://DIR         Local repository root for verify/stage
+  --channel NAME                Channel name (default: release)
+  --trusted-key FILE            OpenSSL public key for detached signature checks
+  --state-dir DIR               Update state directory (default: /var/lib/aios/update)
+  --rollback-dir DIR            Rollback directory (default: /var/lib/aios/rollback)
+  --health-command COMMAND      Command run after activation (default: true)
+  --boot-deadline-seconds N     Seconds to wait for confirm-boot before boot-check
+                                rolls back (default: 300)
+  --no-signature                Lab-only mode; do not use for promoted releases
 EOF
 }
 
@@ -59,6 +91,10 @@ json_escape() {
 
 now_utc() {
     date -u +%Y-%m-%dT%H:%M:%SZ
+}
+
+now_epoch() {
+    date -u +%s
 }
 
 file_sha256() {
@@ -287,11 +323,10 @@ activate_staged() {
     write_current_state "${staged_json}" "activating"
 
     if bash -c "${HEALTH_COMMAND}"; then
-        write_current_state "${staged_json}" "active"
-        cp "${STATE_DIR}/current.json" "${ROLLBACK_DIR}/current.json"
-        chmod 600 "${ROLLBACK_DIR}/current.json"
-        emit_evidence "activate" "${release_id}" "OK" "health check passed"
-        info "Activated release ${release_id}"
+        write_current_state "${staged_json}" "pending-boot-confirmation"
+        write_pending_boot_marker "${release_id}"
+        emit_evidence "activate" "${release_id}" "OK" "health check passed; awaiting boot confirmation"
+        info "Activated release ${release_id}; awaiting boot confirmation (deadline in ${BOOT_DEADLINE_SECONDS}s)"
         return 0
     fi
 
@@ -304,6 +339,106 @@ activate_staged() {
 
     emit_evidence "activate" "${release_id}" "FAILED" "health check failed and no previous deployment exists"
     die "health check failed and no previous deployment exists"
+}
+
+write_pending_boot_marker() {
+    local release_id="$1"
+    local marker="${STATE_DIR}/pending-boot.json"
+    local previous_id=""
+    local start_epoch
+    local deadline_epoch
+    local deadline_iso
+
+    if [ -f "${ROLLBACK_DIR}/previous.json" ]; then
+        previous_id="$(jq -r '.release_id // ""' "${ROLLBACK_DIR}/previous.json")"
+    fi
+    start_epoch="$(now_epoch)"
+    deadline_epoch=$(( start_epoch + BOOT_DEADLINE_SECONDS ))
+    deadline_iso="$(date -u -d "@${deadline_epoch}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || now_utc)"
+
+    mkdir -p "${STATE_DIR}"
+    cat > "${marker}" <<EOF
+{
+  "schema": "aios.update_pending_boot.v1",
+  "release_id": "$(json_escape "${release_id}")",
+  "previous_release_id": "$(json_escape "${previous_id}")",
+  "created_at": "$(now_utc)",
+  "deadline_epoch": ${deadline_epoch},
+  "deadline": "$(json_escape "${deadline_iso}")"
+}
+EOF
+    chmod 600 "${marker}"
+}
+
+confirm_boot() {
+    local marker="${STATE_DIR}/pending-boot.json"
+    local current_json="${STATE_DIR}/current.json"
+    local release_id
+    local tmp
+
+    require_cmd jq
+    if [ ! -f "${marker}" ]; then
+        info "No pending boot confirmation; nothing to do"
+        return 0
+    fi
+    require_file "current deployment" "${current_json}"
+
+    release_id="$(jq -r '.release_id // ""' "${marker}")"
+    if [ -z "${release_id}" ] || [ "${release_id}" = "null" ]; then
+        release_id="$(jq -r '.release_id // ""' "${current_json}")"
+    fi
+
+    tmp="$(mktemp "${STATE_DIR}/.current.XXXXXX")"
+    jq --arg s "confirmed" --arg t "$(now_utc)" '.status = $s | .updated_at = $t' \
+        "${current_json}" > "${tmp}"
+    mv "${tmp}" "${current_json}"
+    chmod 600 "${current_json}"
+
+    mkdir -p "${ROLLBACK_DIR}"
+    cp "${current_json}" "${ROLLBACK_DIR}/current.json"
+    chmod 600 "${ROLLBACK_DIR}/current.json"
+
+    rm -f "${marker}"
+    emit_evidence "confirm-boot" "${release_id}" "OK" "boot confirmed; deployment marked confirmed"
+    info "Confirmed boot for release ${release_id}"
+}
+
+boot_check() {
+    local marker="${STATE_DIR}/pending-boot.json"
+    local current_json="${STATE_DIR}/current.json"
+    local previous_json="${ROLLBACK_DIR}/previous.json"
+    local release_id
+    local deadline_epoch
+    local current_epoch
+
+    require_cmd jq
+    if [ ! -f "${marker}" ]; then
+        info "No pending boot confirmation; boot outcome already settled"
+        return 0
+    fi
+
+    release_id="$(jq -r '.release_id // ""' "${marker}")"
+    deadline_epoch="$(jq -r '.deadline_epoch // 0' "${marker}")"
+    current_epoch="$(now_epoch)"
+
+    if [ "${current_epoch}" -le "${deadline_epoch}" ]; then
+        info "Within boot confirmation window for ${release_id} (deadline_epoch=${deadline_epoch}, now=${current_epoch})"
+        return 0
+    fi
+
+    if [ -f "${previous_json}" ]; then
+        mkdir -p "${STATE_DIR}"
+        cp "${previous_json}" "${current_json}"
+        chmod 600 "${current_json}"
+        rm -f "${marker}"
+        emit_evidence "rollback" "${release_id}" "OK" "boot confirmation deadline exceeded; previous deployment restored"
+        info "Boot confirmation deadline exceeded; rolled back ${release_id} to previous deployment"
+        return 0
+    fi
+
+    rm -f "${marker}"
+    emit_evidence "rollback" "${release_id}" "FAILED" "boot confirmation deadline exceeded and no previous deployment exists"
+    die "boot confirmation deadline exceeded and no previous deployment to roll back to"
 }
 
 rollback_previous() {
@@ -341,6 +476,12 @@ show_status() {
     else
         printf 'previous=null\n'
     fi
+    if [ -f "${STATE_DIR}/pending-boot.json" ]; then
+        printf 'pending_boot='
+        jq -c '.' "${STATE_DIR}/pending-boot.json"
+    else
+        printf 'pending_boot=null\n'
+    fi
 }
 
 while [ $# -gt 0 ]; do
@@ -351,6 +492,7 @@ while [ $# -gt 0 ]; do
         --state-dir)      STATE_DIR="$2"; shift 2 ;;
         --rollback-dir)   ROLLBACK_DIR="$2"; shift 2 ;;
         --health-command) HEALTH_COMMAND="$2"; shift 2 ;;
+        --boot-deadline-seconds) BOOT_DEADLINE_SECONDS="$2"; shift 2 ;;
         --no-signature)   REQUIRE_SIGNATURE=0; shift ;;
         --help|-h)        usage; exit 0 ;;
         *) die "unknown argument: $1" ;;
@@ -358,11 +500,13 @@ while [ $# -gt 0 ]; do
 done
 
 case "${COMMAND}" in
-    verify)   verify_release ;;
-    stage)    stage_release ;;
-    activate) activate_staged ;;
-    rollback) rollback_previous ;;
-    status)   show_status ;;
+    verify)       verify_release ;;
+    stage)        stage_release ;;
+    activate)     activate_staged ;;
+    confirm-boot) confirm_boot ;;
+    boot-check)   boot_check ;;
+    rollback)     rollback_previous ;;
+    status)       show_status ;;
     ""|--help|-h) usage ;;
     *) die "unknown command: ${COMMAND}" ;;
 esac

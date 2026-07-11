@@ -211,6 +211,203 @@ else
     pass "Hash-mismatched artifact is rejected"
 fi
 
+# ---------------------------------------------------------------------------
+# Boot-outcome contract: activate -> pending-boot-confirmation -> confirm-boot
+# ---------------------------------------------------------------------------
+# The channel currently points at rev12-v2 (last publish above).
+BC_STATE="${TMP_ROOT}/bc-state"
+BC_ROLLBACK="${TMP_ROOT}/bc-rollback"
+
+if "${UPDATE_SCRIPT}" stage \
+    --repo "${REPO_DIR}" --trusted-key "${PUB_FILE}" \
+    --state-dir "${BC_STATE}" --rollback-dir "${BC_ROLLBACK}" >/dev/null; then
+    pass "Boot-contract: stage for confirm-boot flow succeeds"
+else
+    fail "Boot-contract: stage for confirm-boot flow failed"
+fi
+
+if "${UPDATE_SCRIPT}" activate \
+    --state-dir "${BC_STATE}" --rollback-dir "${BC_ROLLBACK}" \
+    --health-command true >/dev/null; then
+    pass "Boot-contract: activate (health true) succeeds"
+else
+    fail "Boot-contract: activate (health true) failed"
+fi
+
+if [ "$(jq -r '.status' "${BC_STATE}/current.json")" = "pending-boot-confirmation" ]; then
+    pass "Boot-contract: activated deployment is pending-boot-confirmation"
+else
+    fail "Boot-contract: activated deployment status is not pending-boot-confirmation"
+fi
+
+if [ -f "${BC_STATE}/pending-boot.json" ] \
+   && jq -e '.schema == "aios.update_pending_boot.v1"' "${BC_STATE}/pending-boot.json" >/dev/null 2>&1; then
+    pass "Boot-contract: pending-boot marker written with deadline"
+else
+    fail "Boot-contract: pending-boot marker missing or malformed"
+fi
+
+if "${UPDATE_SCRIPT}" confirm-boot \
+    --state-dir "${BC_STATE}" --rollback-dir "${BC_ROLLBACK}" >/dev/null; then
+    pass "Boot-contract: confirm-boot succeeds"
+else
+    fail "Boot-contract: confirm-boot failed"
+fi
+
+if [ "$(jq -r '.status' "${BC_STATE}/current.json")" = "confirmed" ]; then
+    pass "Boot-contract: confirm-boot transitions status to confirmed"
+else
+    fail "Boot-contract: status did not become confirmed after confirm-boot"
+fi
+
+if [ ! -e "${BC_STATE}/pending-boot.json" ]; then
+    pass "Boot-contract: pending-boot marker removed after confirm-boot"
+else
+    fail "Boot-contract: pending-boot marker still present after confirm-boot"
+fi
+
+if grep -q '"action":"confirm-boot"' "${BC_ROLLBACK}/evidence.jsonl" 2>/dev/null; then
+    pass "Boot-contract: confirm-boot emits evidence"
+else
+    fail "Boot-contract: confirm-boot evidence missing"
+fi
+
+# ---------------------------------------------------------------------------
+# Boot-outcome contract: boot-check rolls back an unconfirmed past-deadline
+# deployment to the previous one.
+# ---------------------------------------------------------------------------
+BR_STATE="${TMP_ROOT}/br-state"
+BR_ROLLBACK="${TMP_ROOT}/br-rollback"
+
+# repoint_channel <release_id> <version>: point the signed channel head at an
+# already-published release so `stage` pulls that specific release.
+repoint_channel() {
+    REPOINT_META_SHA="$(sha256sum "${REPO_DIR}/releases/$1/metadata.json" | awk '{print $1}')"
+    cat > "${REPO_DIR}/channels/release/current.json" <<EOF
+{
+  "schema": "aios.repository.current.v1",
+  "channel": "release",
+  "release_id": "$1",
+  "version": "$2",
+  "architecture": "x86_64",
+  "metadata_path": "releases/$1/metadata.json",
+  "metadata_sha256": "${REPOINT_META_SHA}",
+  "generated_at": "1970-01-01T00:00:00Z"
+}
+EOF
+    openssl dgst -sha256 -sign "${KEY_FILE}" \
+        -out "${REPO_DIR}/channels/release/current.json.sig" \
+        "${REPO_DIR}/channels/release/current.json" 2>/dev/null
+}
+
+# 1) Establish a confirmed previous deployment = rev12-v1.
+repoint_channel rev12-v1 0.1.0
+"${UPDATE_SCRIPT}" stage --repo "${REPO_DIR}" --trusted-key "${PUB_FILE}" \
+    --state-dir "${BR_STATE}" --rollback-dir "${BR_ROLLBACK}" >/dev/null
+"${UPDATE_SCRIPT}" activate --state-dir "${BR_STATE}" --rollback-dir "${BR_ROLLBACK}" \
+    --health-command true >/dev/null
+"${UPDATE_SCRIPT}" confirm-boot --state-dir "${BR_STATE}" --rollback-dir "${BR_ROLLBACK}" >/dev/null
+
+# 2) Activate rev12-v2 with an already-expired boot deadline, do NOT confirm.
+repoint_channel rev12-v2 0.1.1
+"${UPDATE_SCRIPT}" stage --repo "${REPO_DIR}" --trusted-key "${PUB_FILE}" \
+    --state-dir "${BR_STATE}" --rollback-dir "${BR_ROLLBACK}" >/dev/null
+"${UPDATE_SCRIPT}" activate --state-dir "${BR_STATE}" --rollback-dir "${BR_ROLLBACK}" \
+    --health-command true --boot-deadline-seconds -1 >/dev/null
+
+if [ "$(jq -r '.release_id' "${BR_STATE}/current.json")" = "rev12-v2" ]; then
+    pass "Boot-check: unconfirmed deployment is rev12-v2 before boot-check"
+else
+    fail "Boot-check: unexpected current deployment before boot-check"
+fi
+
+# 3) boot-check must detect the past deadline and roll back to rev12-v1.
+if "${UPDATE_SCRIPT}" boot-check \
+    --state-dir "${BR_STATE}" --rollback-dir "${BR_ROLLBACK}" >/dev/null; then
+    pass "Boot-check: past-deadline boot-check performs rollback"
+else
+    fail "Boot-check: past-deadline boot-check did not succeed"
+fi
+
+if [ "$(jq -r '.release_id' "${BR_STATE}/current.json")" = "rev12-v1" ]; then
+    pass "Boot-check: rollback restored previous deployment rev12-v1"
+else
+    fail "Boot-check: rollback did not restore rev12-v1"
+fi
+
+if [ ! -e "${BR_STATE}/pending-boot.json" ]; then
+    pass "Boot-check: pending-boot marker cleared after rollback"
+else
+    fail "Boot-check: pending-boot marker still present after rollback"
+fi
+
+if grep -q '"action":"rollback"' "${BR_ROLLBACK}/evidence.jsonl" 2>/dev/null; then
+    pass "Boot-check: rollback emits evidence"
+else
+    fail "Boot-check: rollback evidence missing"
+fi
+
+# 4) boot-check within the window (fresh marker) is a no-op.
+"${UPDATE_SCRIPT}" stage --repo "${REPO_DIR}" --trusted-key "${PUB_FILE}" \
+    --state-dir "${BR_STATE}" --rollback-dir "${BR_ROLLBACK}" >/dev/null
+"${UPDATE_SCRIPT}" activate --state-dir "${BR_STATE}" --rollback-dir "${BR_ROLLBACK}" \
+    --health-command true --boot-deadline-seconds 600 >/dev/null
+if "${UPDATE_SCRIPT}" boot-check \
+    --state-dir "${BR_STATE}" --rollback-dir "${BR_ROLLBACK}" >/dev/null \
+   && [ -f "${BR_STATE}/pending-boot.json" ]; then
+    pass "Boot-check: within-window boot-check is a no-op (marker preserved)"
+else
+    fail "Boot-check: within-window boot-check wrongly altered state"
+fi
+
+# ---------------------------------------------------------------------------
+# Payload<->metadata linkage: publish must fail closed on a tampered manifest
+# hash, and --skip-linkage-check must be an explicit escape hatch.
+# ---------------------------------------------------------------------------
+GOOD_SHA="$(sha256sum "${ARTIFACT_V1}" | awk '{print $1}')"
+GOOD_MANIFEST="${TMP_ROOT}/good-manifest.json"
+BAD_MANIFEST="${TMP_ROOT}/bad-manifest.json"
+cat > "${GOOD_MANIFEST}" <<EOF
+{"schema":"aios.release_manifest.v1","revision":12,"artifacts":[{"path":"aios-v1.iso","sha256":"${GOOD_SHA}"}]}
+EOF
+cat > "${BAD_MANIFEST}" <<'EOF'
+{"schema":"aios.release_manifest.v1","revision":12,"artifacts":[{"path":"aios-v1.iso","sha256":"0000000000000000000000000000000000000000000000000000000000000000"}]}
+EOF
+
+LINK_REPO_GOOD="${TMP_ROOT}/link-repo-good"
+LINK_REPO_SKIP="${TMP_ROOT}/link-repo-skip"
+
+if "${PUBLISH_SCRIPT}" \
+    --repo-dir "${LINK_REPO_GOOD}" --release-id link-good --version 0.1.0 --arch x86_64 \
+    --artifact "${ARTIFACT_V1}" \
+    --manifest "${GOOD_MANIFEST}" --sbom "${SBOM}" --provenance "${PROVENANCE}" \
+    --signing-key "${KEY_FILE}" --signing-key-id test-key >/dev/null 2>&1; then
+    pass "Linkage: publish accepts a manifest whose artifact hash matches the payload"
+else
+    fail "Linkage: publish rejected a correctly-linked manifest"
+fi
+
+if "${PUBLISH_SCRIPT}" \
+    --repo-dir "${TMP_ROOT}/link-repo-bad" --release-id link-bad --version 0.1.0 --arch x86_64 \
+    --artifact "${ARTIFACT_V1}" \
+    --manifest "${BAD_MANIFEST}" --sbom "${SBOM}" --provenance "${PROVENANCE}" \
+    --signing-key "${KEY_FILE}" --signing-key-id test-key >/dev/null 2>&1; then
+    fail "Linkage: publish accepted a tampered manifest hash"
+else
+    pass "Linkage: publish fails closed on a tampered manifest hash"
+fi
+
+if "${PUBLISH_SCRIPT}" \
+    --repo-dir "${LINK_REPO_SKIP}" --release-id link-skip --version 0.1.0 --arch x86_64 \
+    --artifact "${ARTIFACT_V1}" \
+    --manifest "${BAD_MANIFEST}" --sbom "${SBOM}" --provenance "${PROVENANCE}" \
+    --signing-key "${KEY_FILE}" --signing-key-id test-key \
+    --skip-linkage-check >/dev/null 2>&1; then
+    pass "Linkage: --skip-linkage-check publishes despite a tampered manifest hash"
+else
+    fail "Linkage: --skip-linkage-check did not bypass the linkage check"
+fi
+
 printf '\n'
 msg "=== Test Summary ==="
 printf '  Passed: %d\n' "${PASSED}"

@@ -11,6 +11,7 @@ ARCH="${AIOS_ARCH:-x86_64}"
 SIGNING_KEY="${AIOS_SIGNING_KEY:-}"
 SIGNING_KEY_ID="${AIOS_SIGNING_KEY_ID:-operator}"
 ALLOW_UNSIGNED="${AIOS_ALLOW_UNSIGNED_REPO:-0}"
+SKIP_LINKAGE_CHECK="${AIOS_SKIP_LINKAGE_CHECK:-0}"
 MANIFEST=""
 SBOM=""
 PROVENANCE=""
@@ -30,6 +31,8 @@ Options:
   --signing-key KEY      Private key used for detached OpenSSL signatures
   --signing-key-id ID    Human-readable signing identity
   --allow-unsigned       Lab-only mode; do not use for promoted releases
+  --skip-linkage-check   Do NOT cross-check manifest artifact hashes against the
+                         resolvable payload files (lab-only; prints a warning)
 EOF
 }
 
@@ -97,6 +100,79 @@ sign_file() {
     chmod 644 "${sig_dir}/${sig_name}"
 }
 
+# Cross-check payload <-> metadata linkage: the release manifest must be valid
+# JSON, and every artifacts[] entry that carries a sha256 must match the actual
+# hash of the payload file it names when that file is resolvable. Publish fails
+# closed on any mismatch. Non-resolvable entries are skipped (cannot be checked).
+verify_manifest_linkage() {
+    local manifest="$1"
+    shift
+
+    command -v python3 >/dev/null 2>&1 || die "python3 is required for manifest linkage verification (use --skip-linkage-check for lab-only publishes)"
+
+    python3 - "${manifest}" "$@" <<'PYEOF'
+import hashlib
+import json
+import os
+import sys
+
+manifest = sys.argv[1]
+artifact_files = sys.argv[2:]
+mdir = os.path.dirname(os.path.abspath(manifest))
+
+try:
+    with open(manifest) as fh:
+        data = json.load(fh)
+except Exception as exc:  # noqa: BLE001 - any parse failure is fail-closed
+    sys.stderr.write("manifest is not internally consistent JSON: %s\n" % exc)
+    sys.exit(2)
+
+by_base = {}
+for path in artifact_files:
+    by_base.setdefault(os.path.basename(path), path)
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+artifacts = data.get("artifacts")
+checked = 0
+if isinstance(artifacts, list):
+    for entry in artifacts:
+        if not isinstance(entry, dict):
+            continue
+        expected = entry.get("sha256")
+        if not expected:
+            continue
+        rel = entry.get("path") or entry.get("name") or ""
+        candidates = []
+        if rel:
+            candidates.append(os.path.join(mdir, rel))
+            candidates.append(os.path.normpath(os.path.join(mdir, "..", rel)))
+            base = os.path.basename(rel)
+            if base in by_base:
+                candidates.append(by_base[base])
+        resolved = next((c for c in candidates if os.path.isfile(c)), None)
+        if resolved is None:
+            continue
+        actual = sha256(resolved)
+        if actual.lower() != str(expected).lower():
+            sys.stderr.write(
+                "manifest linkage mismatch for %s: manifest sha256=%s actual=%s (%s)\n"
+                % (rel, expected, actual, resolved)
+            )
+            sys.exit(3)
+        checked += 1
+
+sys.stderr.write("manifest linkage OK: %d artifact hash(es) cross-checked\n" % checked)
+PYEOF
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --repo-dir)       REPO_DIR="$2"; shift 2 ;;
@@ -111,6 +187,7 @@ while [ $# -gt 0 ]; do
         --signing-key)    SIGNING_KEY="$2"; shift 2 ;;
         --signing-key-id) SIGNING_KEY_ID="$2"; shift 2 ;;
         --allow-unsigned) ALLOW_UNSIGNED=1; shift ;;
+        --skip-linkage-check) SKIP_LINKAGE_CHECK=1; shift ;;
         --help|-h)        usage; exit 0 ;;
         *) die "unknown argument: $1" ;;
     esac
@@ -122,6 +199,16 @@ done
 require_file "manifest" "${MANIFEST}"
 require_file "SBOM" "${SBOM}"
 require_file "provenance" "${PROVENANCE}"
+
+if [ "${SKIP_LINKAGE_CHECK}" = "1" ]; then
+    printf 'WARNING: ============================================================\n' >&2
+    printf 'WARNING: --skip-linkage-check set: manifest artifact hashes are NOT\n' >&2
+    printf 'WARNING: cross-checked against payload files. Payload/metadata drift\n' >&2
+    printf 'WARNING: will NOT be caught. Do not use for promoted releases.\n' >&2
+    printf 'WARNING: ============================================================\n' >&2
+else
+    verify_manifest_linkage "${MANIFEST}" "${ARTIFACTS[@]}"
+fi
 
 if [ "${ALLOW_UNSIGNED}" != "1" ]; then
     require_file "signing key" "${SIGNING_KEY}"

@@ -1,0 +1,13 @@
+[Unit]
+Description=AI-OS.NET Update Boot Confirmation
+Documentation=https://ai-os.net/docs/update
+After=multi-user.target
+ConditionPathExists=/var/lib/aios/update/pending-boot.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/aios/update/aios-update.sh confirm-boot
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

@@ -143,7 +143,9 @@ find_ovmf_code() {
         /usr/share/ovmf/OVMF_CODE.fd \
         /usr/share/edk2/ovmf/OVMF_CODE.fd \
         /usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
-        /usr/share/qemu/OVMF_CODE.fd; do
+        /usr/share/qemu/OVMF_CODE.fd \
+        /usr/share/qemu/ovmf-x86_64-4m-code.bin \
+        /usr/share/qemu/ovmf-x86_64-code.bin; do
         if [ -f "${candidate}" ]; then
             printf '%s\n' "${candidate}"
             return 0

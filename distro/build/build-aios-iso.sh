@@ -60,6 +60,8 @@ AIOS_SELINUX_POLICY_SOURCE="${AIOS_SELINUX_POLICY_SOURCE:-}"
 AIOS_REQUIRE_BOOT_SIGNATURES="${AIOS_REQUIRE_BOOT_SIGNATURES:-0}"
 AIOS_SIGNATURE_SOURCE_DIR="${AIOS_SIGNATURE_SOURCE_DIR:-}"
 AIOS_ENTERPRISE_RELEASE="${AIOS_ENTERPRISE_RELEASE:-0}"
+# dm-verity mode: auto (generate hash tree when veritysetup is available) | disabled
+AIOS_DM_VERITY="${AIOS_DM_VERITY:-auto}"
 AIOS_BASE_FAMILY="${AIOS_BASE_FAMILY:-scaffold}"
 AIOS_BASE_VARIANT="${AIOS_BASE_VARIANT:-none}"
 AIOS_BASE_VERSION="${AIOS_BASE_VERSION:-none}"
@@ -206,6 +208,7 @@ while [ $# -gt 0 ]; do
         --require-boot-signatures) AIOS_REQUIRE_BOOT_SIGNATURES=1; shift ;;
         --signature-source-dir) AIOS_SIGNATURE_SOURCE_DIR="$2"; shift 2 ;;
         --enterprise-release) AIOS_ENTERPRISE_RELEASE=1; shift ;;
+        --dm-verity) AIOS_DM_VERITY="$2"; shift 2 ;;
         --base-rootfs)     BASE_ROOTFS="$2";  shift 2 ;;
         --allow-scaffold-rootfs) ALLOW_SCAFFOLD_ROOTFS=1; shift ;;
         --version)         AIOS_VERSION="$2"; shift 2 ;;
@@ -234,6 +237,7 @@ while [ $# -gt 0 ]; do
             printf "  --signature-source-dir PATH\n"
             printf "                       Directory with detached signatures to stage in /aios/signatures\n"
             printf "  --enterprise-release Require R13 enterprise base metadata and supported arch\n"
+            printf "  --dm-verity MODE     dm-verity hash tree generation (auto|disabled; default auto)\n"
             printf "  --base-rootfs PATH   Prepared Linux rootfs with systemd/init\n"
             printf "  --allow-scaffold-rootfs\n"
             printf "                       Build an AIOS-only scaffold rootfs (not bootable)\n"
@@ -257,6 +261,11 @@ esac
 case "${AIOS_REQUIRE_BOOT_SIGNATURES}" in
     0|1) ;;
     *) die "AIOS_REQUIRE_BOOT_SIGNATURES must be 0 or 1" ;;
+esac
+
+case "${AIOS_DM_VERITY}" in
+    auto|disabled) ;;
+    *) die "Invalid --dm-verity: ${AIOS_DM_VERITY} (expected auto|disabled)" ;;
 esac
 
 if [ "${AIOS_SELINUX_MODE}" = "enforcing" ] && [ -z "${AIOS_SELINUX_POLICY_SOURCE}" ]; then
@@ -1467,6 +1476,66 @@ ok "Squashfs root created: live/aios.squashfs (${SQUASHFS_SIZE})"
 mkdir -p "${ISO_DIR}/boot/grub"
 cp "${ROOTFS_DIR}/boot/grub/grub.cfg" "${ISO_DIR}/boot/grub/grub.cfg"
 
+# ── Step 10b: Generate real dm-verity hash tree (R12.6) ──────────────────────
+# veritysetup format runs entirely in userspace (no root, no device mapper) and
+# produces a Merkle hash tree + root hash over the squashfs payload. The root
+# hash is what a booting initramfs pins the rootfs to. When veritysetup is
+# unavailable the metadata records status "unavailable" — it MUST NEVER emit a
+# fabricated root hash.
+
+VERITY_STATUS="disabled"
+VERITY_ROOT_HASH=""
+VERITY_HASH_ALG=""
+VERITY_DATA_BLOCK=""
+VERITY_HASH_BLOCK=""
+VERITY_SALT=""
+VERITY_HASHTREE_REL=""
+VERITY_HASHTREE_SHA256=""
+
+if [ "${AIOS_DM_VERITY}" = "disabled" ]; then
+    info "dm-verity generation disabled (--dm-verity disabled); no hash tree produced."
+elif command -v veritysetup >/dev/null 2>&1; then
+    step "Step 10b: Generating dm-verity hash tree"
+    VERITY_HASHTREE="${ISO_DIR}/live/aios.squashfs.verity"
+    VERITY_ROOT_HASH_FILE="${BUILD_DIR}/aios.squashfs.roothash"
+    VERITY_FORMAT_LOG="${BUILD_DIR}/veritysetup-format.log"
+    rm -f "${VERITY_HASHTREE}" "${VERITY_ROOT_HASH_FILE}"
+
+    if veritysetup format "${ISO_DIR}/live/aios.squashfs" "${VERITY_HASHTREE}" \
+            --root-hash-file "${VERITY_ROOT_HASH_FILE}" > "${VERITY_FORMAT_LOG}" 2>&1; then
+        VERITY_ROOT_HASH="$(tr -d '[:space:]' < "${VERITY_ROOT_HASH_FILE}")"
+        # Fallback: parse root hash from the format log if the file is empty.
+        if [ -z "${VERITY_ROOT_HASH}" ]; then
+            VERITY_ROOT_HASH="$(awk -F: '/Root hash/{gsub(/[^0-9a-fA-F]/,"",$2);print $2;exit}' "${VERITY_FORMAT_LOG}")"
+        fi
+        VERITY_HASH_ALG="$(awk -F: '/Hash algorithm/{gsub(/^[ \t]+|[ \t]+$/,"",$2);print $2;exit}' "${VERITY_FORMAT_LOG}")"
+        VERITY_DATA_BLOCK="$(awk -F: '/Data block size/{gsub(/[^0-9]/,"",$2);print $2;exit}' "${VERITY_FORMAT_LOG}")"
+        VERITY_HASH_BLOCK="$(awk -F: '/Hash block size/{gsub(/[^0-9]/,"",$2);print $2;exit}' "${VERITY_FORMAT_LOG}")"
+        VERITY_SALT="$(awk -F: '/^Salt/{gsub(/[^0-9a-fA-F]/,"",$2);print $2;exit}' "${VERITY_FORMAT_LOG}")"
+        VERITY_HASHTREE_SHA256="$(file_sha256 "${VERITY_HASHTREE}")"
+        VERITY_HASHTREE_REL="live/aios.squashfs.verity"
+        VERITY_STATUS="present"
+        info "dm-verity root hash: ${VERITY_ROOT_HASH}"
+        info "dm-verity hash tree: ${VERITY_HASHTREE_REL} (alg=${VERITY_HASH_ALG}, ${VERITY_DATA_BLOCK}/${VERITY_HASH_BLOCK} block)"
+
+        # Wire the root hash into the GRUB *debug* entry only (uniquely keyed by
+        # loglevel=7). The default and recovery entries stay untouched.
+        if [ -n "${VERITY_ROOT_HASH}" ]; then
+            sed -i "/loglevel=7/ s/aios\\.autonomous\\.level=advisory/aios.autonomous.level=advisory aios.verity.roothash=${VERITY_ROOT_HASH}/" \
+                "${ISO_DIR}/boot/grub/grub.cfg"
+        fi
+        ok "dm-verity hash tree generated; root hash wired into GRUB debug entry."
+    else
+        warn "veritysetup format failed — recording dm-verity status 'unavailable'."
+        cat "${VERITY_FORMAT_LOG}" >&2 || true
+        rm -f "${VERITY_HASHTREE}"
+        VERITY_STATUS="unavailable"
+    fi
+else
+    warn "veritysetup not found — dm-verity root hash NOT generated; recording status 'unavailable'."
+    VERITY_STATUS="unavailable"
+fi
+
 # ── Step 11: Generate Rev.12 release metadata ────────────────────────────────
 
 step "Step 11: Generating Rev.12 release metadata"
@@ -1555,6 +1624,26 @@ cat > "${AIOS_ISO_META_DIR}/kernel.json" <<EOF
 }
 EOF
 
+# Build JSON-safe fragments for the dm-verity block (real values when a hash
+# tree was produced; JSON null otherwise — never a fabricated hash).
+if [ "${VERITY_STATUS}" = "present" ]; then
+    VERITY_ROOT_HASH_JSON="\"${VERITY_ROOT_HASH}\""
+    VERITY_HASH_ALG_JSON="\"$(json_escape "${VERITY_HASH_ALG}")\""
+    VERITY_SALT_JSON="\"$(json_escape "${VERITY_SALT}")\""
+    VERITY_HASHTREE_JSON="\"${VERITY_HASHTREE_REL}\""
+    VERITY_HASHTREE_SHA256_JSON="\"${VERITY_HASHTREE_SHA256}\""
+    VERITY_DATA_BLOCK_JSON="${VERITY_DATA_BLOCK:-null}"
+    VERITY_HASH_BLOCK_JSON="${VERITY_HASH_BLOCK:-null}"
+else
+    VERITY_ROOT_HASH_JSON="null"
+    VERITY_HASH_ALG_JSON="null"
+    VERITY_SALT_JSON="null"
+    VERITY_HASHTREE_JSON="null"
+    VERITY_HASHTREE_SHA256_JSON="null"
+    VERITY_DATA_BLOCK_JSON="null"
+    VERITY_HASH_BLOCK_JSON="null"
+fi
+
 cat > "${AIOS_ISO_META_DIR}/security.json" <<EOF
 {
   "schema": "aios.security_baseline.v1",
@@ -1580,7 +1669,15 @@ cat > "${AIOS_ISO_META_DIR}/security.json" <<EOF
     "policy_path": "/etc/aios/verity/rootfs-policy.json",
     "root_hash_path": "/etc/aios/verity/roothash.sig",
     "cmdline_parameter": "dm_verity.roothash",
-    "fail_on_corruption": true
+    "fail_on_corruption": true,
+    "status": "$(json_escape "${VERITY_STATUS}")",
+    "root_hash": ${VERITY_ROOT_HASH_JSON},
+    "hash_algorithm": ${VERITY_HASH_ALG_JSON},
+    "data_block_size": ${VERITY_DATA_BLOCK_JSON},
+    "hash_block_size": ${VERITY_HASH_BLOCK_JSON},
+    "salt": ${VERITY_SALT_JSON},
+    "hashtree_path": ${VERITY_HASHTREE_JSON},
+    "hashtree_sha256": ${VERITY_HASHTREE_SHA256_JSON}
   },
   "evidence": {
     "path": "/etc/aios/evidence.d/security-baseline.json"
@@ -1824,6 +1921,9 @@ append_manifest_artifact "${MANIFEST_JSON}" "aios/security.json"
 append_manifest_artifact "${MANIFEST_JSON}" "aios/boot-chain.json"
 append_manifest_artifact "${MANIFEST_JSON}" "aios/sbom.cdx.json"
 append_manifest_artifact "${MANIFEST_JSON}" "aios/provenance.json"
+if [ -n "${VERITY_HASHTREE_REL}" ]; then
+    append_manifest_artifact "${MANIFEST_JSON}" "${VERITY_HASHTREE_REL}"
+fi
 append_manifest_artifact "${MANIFEST_JSON}" "aios/signatures/README" ""
 cat >> "${MANIFEST_JSON}" <<'EOF'
   ]
@@ -1847,6 +1947,12 @@ EOF
         aios/signatures/README \
         > aios/SHA256SUMS
 )
+
+# dm-verity hash tree is optional (present only when veritysetup ran) — append
+# its checksum separately so the base list stays unconditional.
+if [ -n "${VERITY_HASHTREE_REL}" ]; then
+    ( cd "${ISO_DIR}" && sha256sum "${VERITY_HASHTREE_REL}" >> aios/SHA256SUMS )
+fi
 
 require_boot_signature "boot-grub-grub.cfg.sig"
 require_boot_signature "live-vmlinuz.sig"
@@ -1945,6 +2051,9 @@ check_iso_item "AIOS security profile"      "${ROOTFS_DIR}/etc/aios/security-pro
 check_iso_item "IMA policy"                 "${ROOTFS_DIR}/etc/ima/ima-policy"
 check_iso_item "EVM policy"                 "${ROOTFS_DIR}/etc/evm/evm-policy"
 check_iso_item "dm-verity rootfs policy"    "${ROOTFS_DIR}/etc/aios/verity/rootfs-policy.json"
+if [ -n "${VERITY_HASHTREE_REL}" ]; then
+    check_iso_item "dm-verity hash tree"    "${ISO_DIR}/${VERITY_HASHTREE_REL}"
+fi
 check_iso_item "OS release"                 "${ROOTFS_DIR}/etc/os-release"
 check_iso_item "Kernel module tree"         "${ROOTFS_DIR}/usr/lib/modules/${STAGED_KERNEL_VERSION}"
 check_iso_item "Kernel firmware tree"       "${ROOTFS_DIR}/usr/lib/firmware"
