@@ -1039,3 +1039,28 @@ T-186: M18 closer + acceptance test + v0.1.0 version bump + S11.4 sub-spec final
 2026-07-10T21:31:23+03:00 | TSK-R12-004 | R12.4 пакет комитнат (fe949e5): 4 spec дупки в metadata поправени, negative gates 17/17, metadata 56/56; CI wiring обновен | STATUS=IN_PROGRESS | next: pipeline на fe949e5 (вкл. първи опит assemble-iso с ISO toolchain)
 2026-07-10T21:33:05+03:00 | SHUTDOWN | Планирано спиране PVE+NUC. HEAD fe949e5 пушнат. Pipeline 3827 ще бъде прекъснат. Resume инструкции в memory.json | STATUS=CHECKPOINT
 2026-07-11T13:43:38+03:00 | TSK-R12 | ПРОБИВ: първо CI-построено Rev.12 ISO (27b87c42); QEMU gate хвана реален boot провал (AIOS-RESCUE). Fix: artifacts when:always за серийния лог (ee6df55). ХИПОТЕЗА: busybox modprobe не чете .ko.zst (openSUSE модули) → isofs/sr_mod не се зареждат → live media not found | STATUS=IN_PROGRESS | next: серийният лог от новия pipeline
+2026-07-11T21:20+03:00 | R13.5+R13.8 | Three Opus agents landed post-boot-ISO work:
+  - dcbf67e0: CVE lifecycle (distro/security/, 40-check gate test) + CIS/STIG map (distro/compliance/, 37 controls, anti-fake validator, 8-check test)
+  - ccf5d3b6: repo channels promote/prune/evidence + recovery-channel gating (test-rev12-repo-update.sh 58 green)
+  All verified locally by orchestrator before commit (shellcheck+bash -n+full test runs).
+  NB: pushes auto-canceled pipeline 4273/4280; boot candidate now 4281 (ccf5d3b6, contains all switch_root fixes). Monitor behmqkp12 armed.
+  Next: 4281 verdict -> QEMU boot gate; follow-ups: SELinux enforcing guard relocation, verify-stage release-update gate job, R13.2 hermetic build.
+2026-07-11T21:35+03:00 | R13.2+CI | Hermetic build package verified locally (test-rev13-hermetic.sh 11/11, shellcheck clean).
+  Added release-update-gate verify job to .gitlab-ci.yml (extracts aios/+live/ from assemble-iso ISO via xorriso,
+  runs test-rev12-release-update-gate.sh --release-dir; allow_failure until first green). GitLab CI lint: valid.
+  COMMIT HELD until pipeline 4281 verdict (pushing now would auto-cancel the boot candidate again).
+2026-07-11T21:50+03:00 | CI-hygiene | Operator-approved CI speedups added to held package:
+  - r13-opensuse-rootfs: tarball cached by hash of build-opensuse-rootfs.sh (cache:key:files) — unchanged script => reuse, skip ~25min zypper build; zypper installs moved inside cache-miss branch
+  - rules:changes (crates/**, distro/**, Cargo.*, .gitlab-ci.yml) on r13-opensuse-rootfs, assemble-iso, qemu-install-gate, release-update-gate — docs-only pushes skip the ISO chain
+  GitLab CI lint: valid, no errors/warnings. Still holding commit until pipeline 4281 verdict.
+2026-07-11T22:05+03:00 | CHECKPOINT | Planned NUC+PVE shutdown #2.
+  Pushed a020b2b9 (hermetic build + release-update-gate CI job + rootfs cache + rules:changes).
+  Pipeline 4281 (ccf5d3b6) was ~26min into cargo-test — killed by shutdown; new pipeline for a020b2b9 will supersede anyway.
+  RESUME INSTRUCTIONS:
+  1. After PVE boots: GitLab VM 100 + CT130 runner autostart (onboot=1). Wait for http://192.168.1.180 to answer.
+  2. Check latest main pipeline for a020b2b9 (or trigger: goriko-gitlab-api -X POST /projects/10/pipeline -d ref=main).
+  3. THE OPEN QUESTION: first QEMU boot of CI-built ISO. Fix stack in tree: switch_root symlink rebase (initramfs/init newroot_init_ok) + systemd-sysvcompat pkg + .ko.zst decompress. If assemble-iso boot gate fails, pull distro/build/out/qemu-boot-smoke.log artifact.
+  4. First pipeline after a020b2b9 FILLS the rootfs cache; subsequent ones skip the 25min rootfs build if script unchanged.
+  5. release-update-gate job (verify, allow_failure) runs first time — check it; flip to blocking after first green.
+  6. GitNexus index stale (ae4c041) — run npx gitnexus analyze when convenient.
+  Follow-ups queued: SELinux enforcing guard relocation in build-aios-iso.sh; dm-verity boot enforcement QEMU proof; airgap channel (deferred); R13.4 Secure Boot/TPM; R13.3 daemon architecture.

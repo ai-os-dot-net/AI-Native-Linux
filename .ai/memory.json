@@ -3,7 +3,7 @@
   "current_milestone": "Enterprise plan: Фаза 0 стабилизация → Rev.12 дистрибуция → Rev.13 enterprise",
   "current_task_id": "TSK-PH0-001",
   "current_task_title": "Фаза 0: 4 cargo gates на 219 некомитнати промени + комит + push gitlab + CI",
-  "current_step": "СЕСИЯ ПРЕКЪСНАТА ПЛАНИРАНО (спиране PVE+NUC). Всичко комитнато до fe949e5 на gitlab/main. Pipeline 3827 (пълен R12 пакет) беше running — ще умре при спиране на PVE.",
+  "current_step": "CHECKPOINT: NUC+PVE shutdown #2; resume = check pipeline for a020b2b9, boot verdict pending",
   "completed_steps": [
     "OS Research (7 modules, 5,781 lines)",
     "Rev.3 through Rev.7 (all prior milestones)",
@@ -18,7 +18,7 @@
     "neurocad-ci-tools image няма protoc — инсталира се on-demand в before_script",
     "lxc.apparmor.profile: unconfined ЧУПИ вложен docker (не може да зареди docker-default профил); nesting=1 без override е правилното"
   ],
-  "last_verification_result": "Локално: 4 cargo gates PASS (7001 теста), negative gates 17/17, metadata 56/56. CI: check/test/clippy/fmt/shell-tests/rootfs/release ВСИЧКИ зелени поне веднъж; assemble-iso недоказан (спрян на липсващ xorriso, фиксът е в fe949e5).",
+  "last_verification_result": "pushed a020b2b9; local tests green: hermetic 11/11, cve 40/40, compliance 8/8, repo-update 58/58; CI YAML lint valid",
   "plan": {
     "phase0": "gates + commit + push gitlab + CI green",
     "phase1_rev12": [
