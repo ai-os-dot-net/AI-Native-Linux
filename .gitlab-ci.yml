@@ -324,6 +324,9 @@ assemble-iso:
       fi
     - ls -lh "${ISO_OUTPUT}"
   artifacts:
+    # when: always — a FAILED boot gate must still ship the serial log,
+    # otherwise the rescue-drop cause is undiagnosable
+    when: always
     name: "${ISO_NAME}"
     paths:
       - "${ISO_OUTPUT}"
