@@ -239,23 +239,38 @@ r13-opensuse-rootfs:
   timeout: 3h
   needs:
     - distro-shell-tests
-  before_script:
-    # Stale repo metadata in the leap image → 404 on mirrors; clean first
-    - zypper clean -a
-    - zypper --non-interactive refresh
-    - zypper --non-interactive install --no-recommends gzip tar jq
+  # Cache the built tarball keyed by the hash of the build script: an
+  # unchanged script + package set → reuse the tarball, skip the ~25min
+  # zypper build entirely. Any edit to the script produces a new key.
+  cache:
+    key:
+      files:
+        - distro/build/build-opensuse-rootfs.sh
+      prefix: "r13-rootfs-${AIOS_OPENSUSE_RELEASE}-${AIOS_OPENSUSE_ARCH}"
+    paths:
+      - "${R13_ROOTFS_TARBALL}"
   script:
     - mkdir -p "$(dirname "${R13_ROOTFS_TARBALL}")"
-    - chmod +x distro/build/build-opensuse-rootfs.sh
-    - ./distro/build/build-opensuse-rootfs.sh
-      --output "${R13_ROOTFS_DIR}"
-      --release "${AIOS_OPENSUSE_RELEASE}"
-      --arch "${AIOS_OPENSUSE_ARCH}"
-      --package-set "${AIOS_OPENSUSE_PACKAGE_SET}"
-      --force
-    - test -f "${R13_ROOTFS_DIR}/etc/aios/base-rootfs.env"
-    - test -f "${R13_ROOTFS_DIR}/etc/aios/base-rootfs.json"
-    - tar -C "${R13_ROOTFS_DIR}" --numeric-owner -czf "${R13_ROOTFS_TARBALL}" .
+    - |
+      if [ -f "${R13_ROOTFS_TARBALL}" ]; then
+        echo "Rootfs cache HIT (build script unchanged) — reusing tarball, skipping build."
+      else
+        echo "Rootfs cache MISS — building from scratch."
+        # Stale repo metadata in the leap image → 404 on mirrors; clean first
+        zypper clean -a
+        zypper --non-interactive refresh
+        zypper --non-interactive install --no-recommends gzip tar jq
+        chmod +x distro/build/build-opensuse-rootfs.sh
+        ./distro/build/build-opensuse-rootfs.sh \
+          --output "${R13_ROOTFS_DIR}" \
+          --release "${AIOS_OPENSUSE_RELEASE}" \
+          --arch "${AIOS_OPENSUSE_ARCH}" \
+          --package-set "${AIOS_OPENSUSE_PACKAGE_SET}" \
+          --force
+        test -f "${R13_ROOTFS_DIR}/etc/aios/base-rootfs.env"
+        test -f "${R13_ROOTFS_DIR}/etc/aios/base-rootfs.json"
+        tar -C "${R13_ROOTFS_DIR}" --numeric-owner -czf "${R13_ROOTFS_TARBALL}" .
+      fi
     - ls -lh "${R13_ROOTFS_TARBALL}"
   artifacts:
     name: "r13-rootfs-${CI_COMMIT_SHORT_SHA}-${AIOS_OPENSUSE_ARCH}"
@@ -266,7 +281,14 @@ r13-opensuse-rootfs:
     - if: '$AIOS_R13_ENTERPRISE_BUILD == "1"'
     # R12.1: rootfs builds automatically on main — assemble-iso consumes it,
     # so the Rev12 ISO is bootable (not scaffold) and the QEMU gate is real.
+    # changes: docs-only pushes skip the whole ISO chain.
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
 
 # ==========================================================================
 # STAGE 5 — ASSEMBLE ISO (main push only)
@@ -330,6 +352,12 @@ assemble-iso:
     expire_in: 7 days
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
 
 # ==========================================================================
 # STAGE 6 — VERIFY: QEMU INSTALL GATE (R12.2 acceptance: install to blank
@@ -368,6 +396,46 @@ qemu-install-gate:
     expire_in: 7 days
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
+
+# ==========================================================================
+# STAGE 6 — VERIFY: RELEASE/UPDATE GATE (R12.4–R12.5 acceptance against the
+# REAL assemble-iso artifact: publish → verify → stage → update → rollback
+# over the extracted ISO staging tree). allow_failure until one proven
+# green run, then flip to blocking (same convention as qemu-install-gate).
+# ==========================================================================
+release-update-gate:
+  stage: verify
+  image: ${AIOS_RUST_CI_IMAGE}
+  timeout: 1h
+  allow_failure: true
+  needs:
+    - job: assemble-iso
+      artifacts: true
+  before_script:
+    - >
+      command -v xorriso >/dev/null 2>&1 ||
+      (apt-get update -qq && apt-get install -y -qq xorriso)
+  script:
+    # Reconstruct the ISO staging tree (aios/ metadata + live/ payloads)
+    # from the built ISO so the gate exercises the real release artifact.
+    - mkdir -p distro/build/out/release-tree
+    - xorriso -osirrox on -indev "${ISO_OUTPUT}" -extract /aios distro/build/out/release-tree/aios -extract /live distro/build/out/release-tree/live
+    - chmod +x distro/build/tests/test-rev12-release-update-gate.sh
+    - bash distro/build/tests/test-rev12-release-update-gate.sh --release-dir distro/build/out/release-tree
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
 
 # ==========================================================================
 # STAGE 5B — R13 ENTERPRISE ISO (openSUSE rootfs + release ISO)
