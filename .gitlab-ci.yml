@@ -139,7 +139,9 @@ distro-shell-tests:
       distro/build/tests/test-rev12-install-gate.sh
       distro/build/tests/test-rev12-negative-gates.sh
       distro/build/tests/test-rev12-release-update-gate.sh
+      distro/build/tests/test-rev12-uefi-boot-gate.sh
     - bash distro/build/tests/test-rev11-build.sh
+    - bash distro/build/tests/test-rev12-uefi-boot-gate.sh
     - bash distro/build/tests/test-rev12-install-gate.sh
     - bash distro/build/tests/test-rev12-negative-gates.sh
     # full release-update cycle needs its own scaffold build — static layer here,
