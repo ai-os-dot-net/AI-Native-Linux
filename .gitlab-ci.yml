@@ -139,20 +139,20 @@ distro-shell-tests:
       distro/build/tests/test-rev12-install-gate.sh
       distro/build/tests/test-rev12-negative-gates.sh
       distro/build/tests/test-rev12-release-update-gate.sh
-    - sh distro/build/tests/test-rev11-build.sh
-    - sh distro/build/tests/test-rev12-install-gate.sh
-    - sh distro/build/tests/test-rev12-negative-gates.sh
+    - bash distro/build/tests/test-rev11-build.sh
+    - bash distro/build/tests/test-rev12-install-gate.sh
+    - bash distro/build/tests/test-rev12-negative-gates.sh
     # full release-update cycle needs its own scaffold build — static layer here,
     # the real cycle runs in the verify stage against assemble-iso artifacts later
-    - AIOS_RELEASE_UPDATE_GATE=0 sh distro/build/tests/test-rev12-release-update-gate.sh
-    - sh distro/build/tests/test-rev12-boot-gate.sh
-    - sh distro/build/tests/test-rev12-release-metadata.sh
-    - sh distro/build/tests/test-rev12-installer.sh
-    - sh distro/build/tests/test-rev12-kernel-pipeline.sh
-    - sh distro/build/tests/test-rev12-repo-update.sh
-    - sh distro/build/tests/test-rev12-security-baseline.sh
-    - sh distro/build/tests/test-rev12-distribution-gates.sh
-    - sh distro/build/tests/test-rev13-opensuse-base.sh
+    - AIOS_RELEASE_UPDATE_GATE=0 bash distro/build/tests/test-rev12-release-update-gate.sh
+    - bash distro/build/tests/test-rev12-boot-gate.sh
+    - bash distro/build/tests/test-rev12-release-metadata.sh
+    - bash distro/build/tests/test-rev12-installer.sh
+    - bash distro/build/tests/test-rev12-kernel-pipeline.sh
+    - bash distro/build/tests/test-rev12-repo-update.sh
+    - bash distro/build/tests/test-rev12-security-baseline.sh
+    - bash distro/build/tests/test-rev12-distribution-gates.sh
+    - bash distro/build/tests/test-rev13-opensuse-base.sh
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
