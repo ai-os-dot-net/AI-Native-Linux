@@ -138,9 +138,13 @@ distro-shell-tests:
       distro/build/qemu-install-test.sh
       distro/build/tests/test-rev12-install-gate.sh
       distro/build/tests/test-rev12-negative-gates.sh
+      distro/build/tests/test-rev12-release-update-gate.sh
     - sh distro/build/tests/test-rev11-build.sh
     - sh distro/build/tests/test-rev12-install-gate.sh
     - sh distro/build/tests/test-rev12-negative-gates.sh
+    # full release-update cycle needs its own scaffold build — static layer here,
+    # the real cycle runs in the verify stage against assemble-iso artifacts later
+    - AIOS_RELEASE_UPDATE_GATE=0 sh distro/build/tests/test-rev12-release-update-gate.sh
     - sh distro/build/tests/test-rev12-boot-gate.sh
     - sh distro/build/tests/test-rev12-release-metadata.sh
     - sh distro/build/tests/test-rev12-installer.sh
