@@ -1252,12 +1252,25 @@ install_kernel() {
 }
 
 if [ "${KERNEL_SOURCE}" = "host" ]; then
-    # Try to find kernel on the host — search /usr/lib/modules (modern), then /boot (legacy)
+    # Kernel discovery order: the STAGED ROOTFS first (the distribution's own
+    # kernel-default shipped by the base rootfs — required for hermetic CI
+    # builds where the build container has no kernel), then the build host.
     VMLINUX=""
     INITRD=""
 
-    # Primary: /usr/lib/modules/<version>/vmlinuz (kernel-default RPM layout)
-    if [ -d "/usr/lib/modules" ]; then
+    for kdir in "${ROOTFS_DIR}"/usr/lib/modules/*/ "${ROOTFS_DIR}"/boot/; do
+        [ -d "${kdir}" ] || continue
+        for candidate in "${kdir}vmlinuz" "${kdir}"vmlinuz-*; do
+            if [ -f "${candidate}" ]; then
+                VMLINUX="${candidate}"
+                info "Kernel found in staged rootfs: ${candidate}"
+                break 2
+            fi
+        done
+    done
+
+    # Primary host path: /usr/lib/modules/<version>/vmlinuz (kernel-default RPM layout)
+    if [ -z "${VMLINUX}" ] && [ -d "/usr/lib/modules" ]; then
         for kdir in /usr/lib/modules/*/; do
             candidate="${kdir}vmlinuz"
             if [ -f "${candidate}" ]; then
