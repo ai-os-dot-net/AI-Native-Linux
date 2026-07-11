@@ -1166,8 +1166,9 @@ step "Step 8: Creating GRUB2 boot configuration"
 
 mkdir -p "${ROOTFS_DIR}/boot/grub"
 
-# Detect grub2-mkrescue (the one tool that handles EFI ISO creation correctly)
-GRUB2_MKRESCUE="$(command -v grub2-mkrescue 2>/dev/null || echo '')"
+# Detect grub2-mkrescue (openSUSE) / grub-mkrescue (Debian) — the one tool
+# that handles EFI ISO creation correctly
+GRUB2_MKRESCUE="$(command -v grub2-mkrescue 2>/dev/null || command -v grub-mkrescue 2>/dev/null || echo '')"
 HAS_GRUB2=false
 [ -n "${GRUB2_MKRESCUE}" ] && HAS_GRUB2=true
 

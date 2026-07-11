@@ -294,8 +294,8 @@ assemble-iso:
     # ISO toolchain + QEMU for the boot gate — the CI image ships none of it.
     # protoc/libclang: the ISO build compiles the workspace + first-boot crate.
     - >
-      (command -v xorriso && command -v mksquashfs && command -v qemu-system-x86_64 && command -v protoc) >/dev/null 2>&1 && ldconfig -p | grep -q libclang ||
-      (apt-get update -qq && apt-get install -y -qq xorriso squashfs-tools mtools cpio xz-utils dosfstools busybox-static cryptsetup-bin qemu-system-x86 qemu-utils protobuf-compiler libclang-dev clang)
+      (command -v xorriso && command -v mksquashfs && command -v qemu-system-x86_64 && command -v protoc && command -v grub-mkrescue) >/dev/null 2>&1 && ldconfig -p | grep -q libclang ||
+      (apt-get update -qq && apt-get install -y -qq xorriso squashfs-tools mtools cpio xz-utils dosfstools busybox-static cryptsetup-bin qemu-system-x86 qemu-utils protobuf-compiler libclang-dev clang grub-common grub-pc-bin grub-efi-amd64-bin ovmf)
     - xorriso -version | head -1
   script:
     - chmod +x distro/build/build-aios-iso.sh distro/build/qemu-boot-smoke.sh
