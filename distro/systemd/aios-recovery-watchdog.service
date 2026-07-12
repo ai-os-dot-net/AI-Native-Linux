@@ -12,7 +12,8 @@ RestartSec=5
 LimitNOFILE=65536
 PrivateTmp=yes
 ProtectSystem=strict
-ReadWritePaths=/var/lib/aios/recovery /run/aios
+# /var/lib/aios/state: run-service writes its readiness state file there
+ReadWritePaths=/var/lib/aios/recovery /run/aios /var/lib/aios/state
 NoNewPrivileges=yes
 SELinuxContext=system_u:system_r:aios_recovery_watchdog_t:s0
 

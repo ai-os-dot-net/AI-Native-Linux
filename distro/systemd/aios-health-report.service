@@ -8,7 +8,10 @@ Wants=aios.target multi-user.target
 After=aios.target
 
 [Service]
-Type=oneshot
+# Type=simple, NOT oneshot: a oneshot here deadlocks startup — multi-user.target
+# waits for this unit to finish while the script's `is-system-running --wait`
+# waits for startup to finish. With simple, the start job completes at exec.
+Type=simple
 ExecStart=/usr/lib/aios/aios-health-report.sh
 RemainAfterExit=yes
 StandardOutput=journal
