@@ -19,7 +19,7 @@ ProtectHome=yes
 ReadWritePaths=/var/lib/aios /run/aios
 NoNewPrivileges=yes
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SYS_ADMIN
-SELinuxContext=system_u:system_r:aios_capability_runtime_t:s0
+SELinuxContext=-system_u:system_r:aios_capability_runtime_t:s0
 Environment=AIOS_CONFIG=/etc/aios/config.toml
 Environment=RUST_LOG=info
 

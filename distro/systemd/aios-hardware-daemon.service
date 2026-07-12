@@ -16,7 +16,7 @@ ProtectSystem=strict
 ReadWritePaths=/var/lib/aios/hardware /run/aios /var/lib/aios/state
 NoNewPrivileges=yes
 CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO
-SELinuxContext=system_u:system_r:aios_hardware_daemon_t:s0
+SELinuxContext=-system_u:system_r:aios_hardware_daemon_t:s0
 
 [Install]
 WantedBy=multi-user.target

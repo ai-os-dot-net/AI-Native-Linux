@@ -16,7 +16,7 @@ ProtectSystem=strict
 ReadWritePaths=/var/lib/aios/network /run/aios /var/lib/aios/state
 NoNewPrivileges=yes
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_ADMIN CAP_NET_RAW
-SELinuxContext=system_u:system_r:aios_network_daemon_t:s0
+SELinuxContext=-system_u:system_r:aios_network_daemon_t:s0
 
 [Install]
 WantedBy=multi-user.target

@@ -8,7 +8,7 @@ ConditionPathExists=/etc/aios/first-boot
 Type=oneshot
 ExecStart=/usr/lib/aios/aios-first-boot --config /etc/aios/config.toml
 RemainAfterExit=no
-SELinuxContext=system_u:system_r:aios_first_boot_t:s0
+SELinuxContext=-system_u:system_r:aios_first_boot_t:s0
 
 [Install]
 WantedBy=multi-user.target

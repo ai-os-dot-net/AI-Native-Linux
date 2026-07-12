@@ -140,7 +140,7 @@
       "title": "AIOS daemons must apply a SELinux security context (systemd SELinuxContext=)",
       "baseline": "stig",
       "aios_mechanism": "systemd-hardening",
-      "enforcement_ref": "distro/systemd/aios-evidence-log.service::SELinuxContext=system_u:system_r:aios_evidence_log_t",
+      "enforcement_ref": "distro/systemd/aios-evidence-log.service::SELinuxContext=-system_u:system_r:aios_evidence_log_t",
       "status": "enforced",
       "evidence_record_type": null
     },

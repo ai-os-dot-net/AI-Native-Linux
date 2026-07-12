@@ -16,7 +16,7 @@ ProtectSystem=strict
 # /var/lib/aios/state: run-service writes its readiness state file there
 ReadWritePaths=/var/lib/aios/fs /run/aios /var/lib/aios/state
 NoNewPrivileges=yes
-SELinuxContext=system_u:system_r:aios_fs_daemon_t:s0
+SELinuxContext=-system_u:system_r:aios_fs_daemon_t:s0
 
 [Install]
 WantedBy=multi-user.target
