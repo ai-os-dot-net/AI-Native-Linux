@@ -52,6 +52,15 @@ failed_units="$(
 
 if [ -n "${failed_units}" ]; then
     emit "AIOS-HEALTH: DEGRADED failed=${failed_units}"
+    # Per-unit failure detail so a serial-log-only gate (QEMU CI) can diagnose
+    # without guest access: unit result, exec status, and last journal lines.
+    for _unit in $(printf '%s' "${failed_units}" | tr ',' ' '); do
+        _detail="$(systemctl show -p Result,ExecMainStatus,StatusText --value "${_unit}" 2>/dev/null | paste -sd '/' -)"
+        emit "AIOS-HEALTH-DETAIL: ${_unit} result/exec/status=${_detail}"
+        journalctl -u "${_unit}" -n 8 --no-pager -o cat 2>/dev/null | while IFS= read -r _line; do
+            emit "AIOS-HEALTH-JOURNAL: ${_unit}: ${_line}"
+        done
+    done
 else
     emit "AIOS-HEALTH: RUNNING"
 fi
