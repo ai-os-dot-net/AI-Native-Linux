@@ -25,12 +25,13 @@ The release gate test is
 
 Per `REV13-ENTERPRISE-SPEC.md` §11 the enterprise compliance surface covers:
 
-| Baseline         | Scope in this artifact                                                                                                                 |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| **CIS**          | Practical production security baseline. `baseline: "cis"`.                                                                             |
-| **STIG-aligned** | Government/military-style hardening target. `baseline: "stig"`.                                                                        |
-| AIOS native      | AIOS constitutional/evidence invariants — owned by the crate `ControlMapRegistry` (AIOS invariant ↔ NIST family), not duplicated here. |
-| NIST map         | Control-family mapping — also owned by the crate registry.                                                                             |
+| Baseline         | Scope in this artifact                                                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CIS**          | Practical production security baseline. `baseline: "cis"`.                                                                                                    |
+| **STIG-aligned** | Government/military-style hardening target. `baseline: "stig"`.                                                                                               |
+| **EU AI Act**    | EU Regulation 2024/1688, mapped from the platform/deployer view. `baseline: "eu-ai-act"`. See [EU AI Act baseline](#eu-ai-act-baseline-platform-vs-provider). |
+| AIOS native      | AIOS constitutional/evidence invariants — owned by the crate `ControlMapRegistry` (AIOS invariant ↔ NIST family), not duplicated here.                        |
+| NIST map         | Control-family mapping — also owned by the crate registry.                                                                                                    |
 
 `controls.json` deliberately scopes itself to the two **externally recognized,
 per-control** baselines (CIS, STIG) that an enterprise auditor checks item by
@@ -40,6 +41,70 @@ because they are invariant-level, not file-level.
 > **STIG IDs are alignment references, not a claim of formal DISA STIG
 > certification.** They use the `STIG-RHEL-08-0xxxxx` shape to help auditors
 > cross-reference; a formal STIG audit is a separate, out-of-tree activity.
+
+## EU AI Act baseline — platform vs. provider
+
+The `eu-ai-act` baseline maps articles of **EU Regulation 2024/1688 (the AI
+Act)** to the concrete platform mechanisms AI-OS.NET ships. It exists because a
+deployer running AI workloads on this OS must be able to point an auditor at the
+technical controls that help them meet the Act's obligations.
+
+> **AI-OS.NET is a compliance-_enabling_ platform, not a "compliant AI
+> system."** The OS is neither a high-risk AI system nor a model provider under
+> the Act. It cannot _be_ EU AI Act compliant on its own — compliance is a
+> property of a specific AI system and the organisation operating it. What this
+> baseline claims is narrower and honest: for several of the Act's **technical**
+> obligations, the platform provides a real, file-grounded mechanism a deployer
+> can rely on. Article/paragraph duties that are inherently organisational (the
+> deployer's) or model-level (the provider's) are marked `documented` with a
+> `null` `enforcement_ref` — the platform enables them but does not discharge
+> them.
+
+### Responsibility split
+
+| Who                      | Owns                                                                                                                        | In this map                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **Model provider**       | Data governance of training/validation data (Art. 10), model accuracy claims, provider technical file                       | `documented` / out of tree (Art. 10)        |
+| **Deployer**             | Assigning human oversight, monitoring operation, retaining logs, completing the Annex IV technical file                     | `documented` (Art. 26, Art. 11 Annex IV)    |
+| **Platform (AI-OS.NET)** | Append-only record-keeping, approval-gated execution, self-approval prevention, hardening, signed updates, health reporting | `enforced` / `partial` technical mechanisms |
+
+### Per-article summary
+
+| Article                | Obligation (platform view)                           | Mechanism → `enforcement_ref`                                 | Status       |
+| ---------------------- | ---------------------------------------------------- | ------------------------------------------------------------- | ------------ |
+| **Art. 9**             | Risk management (continuous hardening scan)          | `distro/systemd/aios-hardening.service::ExecStart`            | `partial`    |
+| **Art. 10**            | Data governance (training data)                      | — (model-provider duty)                                       | `documented` |
+| **Art. 11**            | Technical documentation (SBOM + provenance)          | `distro/build/build-aios-iso.sh::provenance.json`             | `partial`    |
+| **Art. 11 (Annex IV)** | Full technical file                                  | — (deployer/provider duty)                                    | `documented` |
+| **Art. 12**            | Record-keeping (automatic event logging)             | `distro/systemd/aios-evidence-log.service::ExecStart`         | `enforced`   |
+| **Art. 12(1)**         | Tamper-evident, append-only logs                     | `crates/aios-evidence/src/chain.rs::append-only`              | `enforced`   |
+| **Art. 12(2)**         | Log-tampering detection                              | `crates/aios-evidence/src/record.rs::TAMPER_DETECTED`         | `enforced`   |
+| **Art. 13**            | Transparency (explainable decisions)                 | `crates/aios-policy/src/explain.rs::DecisionLog`              | `partial`    |
+| **Art. 13(1)**         | Typed action envelopes (AI proposes, never executes) | `crates/aios-action/src/envelope.rs::ActionEnvelope`          | `partial`    |
+| **Art. 14**            | Human oversight (approval gate)                      | `crates/aios-policy/src/decision.rs::RequireApproval`         | `partial`    |
+| **Art. 14(4)**         | AI cannot self-approve                               | `crates/aios-policy/src/precedence.rs::AiSelfApprovalUpgrade` | `enforced`   |
+| **Art. 14(4)(e)**      | Stop/override (hard-deny)                            | `crates/aios-policy/src/hard_deny.rs::hard-deny`              | `enforced`   |
+| **Art. 15**            | Cybersecurity (kernel ASLR)                          | `distro/aios-boot/kernel-config::CONFIG_RANDOMIZE_BASE=y`     | `enforced`   |
+| **Art. 15**            | Integrity (dm-verity)                                | `distro/build/build-aios-iso.sh::dm-verity`                   | `enforced`   |
+| **Art. 15**            | Resilience (signed updates)                          | `distro/update/aios-update.sh::verify_signature`              | `enforced`   |
+| **Art. 15**            | Robustness (SELinux enforcing)                       | `distro/aios-boot/aios-config.toml::selinux = "enforcing"`    | `enforced`   |
+| **Art. 26**            | Deployer obligations (oversight/monitoring)          | — (organisational duty)                                       | `documented` |
+| **Art. 72**            | Post-market monitoring (health report)               | `distro/systemd/aios-health-report.service::ExecStart`        | `partial`    |
+| **Art. 72**            | Monitoring data retained as evidence receipts        | `crates/aios-evidence/src/receipt.rs::EvidenceReceipt`        | `partial`    |
+
+### Honest coverage statement
+
+Of the 19 `eu-ai-act` entries, the strongest coverage is **Art. 12
+(record-keeping)** and the technical half of **Art. 14 (human oversight)** and
+**Art. 15 (robustness/cybersecurity)** — these resolve to concrete, in-image
+mechanisms and are `enforced`. **Art. 13** transparency and **Art. 9** risk
+management are `partial`: the mechanisms exist (explainable policy decisions,
+typed action envelopes, a hardening scanner) but full deployer-facing
+transparency and a formal risk-management _system_ depend on configuration and
+process outside this image. **Art. 10** (training-data governance), the full
+**Annex IV** technical file, and **Art. 26** deployer duties are `documented`
+with a null reference — they are not, and cannot be, discharged by the OS alone.
+No entry claims the operating system itself "is compliant."
 
 ## Mechanism vocabulary
 

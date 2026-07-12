@@ -61,6 +61,11 @@ elif mode == "bad-marker":
     controls[0]["enforcement_ref"] = (
         "distro/aios-boot/kernel-config::CONFIG_THIS_FLAG_DOES_NOT_EXIST=y"
     )
+elif mode == "eu-ai-act-bogus-ref":
+    # Tamper an EU AI Act entry with a non-resolving enforcement_ref.
+    target = next(c for c in controls if c["baseline"] == "eu-ai-act")
+    target["status"] = "enforced"
+    target["enforcement_ref"] = "distro/compliance/NO-SUCH-EUAI.file::nope"
 else:
     raise SystemExit(f"unknown mode: {mode}")
 
@@ -110,6 +115,31 @@ expect_fail "rejects a non-resolving enforcement_ref path"   "${WORK}/bogus-ref.
 expect_fail "rejects a resolving path with a bogus marker"   "${WORK}/bad-marker.json"
 expect_fail "rejects a duplicate control_id"                 "${WORK}/dup-id.json"
 expect_fail "rejects an out-of-vocabulary status"            "${WORK}/bad-status.json"
+
+msg "EU AI Act baseline is present with real coverage"
+EUAI_COUNT="$(python3 - "${CONTROLS}" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    doc = json.load(handle)
+print(sum(1 for c in doc["controls"] if c.get("baseline") == "eu-ai-act"))
+PY
+)"
+if [ "${EUAI_COUNT}" -ge 10 ]; then
+    pass "eu-ai-act baseline has ${EUAI_COUNT} entries (>= 10)"
+else
+    fail "eu-ai-act baseline has too few entries: ${EUAI_COUNT} (< 10)"
+fi
+
+if python3 "${VALIDATOR}" --controls "${CONTROLS}" --repo-root "${REPO_ROOT}" \
+    | grep -q "eu-ai-act"; then
+    pass "validator summary counts the eu-ai-act baseline"
+else
+    fail "validator summary does not list the eu-ai-act baseline"
+fi
+
+msg "Anti-fake gate covers the eu-ai-act baseline too"
+tamper "${WORK}/euai-bogus.json" "eu-ai-act-bogus-ref"
+expect_fail "rejects a tampered eu-ai-act entry (bogus ref)" "${WORK}/euai-bogus.json"
 
 msg "Control-map counts (per baseline / per status)"
 python3 "${VALIDATOR}" --controls "${CONTROLS}" --repo-root "${REPO_ROOT}"

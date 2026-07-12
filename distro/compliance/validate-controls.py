@@ -35,7 +35,7 @@ MECHANISM_VOCABULARY = {
     "update-signature",
 }
 STATUS_VOCABULARY = {"enforced", "partial", "documented"}
-BASELINE_VOCABULARY = {"cis", "stig"}
+BASELINE_VOCABULARY = {"cis", "stig", "eu-ai-act"}
 REQUIRED_FIELDS = {
     "control_id": str,
     "title": str,

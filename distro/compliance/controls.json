@@ -13,7 +13,10 @@
     "update-signature"
   ],
   "status_vocabulary": ["enforced", "partial", "documented"],
-  "baseline_vocabulary": ["cis", "stig"],
+  "baseline_vocabulary": ["cis", "stig", "eu-ai-act"],
+  "baseline_notes": {
+    "eu-ai-act": "EU Regulation 2024/1688 (AI Act) mapped from the PLATFORM/deployer perspective. AI-OS.NET is a compliance-ENABLING substrate, not a high-risk AI system or a model provider; these entries show which platform mechanisms help a deployer discharge the Act's technical obligations (Art. 12 record-keeping, Art. 14 human oversight, Art. 15 robustness/cybersecurity, Art. 72 post-market monitoring). Article/paragraph obligations that remain the deployer's or the model provider's responsibility are marked 'documented' with a null enforcement_ref. This is NOT a claim that the OS 'is EU AI Act compliant'."
+  },
   "controls": [
     {
       "control_id": "CIS-1.5.1",
@@ -346,6 +349,177 @@
       "aios_mechanism": "boot-integrity",
       "enforcement_ref": null,
       "status": "documented",
+      "evidence_record_type": null
+    },
+    {
+      "control_id": "EUAI-ART-9",
+      "title": "Art. 9 — Risk management: platform runs a continuous hardening/risk scanner as a confined service",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "systemd-hardening",
+      "enforcement_ref": "distro/systemd/aios-hardening.service::ExecStart",
+      "status": "partial",
+      "evidence_record_type": null
+    },
+    {
+      "control_id": "EUAI-ART-10",
+      "title": "Art. 10 — Data governance (training/validation data quality) is a model-provider obligation, not a platform mechanism",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "aios-policy",
+      "enforcement_ref": null,
+      "status": "documented",
+      "evidence_record_type": null
+    },
+    {
+      "control_id": "EUAI-ART-11",
+      "title": "Art. 11 + Annex IV — Technical documentation: build auto-generates SBOM + signed provenance for each image",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "boot-integrity",
+      "enforcement_ref": "distro/build/build-aios-iso.sh::provenance.json",
+      "status": "partial",
+      "evidence_record_type": null
+    },
+    {
+      "control_id": "EUAI-ART-11-ANNEX-IV",
+      "title": "Art. 11 Annex IV — Full technical file (system purpose, capabilities, oversight design) must be completed by the deployer/provider",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "boot-integrity",
+      "enforcement_ref": null,
+      "status": "documented",
+      "evidence_record_type": null
+    },
+    {
+      "control_id": "EUAI-ART-12",
+      "title": "Art. 12 — Record-keeping: automatic logging of events over the system lifetime via the append-only evidence log service",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "evidence-log",
+      "enforcement_ref": "distro/systemd/aios-evidence-log.service::ExecStart",
+      "status": "enforced",
+      "evidence_record_type": "SEGMENT_SEALED"
+    },
+    {
+      "control_id": "EUAI-ART-12-1",
+      "title": "Art. 12(1) — Logs are tamper-evident and append-only (BLAKE3 hash-chained records)",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "evidence-log",
+      "enforcement_ref": "crates/aios-evidence/src/chain.rs::append-only",
+      "status": "enforced",
+      "evidence_record_type": "CHAIN_CHECKPOINT"
+    },
+    {
+      "control_id": "EUAI-ART-12-2",
+      "title": "Art. 12(2) — Traceability: the system detects and records tampering with the automatically generated logs",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "evidence-log",
+      "enforcement_ref": "crates/aios-evidence/src/record.rs::TAMPER_DETECTED",
+      "status": "enforced",
+      "evidence_record_type": "TAMPER_DETECTED"
+    },
+    {
+      "control_id": "EUAI-ART-13",
+      "title": "Art. 13 — Transparency to deployers: every AI-proposed action yields an explainable, recorded policy decision path",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "aios-policy",
+      "enforcement_ref": "crates/aios-policy/src/explain.rs::DecisionLog",
+      "status": "partial",
+      "evidence_record_type": "POLICY_DECISION"
+    },
+    {
+      "control_id": "EUAI-ART-13-1",
+      "title": "Art. 13(1) — Interpretable output: AI emits typed action envelopes the deployer can inspect before execution (AI proposes, never executes)",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "aios-policy",
+      "enforcement_ref": "crates/aios-action/src/envelope.rs::ActionEnvelope",
+      "status": "partial",
+      "evidence_record_type": "POLICY_DECISION"
+    },
+    {
+      "control_id": "EUAI-ART-14",
+      "title": "Art. 14 — Human oversight: privileged actions are gated on an explicit operator approval decision",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "aios-policy",
+      "enforcement_ref": "crates/aios-policy/src/decision.rs::RequireApproval",
+      "status": "partial",
+      "evidence_record_type": "APPROVAL_REQUESTED"
+    },
+    {
+      "control_id": "EUAI-ART-14-1",
+      "title": "Art. 14(4) — The AI cannot approve its own actions (self-approval-prevention post-filter upgrades ALLOW to REQUIRE_APPROVAL)",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "aios-policy",
+      "enforcement_ref": "crates/aios-policy/src/precedence.rs::AiSelfApprovalUpgrade",
+      "status": "enforced",
+      "evidence_record_type": "APPROVAL_REQUESTED"
+    },
+    {
+      "control_id": "EUAI-ART-14-2",
+      "title": "Art. 14(4)(e) — Stop / override: a hard-deny class makes designated actions non-executable regardless of AI intent",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "aios-policy",
+      "enforcement_ref": "crates/aios-policy/src/hard_deny.rs::hard-deny",
+      "status": "enforced",
+      "evidence_record_type": "POLICY_DECISION"
+    },
+    {
+      "control_id": "EUAI-ART-15",
+      "title": "Art. 15 — Cybersecurity: kernel-level hardening (ASLR) is compiled into the shipped image",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "kernel-config",
+      "enforcement_ref": "distro/aios-boot/kernel-config::CONFIG_RANDOMIZE_BASE=y",
+      "status": "enforced",
+      "evidence_record_type": null
+    },
+    {
+      "control_id": "EUAI-ART-15-1",
+      "title": "Art. 15 — Robustness/integrity: the OS image is verified at boot via a dm-verity hash tree",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "boot-integrity",
+      "enforcement_ref": "distro/build/build-aios-iso.sh::dm-verity",
+      "status": "enforced",
+      "evidence_record_type": null
+    },
+    {
+      "control_id": "EUAI-ART-15-2",
+      "title": "Art. 15 — Resilience against tampering: updates are delivered as signed releases with detached-signature verification",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "update-signature",
+      "enforcement_ref": "distro/update/aios-update.sh::verify_signature",
+      "status": "enforced",
+      "evidence_record_type": null
+    },
+    {
+      "control_id": "EUAI-ART-15-3",
+      "title": "Art. 15 — Robustness via confinement: services run under SELinux in enforcing mode",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "selinux",
+      "enforcement_ref": "distro/aios-boot/aios-config.toml::selinux = \"enforcing\"",
+      "status": "enforced",
+      "evidence_record_type": null
+    },
+    {
+      "control_id": "EUAI-ART-26",
+      "title": "Art. 26 — Deployer obligations (assign human oversight, monitor operation, retain logs) are organisational duties the platform enables but does not discharge",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "aios-policy",
+      "enforcement_ref": null,
+      "status": "documented",
+      "evidence_record_type": null
+    },
+    {
+      "control_id": "EUAI-ART-72",
+      "title": "Art. 72 — Post-market monitoring: a boot-time service health report is produced for operational monitoring",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "evidence-log",
+      "enforcement_ref": "distro/systemd/aios-health-report.service::ExecStart",
+      "status": "partial",
+      "evidence_record_type": null
+    },
+    {
+      "control_id": "EUAI-ART-72-1",
+      "title": "Art. 72 — Post-market monitoring data is retained as immutable operational evidence receipts",
+      "baseline": "eu-ai-act",
+      "aios_mechanism": "evidence-log",
+      "enforcement_ref": "crates/aios-evidence/src/receipt.rs::EvidenceReceipt",
+      "status": "partial",
       "evidence_record_type": null
     }
   ]

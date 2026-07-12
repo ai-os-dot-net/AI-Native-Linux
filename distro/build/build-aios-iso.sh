@@ -533,26 +533,31 @@ mkdir -p "${ROOTFS_DIR}"/root
 mkdir -p "${ROOTFS_DIR}"/srv
 
 # Essential symlinks for scaffold roots. Preserve a base rootfs layout when it
-# already provides real directories or symlinks.
+# already provides real directories or symlinks — clobbering a base rootfs
+# symlink here broke boot #4: openSUSE ships lib64 -> usr/lib64 (where the
+# dynamic linker lives); overwriting it with usr/lib made every exec of a
+# dynamically-linked binary (systemd included) fail with ENOENT at switch_root.
 ensure_symlink() {
     local target="$1"
     local link_path="$2"
-    if [ -L "${link_path}" ]; then
-        ln -sfn "${target}" "${link_path}"
-    elif [ -e "${link_path}" ]; then
+    if [ -L "${link_path}" ] || [ -e "${link_path}" ]; then
         info "Preserving existing path: ${link_path#"${ROOTFS_DIR}"/}"
     else
         ln -s "${target}" "${link_path}"
     fi
 }
 
-ensure_symlink usr/bin  "${ROOTFS_DIR}/bin"
-ensure_symlink usr/lib  "${ROOTFS_DIR}/lib"
-ensure_symlink usr/lib  "${ROOTFS_DIR}/lib64"
-ensure_symlink bin      "${ROOTFS_DIR}/usr/sbin"
-ensure_symlink ../run   "${ROOTFS_DIR}/var/run"
-ensure_symlink ../lock  "${ROOTFS_DIR}/var/lock"
-ensure_symlink usr/bin  "${ROOTFS_DIR}/sbin"
+# lib64 must point at the tree that actually holds the 64-bit dynamic linker.
+LIB64_TARGET="usr/lib"
+[ -d "${ROOTFS_DIR}/usr/lib64" ] && LIB64_TARGET="usr/lib64"
+
+ensure_symlink usr/bin           "${ROOTFS_DIR}/bin"
+ensure_symlink usr/lib           "${ROOTFS_DIR}/lib"
+ensure_symlink "${LIB64_TARGET}" "${ROOTFS_DIR}/lib64"
+ensure_symlink bin               "${ROOTFS_DIR}/usr/sbin"
+ensure_symlink ../run            "${ROOTFS_DIR}/var/run"
+ensure_symlink ../lock           "${ROOTFS_DIR}/var/lock"
+ensure_symlink usr/bin           "${ROOTFS_DIR}/sbin"
 
 ensure_init_entrypoint() {
     if [ -x "${ROOTFS_DIR}/sbin/init" ] || [ -L "${ROOTFS_DIR}/sbin/init" ]; then
