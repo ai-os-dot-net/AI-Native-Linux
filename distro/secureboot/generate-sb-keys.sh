@@ -124,11 +124,22 @@ generate_role() {
     done
 
     # RSA-3072 self-signed cert with a deterministic serial + fixed validity.
+    # -not_before/-not_after need OpenSSL >= 3.4; older releases (Debian 3.0.x
+    # in CI) fall back to -days, which anchors notBefore at wall-clock —
+    # recorded honestly in the manifest as validity_source=days-fallback.
+    local -a validity
+    if openssl req -help 2>&1 | grep -q -- '-not_before'; then
+        validity=( -not_before "${NOT_BEFORE}" -not_after "${NOT_AFTER}" )
+        VALIDITY_SOURCE="fixed-epoch"
+    else
+        validity=( -days "$(( VALIDITY_SECONDS / 86400 ))" )
+        VALIDITY_SOURCE="days-fallback"
+    fi
     openssl req -x509 -newkey rsa:3072 -nodes \
         -keyout "${key}" -out "${crt}" \
         -subj "/CN=${cn}/O=AI-OS.NET/OU=SecureBoot/" \
         -set_serial "${serial}" \
-        -not_before "${NOT_BEFORE}" -not_after "${NOT_AFTER}" \
+        "${validity[@]}" \
         -sha256 "${addext[@]}" 2>/dev/null \
         || die "openssl failed to generate ${name} certificate"
 
@@ -181,6 +192,7 @@ EOF
   "mode": "operator-ca-self-signed",
   "created_epoch": ${EPOCH},
   "epoch_source": "${EPOCH_SOURCE}",
+  "validity_source": "${VALIDITY_SOURCE:-unknown}",
   "source_revision": "${GIT_REVISION}",
   "key_algorithm": "rsa-3072-sha256",
   "hierarchy": [
