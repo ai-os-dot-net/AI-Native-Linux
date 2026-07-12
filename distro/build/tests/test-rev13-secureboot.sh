@@ -53,10 +53,12 @@ PCR_OUT="${WORK}/pcr"
 # ── 1. Key hierarchy generation ───────────────────────────────────────────────
 msg "1. Secure Boot key hierarchy generation"
 
-if bash "${GEN_KEYS}" --out "${KEYS_DIR}" --epoch "${EPOCH}" >/dev/null 2>&1; then
+_gen_rc=0
+_gen_out="$(bash "${GEN_KEYS}" --out "${KEYS_DIR}" --epoch "${EPOCH}" 2>&1)" || _gen_rc=$?
+if [ "${_gen_rc}" -eq 0 ]; then
     pass "generate-sb-keys.sh succeeded"
 else
-    fail "generate-sb-keys.sh failed"
+    fail "generate-sb-keys.sh failed (rc=${_gen_rc}): ${_gen_out}"
 fi
 
 for f in PK.key PK.crt PK.der KEK.key KEK.crt KEK.der db.key db.crt db.der \

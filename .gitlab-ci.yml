@@ -110,9 +110,13 @@ distro-shell-tests:
       - .cargo/git/
   timeout: 2h
   before_script:
-    # neurocad-ci-tools lacks shellcheck — install on demand
-    - command -v shellcheck >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq shellcheck)
+    # neurocad-ci-tools lacks shellcheck and the openssl CLI (rev13 secureboot
+    # gate needs it) — install on demand
+    - >
+      (command -v shellcheck >/dev/null 2>&1 && command -v openssl >/dev/null 2>&1) ||
+      (apt-get update -qq && apt-get install -y -qq shellcheck openssl)
     - shellcheck --version
+    - openssl version
   script:
     # -S warning: info/style findings (e.g. SC2317 trap-invoked functions) don't block
     - shellcheck -S warning
