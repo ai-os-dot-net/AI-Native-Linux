@@ -139,7 +139,11 @@ for _needle in \
     check_grep "Build script marker: ${_needle}" "${BUILD_SCRIPT}" "${_needle}"
 done
 
-check_grep "Build blocks enforcing without a binary policy" "${BUILD_SCRIPT}" 'SELinux enforcing requires --selinux-policy-source'
+# Guard moved after policy detection: enforcing is allowed without
+# --selinux-policy-source when the base rootfs ships a real policy, but a
+# placeholder must still fail closed.
+check_grep "Build blocks enforcing without a real policy (post-detection guard)" "${BUILD_SCRIPT}" 'SELinux enforcing requires a real policy'
+check_grep "Enforcing guard is placement-correct (checks SELINUX_POLICY_PRESENT)" "${BUILD_SCRIPT}" 'AIOS_SELINUX_MODE}" = "enforcing" \] && \[ "\${SELINUX_POLICY_PRESENT}" != true'
 
 msg "SELinux base-rootfs policy sourcing markers (R12.6)"
 for _needle in \

@@ -268,9 +268,10 @@ case "${AIOS_DM_VERITY}" in
     *) die "Invalid --dm-verity: ${AIOS_DM_VERITY} (expected auto|disabled)" ;;
 esac
 
-if [ "${AIOS_SELINUX_MODE}" = "enforcing" ] && [ -z "${AIOS_SELINUX_POLICY_SOURCE}" ]; then
-    die "SELinux enforcing requires --selinux-policy-source with a binary policy."
-fi
+# NB: enforcing without --selinux-policy-source is allowed HERE — the R13.1
+# openSUSE base rootfs may carry a genuine policy (selinux-policy-targeted).
+# The fail-closed check runs after policy detection (see "SELinux policy
+# sourcing" below): enforcing + no real policy from any source → die.
 
 if [ -n "${AIOS_SELINUX_POLICY_SOURCE}" ] && [ ! -f "${AIOS_SELINUX_POLICY_SOURCE}" ]; then
     die "SELinux policy source not found: ${AIOS_SELINUX_POLICY_SOURCE}"
@@ -1033,6 +1034,13 @@ fi
 SELINUX_POLICY_REL_PATH="/etc/selinux/${SELINUX_POLICY_TYPE}/policy/policy.${SELINUX_POLICY_VERSION}"
 if [ "${SELINUX_POLICY_PRESENT}" = true ]; then
     SELINUX_POLICY_SHA256="$(sha256sum "${SELINUX_POLICY_DIR}/policy.${SELINUX_POLICY_VERSION}" | awk '{print $1}')"
+fi
+
+# Fail-closed enforcing gate (moved from arg parsing): enforcing needs a REAL
+# policy — operator-provided (--selinux-policy-source) or shipped by the base
+# rootfs. A placeholder stub must never boot "enforcing".
+if [ "${AIOS_SELINUX_MODE}" = "enforcing" ] && [ "${SELINUX_POLICY_PRESENT}" != true ]; then
+    die "SELinux enforcing requires a real policy: none via --selinux-policy-source and none found in the base rootfs (${ROOTFS_DIR}/etc/selinux)."
 fi
 
 # SELinux config — SELINUXTYPE tracks the real policy type; when no policy is

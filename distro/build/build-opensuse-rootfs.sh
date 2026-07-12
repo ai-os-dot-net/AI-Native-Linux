@@ -36,8 +36,9 @@ BASE_PACKAGES=(
     tar
     gzip
     xz
+    # NB: systemd-sysvcompat does not exist in Leap 16.0 (dropped upstream);
+    # the initramfs init discovers /usr/lib/systemd/systemd directly.
     systemd
-    systemd-sysvcompat
     dbus-1
     util-linux
     iproute2
