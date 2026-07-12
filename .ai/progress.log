@@ -1064,3 +1064,85 @@ T-186: M18 closer + acceptance test + v0.1.0 version bump + S11.4 sub-spec final
   5. release-update-gate job (verify, allow_failure) runs first time — check it; flip to blocking after first green.
   6. GitNexus index stale (ae4c041) — run npx gitnexus analyze when convenient.
   Follow-ups queued: SELinux enforcing guard relocation in build-aios-iso.sh; dm-verity boot enforcement QEMU proof; airgap channel (deferred); R13.4 Secure Boot/TPM; R13.3 daemon architecture.
+2026-07-12T08:55+03:00 | FIX | Pipeline 4343 failed at distro-shell-tests: negative-gates Scenario 4 runs the builder
+  with enforcing+no policy expecting FAST arg-validation exit; my relocated guard fired too late.
+  Fix f34c88be: early guard restored for the arg-decidable case (enforcing + no policy-source + no base-rootfs),
+  post-detection guard kept. Local: negative-gates 17/17, security-baseline green.
+  Same push lands R13.4 secureboot package (33/33 local). Boot candidate now pipeline 4369.
+  LESSON: a relocated guard must be re-verified against EVERY test that exercises it (grep tests AND runtime tests).
+2026-07-12T10:05+03:00 | BOOT-FIX-3 | Pipeline 4369: rootfs BUILT OK (sysvcompat fix worked), ISO built, QEMU panic again:
+  switch_root ENOENT on /sbin/init DESPITE init check passing. Root cause: usrmerge ABSOLUTE symlink trap —
+  /newroot/sbin -> /usr/sbin resolves against INITRAMFS root in checks (busybox /usr/sbin) but against NEWROOT in chroot.
+  Same trap in build-opensuse-rootfs.sh: its /sbin/init fallback checked+wrote through ${OUTPUT}/sbin -> host container.
+  Fix aa3279b1: init prefers /usr/lib/systemd/systemd directly (physical dirs); rootfs creates physical usr/sbin/init
+  relative symlink; verification uses physical paths only. Boot candidate: pipeline 4389.
+  LESSON: NEVER check or create paths through /sbin, /bin, /lib on a usrmerged rootfs from outside its namespace —
+  always use the physical /usr/... location.
+2026-07-12T13:45+03:00 | BOOT-FIX-4 + EUAI | Pipeline 4421: init found systemd directly (fix #3 worked) but exec ENOENT.
+  Diagnosed from the ISO ARTIFACT itself (unsquashfs): lib64 -> usr/lib (build-dated, WRONG) while dynamic linker is
+  at usr/lib64/ld-linux-x86-64.so.2. Root cause: ensure_symlink in build-aios-iso.sh CLOBBERED existing base-rootfs
+  symlinks despite 'preserve' comment. Fix 16a09bf8: preserve existing symlinks; scaffold lib64 target = usr/lib64
+  when present. Same push: EU AI Act baseline (19 controls, 56 total in map, validator+test green 11/11), task #8.
+  Boot candidate: pipeline 4454.
+  LESSON: when a boot fails at exec of an EXISTING binary => check the dynamic linker path (/lib64) FIRST; and verify
+  what the ARTIFACT actually contains (unsquashfs) instead of re-reading build scripts.
+2026-07-12T15:10+03:00 | BOOT #5 + MILESTONE | Pipeline 4454: FIRST CI ISO BOOT TO LOGIN PROMPT (systemd up, "aios login:" on ttyS0).
+  Gate still red at the AIOS service layer: (a) /run/aios vanished (tmpfs) => evidence-log ReadWritePaths namespace fail
+  => 8 dependent daemons DEPEND-failed; (b) THREE units had After=multi-user.target + WantedBy=multi-user.target ordering
+  cycles => systemd SKIPPED them, incl. aios-health-report (the gate's AIOS-HEALTH marker source!).
+  Fix 6467818e: tmpfiles.d/aios.conf (d /run/aios), reorder hardening/health-report/update-confirm, boot-gate test 30/30.
+  Boot candidate: pipeline 4475. Rootfs cache HIT confirmed working (1min vs 20min).
+  LESSON: (1) staged /run content is dead weight — tmpfs; use tmpfiles.d. (2) After=X + WantedBy=X = unit silently SKIPPED.
+2026-07-12T16:20+03:00 | BOOT #6 | Pipeline 4475: login prompt again, ordering cycles GONE, evidence cascade GONE.
+  Gate timed out: NO AIOS-HEALTH verdict on console. Two causes found by reading unit+script+binary:
+  (a) health-report Type=oneshot + WantedBy=multi-user + script does is-system-running --wait = STARTUP DEADLOCK
+      (old ordering cycle had HIDDEN it by skipping the unit). Fix: Type=simple.
+  (b) run-service (aios_system.rs write_service_state) writes /var/lib/aios/state/<id>.json but ProtectSystem=strict
+      units only allowed their own subdir => hardening oneshot FAILED, daemons failed the write too.
+      Fix: /var/lib/aios/state added to ReadWritePaths of all 16 run-service units.
+  16347fb7 pushed; boot candidate pipeline 4505. Local gates green (boot-gate, security-baseline, distribution, compliance).
+  LESSON: oneshot units must NEVER wait for startup completion; sandboxed services need every write path enumerated.
+2026-07-12T19:30+03:00 | BOOT #7 | Pipeline 4565: health diagnostics WORKED — serial log showed exact cause:
+  status=229/SELINUX_CONTEXT: loaded openSUSE targeted policy lacks aios_*_t types => SELinuxContext= kills spawn.
+  Oneshot hardening failed visibly; Restart=always daemons crash-looped INVISIBLY (12s restart cycle never trips
+  the 10s StartLimit window => never 'failed' => health said RUNNING-except-hardening while daemons were dead).
+  Fix 9e73d172: SELinuxContext=-... ignore-prefix on all 18 units; controls.json marker updated (anti-fake
+  validator correctly caught the drift). Boot candidate: pipeline 4573.
+  LESSON: Restart=always hides spawn-time failures from systemctl --failed; health gates must also check
+  restart-looping units (n_restarts), not only failed state. Diagnostics-on-console pattern earned its keep.
+
+========================================================================
+2026-07-12T20:00+03:00 | 🎉 MILESTONE: ISO BOOT GATE GREEN (pipeline 4573)
+========================================================================
+FIRST successful QEMU boot of a CI-built AIOS ISO to a fully healthy system.
+Serial log proof (assemble-iso job): "STATUS: ALL CHECKS PASSED" +
+"[qemu-boot-smoke] Boot-time service health OK: AIOS-HEALTH: RUNNING" + "Job succeeded".
+Full boot chain works end-to-end: kernel -> initramfs -> live media -> switch_root ->
+systemd -> all 16 AIOS services healthy -> health reporter RUNNING.
+
+7 boot defects fixed (all diagnosed from serial logs / ISO artifact inspection):
+  1. live media (busybox couldn't read .ko.zst)  -> decompress modules in initramfs
+  2. modules.dep .ko.zst->.ko rewrite
+  3. switch_root dangling absolute /sbin/init symlink -> newroot rebase
+  4. usrmerge lib64->usr/lib clobber (dynamic linker) -> preserve base symlinks, lib64->usr/lib64
+  5. /run/aios vanished (tmpfs) -> usr/lib/tmpfiles.d/aios.conf
+  6. health-report oneshot deadlock (is-system-running --wait) -> Type=simple; run-service
+     state dir denied by ProtectSystem -> +/var/lib/aios/state in ReadWritePaths (16 units)
+  7. SELinuxContext= types absent in loaded policy -> ignore-prefix "-" on 18 units
+
+Winning commit: 9e73d172 (SELinux fix #7). Pipeline 4573 assemble-iso GREEN.
+
+RESUME TOMORROW:
+  1. Check pipeline 4573 verify jobs (qemu-install-gate, release-update-gate — allow_failure);
+     if green, flip them to blocking in .gitlab-ci.yml.
+  2. This commit (flaky-test tolerance in recovery_render.rs) starts pipeline 4574 — let it confirm green.
+  3. Remaining Rev.12: none blocking — boot gate closed. Move to Rev.13 open items:
+     R13.3 daemon architecture, R13.6 enterprise installer (Agama-based), R13.7 8 CI gates.
+  4. Task #9: AIOS Control Center (Cockpit pkg in rootfs + own L7 panel + Agama installer) — user-approved.
+  5. dm-verity / SELinux ENFORCING boot proof via QEMU still pending (currently permissive).
+
+HOST NOTE (2026-07-12 desktop-freeze incident): root cause was btrfs metadata 98% full
+(29.5/30 GiB) on a 99%-full /home -> all writes stalled -> kwin froze. Fixed by deleting
+target/ (109GB) + cargo-target-* dirs -> disk 34G->684G free. FROZEN codex session PID 1745973
+still SIGSTOPped (chrome was killed) — user resumes with: kill -CONT 1745973.
+gitnexus analyze auto-run DISABLED for the session (it was an 8GB-heap disk hog).
