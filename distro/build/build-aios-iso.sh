@@ -268,10 +268,14 @@ case "${AIOS_DM_VERITY}" in
     *) die "Invalid --dm-verity: ${AIOS_DM_VERITY} (expected auto|disabled)" ;;
 esac
 
-# NB: enforcing without --selinux-policy-source is allowed HERE — the R13.1
-# openSUSE base rootfs may carry a genuine policy (selinux-policy-targeted).
-# The fail-closed check runs after policy detection (see "SELinux policy
-# sourcing" below): enforcing + no real policy from any source → die.
+# Enforcing without --selinux-policy-source is allowed when a base rootfs is
+# supplied — the R13.1 openSUSE base may carry a genuine policy
+# (selinux-policy-targeted), detected later in "SELinux policy sourcing".
+# Without a base rootfs there is no possible policy source, so fail fast at
+# argument validation. The post-detection guard covers the base-rootfs case.
+if [ "${AIOS_SELINUX_MODE}" = "enforcing" ] && [ -z "${AIOS_SELINUX_POLICY_SOURCE}" ] && [ -z "${BASE_ROOTFS}" ]; then
+    die "SELinux enforcing requires --selinux-policy-source (or --base-rootfs shipping a real policy)."
+fi
 
 if [ -n "${AIOS_SELINUX_POLICY_SOURCE}" ] && [ ! -f "${AIOS_SELINUX_POLICY_SOURCE}" ]; then
     die "SELinux policy source not found: ${AIOS_SELINUX_POLICY_SOURCE}"
