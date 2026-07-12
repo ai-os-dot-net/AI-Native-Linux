@@ -107,7 +107,7 @@ fi
 # The unit must run after the AIOS + multi-user targets and point ExecStart at
 # the staged script path (the ExecStart-validation gate keys off this path).
 for _needle in \
-    'After=aios.target multi-user.target' \
+    'After=aios.target' \
     'ExecStart=/usr/lib/aios/aios-health-report.sh'; do
     if grep -q -- "${_needle}" "${HEALTH_UNIT}" 2>/dev/null; then
         pass "Health unit contains: ${_needle}"

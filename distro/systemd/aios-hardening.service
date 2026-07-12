@@ -1,7 +1,9 @@
 [Unit]
 Description=AI-OS.NET Hardening Scanner
 Documentation=https://ai-os.net/docs/hardening
-After=multi-user.target
+# NB: After=multi-user.target + WantedBy=multi-user.target is an ordering
+# cycle (systemd SKIPs the unit). Order after the evidence log instead.
+After=aios-evidence-log.service
 
 [Service]
 Type=oneshot

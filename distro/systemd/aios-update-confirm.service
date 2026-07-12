@@ -1,7 +1,7 @@
 [Unit]
 Description=AI-OS.NET Update Boot Confirmation
 Documentation=https://ai-os.net/docs/update
-After=multi-user.target
+After=aios-health-report.service
 ConditionPathExists=/var/lib/aios/update/pending-boot.json
 
 [Service]

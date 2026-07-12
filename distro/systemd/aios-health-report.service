@@ -2,7 +2,10 @@
 Description=AI-OS.NET Boot-Time Service Health Report
 Documentation=https://ai-os.net/docs/health
 Wants=aios.target multi-user.target
-After=aios.target multi-user.target
+# NB: never order After=multi-user.target while WantedBy=multi-user.target —
+# that is an ordering cycle and systemd SKIPS the unit (the boot gate then
+# never sees the AIOS-HEALTH marker).
+After=aios.target
 
 [Service]
 Type=oneshot

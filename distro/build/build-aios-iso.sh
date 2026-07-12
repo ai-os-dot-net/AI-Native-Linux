@@ -520,6 +520,14 @@ for _state_dir in fs vault network recovery sgr sandbox hardware hardening conta
     mkdir -p "${ROOTFS_DIR}/var/lib/aios/${_state_dir}"
 done
 mkdir -p "${ROOTFS_DIR}"/run/aios
+# /run is a fresh tmpfs every boot — the staged /run/aios above vanishes at
+# runtime. systemd-tmpfiles must recreate it BEFORE the aios units start,
+# otherwise their ReadWritePaths=/run/aios namespace setup fails (boot #5).
+mkdir -p "${ROOTFS_DIR}"/usr/lib/tmpfiles.d
+cat > "${ROOTFS_DIR}/usr/lib/tmpfiles.d/aios.conf" <<'EOF'
+# AI-OS.NET runtime directories (recreated on every boot; /run is tmpfs)
+d /run/aios 0755 root root -
+EOF
 mkdir -p "${ROOTFS_DIR}"/boot/{loader/entries,EFI/BOOT}
 mkdir -p "${ROOTFS_DIR}"/tmp
 mkdir -p "${ROOTFS_DIR}"/proc
