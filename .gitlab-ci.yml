@@ -138,6 +138,16 @@ distro-shell-tests:
       distro/build/tests/test-rev12-negative-gates.sh
       distro/build/tests/test-rev12-release-update-gate.sh
       distro/build/tests/test-rev12-uefi-boot-gate.sh
+      distro/build/tests/test-rev13-cve-process.sh
+      distro/build/tests/test-rev13-compliance.sh
+      distro/build/tests/test-rev13-hermetic.sh
+      distro/build/tests/test-rev13-secureboot.sh
+      distro/security/aios-cve-triage.sh
+      distro/build/hermetic/generate-build-lock.sh
+      distro/build/hermetic/verify-build-lock.sh
+      distro/secureboot/generate-sb-keys.sh
+      distro/secureboot/sign-boot-artifacts.sh
+      distro/secureboot/tpm-expected-pcrs.sh
     - bash distro/build/tests/test-rev11-build.sh
     - bash distro/build/tests/test-rev12-uefi-boot-gate.sh
     - bash distro/build/tests/test-rev12-install-gate.sh
@@ -153,6 +163,10 @@ distro-shell-tests:
     - bash distro/build/tests/test-rev12-security-baseline.sh
     - bash distro/build/tests/test-rev12-distribution-gates.sh
     - bash distro/build/tests/test-rev13-opensuse-base.sh
+    - bash distro/build/tests/test-rev13-cve-process.sh
+    - bash distro/build/tests/test-rev13-compliance.sh
+    - bash distro/build/tests/test-rev13-hermetic.sh
+    - bash distro/build/tests/test-rev13-secureboot.sh
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'

@@ -358,8 +358,21 @@ run_zypper "${ZYPPER_BASE[@]}" install --no-recommends -y "${PACKAGES[@]}"
 run_cmd mkdir -p "${OUTPUT}/proc" "${OUTPUT}/sys" "${OUTPUT}/dev" "${OUTPUT}/run" "${OUTPUT}/tmp"
 if ! ${DRY_RUN}; then
     chmod 1777 "${OUTPUT}/tmp"
-    if [ ! -e "${OUTPUT}/sbin/init" ] && [ -x "${OUTPUT}/usr/lib/systemd/systemd" ]; then
-        mkdir -p "${OUTPUT}/sbin"
+    # usrmerge trap: ${OUTPUT}/sbin is an ABSOLUTE symlink to /usr/sbin, so any
+    # path THROUGH it resolves against the BUILD HOST, not the rootfs — both
+    # the old existence check and the old ln wrote to the wrong tree. Always
+    # operate on the physical location. Leap 16 dropped systemd-sysvcompat,
+    # so nothing else provides the init entry (switch_root panics without it).
+    if [ -x "${OUTPUT}/usr/lib/systemd/systemd" ]; then
+        if [ ! -e "${OUTPUT}/usr/sbin/init" ] && [ ! -L "${OUTPUT}/usr/sbin/init" ]; then
+            mkdir -p "${OUTPUT}/usr/sbin"
+            ln -s ../lib/systemd/systemd "${OUTPUT}/usr/sbin/init"
+        fi
+    fi
+    # legacy layout: sbin is a real directory, not a usrmerge symlink
+    if [ -d "${OUTPUT}/sbin" ] && [ ! -L "${OUTPUT}/sbin" ] \
+        && [ ! -e "${OUTPUT}/sbin/init" ] && [ ! -L "${OUTPUT}/sbin/init" ] \
+        && [ -x "${OUTPUT}/usr/lib/systemd/systemd" ]; then
         ln -s ../usr/lib/systemd/systemd "${OUTPUT}/sbin/init"
     fi
 fi
@@ -367,8 +380,12 @@ fi
 write_metadata
 
 if ! ${DRY_RUN}; then
-    [ -x "${OUTPUT}/sbin/init" ] || [ -L "${OUTPUT}/sbin/init" ] \
-        || die "rootfs does not contain /sbin/init"
+    [ -x "${OUTPUT}/usr/lib/systemd/systemd" ] \
+        || die "rootfs does not contain systemd (usr/lib/systemd/systemd)"
+    # physical-path init entry (never resolve through the sbin usrmerge symlink)
+    [ -L "${OUTPUT}/usr/sbin/init" ] || [ -e "${OUTPUT}/usr/sbin/init" ] \
+        || { [ ! -L "${OUTPUT}/sbin" ] && { [ -L "${OUTPUT}/sbin/init" ] || [ -e "${OUTPUT}/sbin/init" ]; }; } \
+        || die "rootfs does not contain an init entry (usr/sbin/init)"
     [ -f "${OUTPUT}/etc/aios/base-rootfs.json" ] \
         || die "base-rootfs metadata missing"
 fi

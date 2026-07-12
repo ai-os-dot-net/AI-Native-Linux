@@ -487,19 +487,34 @@ newroot_init_ok() {
     fi
 }
 
-REAL_INIT="/sbin/init"
-if ! newroot_init_ok; then
-    err "No usable init at /newroot/sbin/init"
-    warn "Checking common locations..."
-    for _init in /newroot/usr/lib/systemd/systemd /newroot/lib/systemd/systemd /newroot/bin/init /newroot/usr/bin/init; do
-        if [ -x "$_init" ]; then
-            msg "Found init at ${_init}"
-            REAL_INIT="${_init#/newroot}"
-            break
+# Prefer the systemd binary DIRECTLY: /newroot/usr/... traverses only real
+# directories, so the check cannot be fooled. /newroot/sbin is an ABSOLUTE
+# symlink (usrmerge) that resolves against the INITRAMFS root here — checking
+# /newroot/sbin/init can "pass" against busybox's own /usr/sbin and then
+# panic inside switch_root's chroot where newroot has no usr/sbin/init.
+REAL_INIT=""
+for _cand in /usr/lib/systemd/systemd /lib/systemd/systemd; do
+    if [ -f "/newroot${_cand}" ] && [ -x "/newroot${_cand}" ]; then
+        REAL_INIT="${_cand}"
+        break
+    fi
+done
+if [ -z "${REAL_INIT}" ]; then
+    if newroot_init_ok; then
+        REAL_INIT="/sbin/init"
+    else
+        err "No usable init at /newroot/sbin/init"
+        warn "Checking common locations..."
+        for _init in /newroot/bin/init /newroot/usr/bin/init; do
+            if [ -x "$_init" ]; then
+                msg "Found init at ${_init}"
+                REAL_INIT="${_init#/newroot}"
+                break
+            fi
+        done
+        if [ -z "${REAL_INIT}" ]; then
+            rescue_shell "Missing init on new root"
         fi
-    done
-    if [ "${REAL_INIT}" = "/sbin/init" ]; then
-        rescue_shell "Missing init on new root"
     fi
 fi
 
