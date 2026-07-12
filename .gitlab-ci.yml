@@ -476,7 +476,9 @@ r13-enterprise-iso:
     # Same changes filter as r13-opensuse-rootfs: this job `needs` it, and a
     # docs-only push that filters out the rootfs job while keeping this one
     # makes pipeline creation fail with zero jobs (needs on a missing job).
-    - if: '$CI_COMMIT_BRANCH == "main"'
+    # push-source only: API-triggered pipelines lack cargo-release (its rules
+    # require push), so this job's needs would fail pipeline creation.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
       changes:
         - "crates/**/*"
         - "distro/**/*"
@@ -512,7 +514,7 @@ r13-qemu-boot-smoke:
   rules:
     - if: '$AIOS_R13_ENTERPRISE_BUILD == "1" && $AIOS_R13_QEMU_BOOT_TEST == "1"'
     # Mirrors r13-enterprise-iso (its `needs` target) — see comment there.
-    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
       changes:
         - "crates/**/*"
         - "distro/**/*"
