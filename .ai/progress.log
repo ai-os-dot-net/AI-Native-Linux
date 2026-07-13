@@ -1146,3 +1146,13 @@ HOST NOTE (2026-07-12 desktop-freeze incident): root cause was btrfs metadata 98
 target/ (109GB) + cargo-target-* dirs -> disk 34G->684G free. FROZEN codex session PID 1745973
 still SIGSTOPped (chrome was killed) — user resumes with: kill -CONT 1745973.
 gitnexus analyze auto-run DISABLED for the session (it was an 8GB-heap disk hog).
+
+[2026-07-13] 3 parallel agents landed + pushed (pipeline 4612 on 76330d43)
+- e91a608d R13.3: daemon architecture frozen (Hybrid) + systemd security-score gate (83/83, shellcheck clean)
+- 5c53856a Wine/Waydroid E2->E3: +26 integration tests + guarded real-binary seam (wine 59, waydroid 72 pass)
+- 76330d43 Control Center L7 scaffold: 7 tests, honest CONTRACT boundary, no faked execution
+- Workspace gates green locally: fmt/check --locked/clippy -A missing-docs/test --workspace (0 fail)
+- KEY: CI clippy gate = `--workspace -- -A missing-docs` (NOT -D warnings) — 806 verity.rs missing_docs are NOT a gate break
+- Task #10 (EnvironmentProvisioningPlan) agent launched on stable Wine/Waydroid base
+- Backlog added: #10 env-provisioning, #11 shared design tokens (KDE/Web pixel parity)
+- Next: confirm pipeline 4612 green; verify #10 agent; then #6/#7 (Secure Boot/TPM, 8 CI gates -> enterprise exit)

@@ -19,6 +19,7 @@ pub mod app_profile;
 pub mod compatibility_orchestrator;
 pub mod compatibility_runtime;
 pub mod ecosystem;
+pub mod environment_plan;
 pub mod error;
 pub mod evidence;
 pub mod integration;
