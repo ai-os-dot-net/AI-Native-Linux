@@ -146,6 +146,8 @@ distro-shell-tests:
       distro/build/tests/test-rev13-compliance.sh
       distro/build/tests/test-rev13-hermetic.sh
       distro/build/tests/test-rev13-secureboot.sh
+      distro/build/tests/test-rev13-daemon.sh
+      distro/systemd/aios-security-score.sh
       distro/security/aios-cve-triage.sh
       distro/build/hermetic/generate-build-lock.sh
       distro/build/hermetic/verify-build-lock.sh
@@ -171,6 +173,7 @@ distro-shell-tests:
     - bash distro/build/tests/test-rev13-compliance.sh
     - bash distro/build/tests/test-rev13-hermetic.sh
     - bash distro/build/tests/test-rev13-secureboot.sh
+    - bash distro/build/tests/test-rev13-daemon.sh
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
