@@ -34,7 +34,12 @@ ISO_PATH=""
 KERNEL_PATH=""
 INITRD_PATH=""
 DISK_PATH="${AIOS_QEMU_INSTALL_DISK:-${DEFAULT_DISK}}"
-DISK_SIZE="${AIOS_QEMU_INSTALL_DISK_SIZE:-20G}"
+# 48G (sparse qcow2, ~a few GB actually written): must clear the installer's
+# own AIOS_MIN_DISK_GB=40 production guard — a harness that provisions a disk
+# the installer legitimately rejects is a harness bug, not an installer bug.
+# Pipeline 4731 proved the install now reaches this check (squashfs found, disk
+# too small at the old 20G). Do NOT lower the installer minimum to pass CI.
+DISK_SIZE="${AIOS_QEMU_INSTALL_DISK_SIZE:-48G}"
 TARGET_DEV="${AIOS_QEMU_TARGET_DEV:-/dev/vda}"
 GUEST_HOSTNAME="${AIOS_QEMU_INSTALL_HOSTNAME:-aios-ci}"
 CDLABEL="${AIOS_QEMU_CDLABEL:-AIOS_REV12}"
@@ -75,7 +80,7 @@ Phase 1 autoinstall inputs:
 
 Disk:
   --disk PATH            Blank virtual disk path, default: out/aios-install-test.qcow2
-  --disk-size SIZE       qemu-img size, default: 20G
+  --disk-size SIZE       qemu-img size, default: 48G (> installer 40G minimum)
   --keep-disk            Keep the disk image after a successful run
 
 Firmware / TPM (installed boot usually needs both — see QEMU-INSTALL-TEST.md):
