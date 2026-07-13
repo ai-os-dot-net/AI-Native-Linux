@@ -29,11 +29,26 @@
 //! * The **typed action taxonomy**, the **read-only routing through the real
 //!   bridge gate**, and the **LAN-exposure-requires-a-decision-id** path are
 //!   `REAL` at `E3` (unit-tested here).
-//! * The **mutating action → live `PolicyKernel` decision → live backend
-//!   execution** hop is a **`CONTRACT`** boundary: [`GrpcWebClientStub`] is an
-//!   echo stub (validates the gate, does not reach a real backend). Wiring it to
-//!   a real tonic `Channel` reaching [`aios.policy.PolicyKernel`] is a
-//!   deployment task, marked `// CONTRACT:` at the seam. No execution is faked.
+//! * The **transport seam** is now `REAL`: [`ControlCenter`] is generic over a
+//!   [`ControlTransport`], and [`RealGrpcTransport`] constructs configured
+//!   `tonic` `Endpoint`s (localhost default + connect/request timeouts) and the
+//!   **real, importable** backend tonic client stubs
+//!   ([`aios_policy::service::PolicyKernelClient`],
+//!   [`aios_sgr::service::SgrServiceClient`],
+//!   [`aios_evidence::service::EvidenceLogClient`]) over real `Channel`s
+//!   (`E3`, unit-tested offline via `connect_lazy`). The default transport is
+//!   [`StubTransport`] (the reused echo stub) so the scaffold's behavior is
+//!   unchanged.
+//! * The **final typed method-dispatch** — turning the abstract
+//!   `(service, method, JSON payload)` triple into a concrete typed proto
+//!   request and issuing the RPC — is the **only** remaining `CONTRACT`
+//!   boundary ([`RealGrpcTransport::send`] returns
+//!   [`ControlCenterError::TransportContract`] naming the exact proto path). It
+//!   is a genuine deployment task because the SGR/Evidence method names have no
+//!   1:1 proto RPC and `PolicyKernel.EvaluatePolicy` needs an
+//!   `aios_action::ActionEnvelope` transcode. **No execution is faked**, and the
+//!   no-execute law (no `Executed` outcome; mutating actions terminate at
+//!   [`ActionOutcome::PolicyPending`]) holds for **any** transport.
 //!
 //! See `DESIGN.md` for the full architecture and the three-tier product picture.
 
@@ -48,8 +63,39 @@ use aios_renderer_web::{
     WebEvidenceEmitter, WebEvidenceReceipt, WebRendererError,
 };
 
+pub mod transport;
+
+pub use transport::{
+    BackendClients, BackendEndpoints, ControlTransport, RealGrpcTransport, StubTransport,
+};
+
+/// Return the Control Center panel's base stylesheet, built from the AIOS
+/// design tokens.
+///
+/// The panel renders over the shared token system: this composes the light and
+/// dark `:root` custom-property blocks emitted by the L7 Web renderer's
+/// design-token seam ([`aios_renderer_web::css_compile::aios_default_stylesheet`],
+/// which itself emits from `aios_design_tokens::TokenSet::aios_default`). Both
+/// themes' `--aios-color-*` (and spacing / radius / typography) custom
+/// properties are included so a served panel resolves `var(--aios-color-*)` in
+/// either theme.
+#[must_use]
+pub fn control_center_stylesheet() -> String {
+    let light = aios_renderer_web::css_compile::aios_default_stylesheet(false);
+    let dark = aios_renderer_web::css_compile::aios_default_stylesheet(true);
+    format!("{light}\n{dark}\n")
+}
+
+/// Return the Control Center panel's base stylesheet for a single theme
+/// (`dark_theme = true` for the dark variant), built from the AIOS design
+/// tokens via the L7 Web renderer's design-token seam.
+#[must_use]
+pub fn control_center_stylesheet_for(dark_theme: bool) -> String {
+    aios_renderer_web::css_compile::aios_default_stylesheet(dark_theme)
+}
+
 /// Crate version marker used by future closure-invariant tests.
-pub const CONTROL_CENTER_CODE_VERSION: &str = "aios-control-center/0.0.1-SHELL";
+pub const CONTROL_CENTER_CODE_VERSION: &str = "aios-control-center/0.0.1-PARTIAL";
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -78,6 +124,18 @@ pub enum ControlCenterError {
     /// the "operator proposes, system decides" law in code.
     #[error("policy decision id required: {0}")]
     MissingDecisionId(String),
+
+    /// The real gRPC transport ([`RealGrpcTransport`]) could not build or
+    /// resolve a backend endpoint (invalid URL, unknown service).
+    #[error("transport error: {0}")]
+    Transport(String),
+
+    /// The real gRPC transport reached its documented CONTRACT boundary: the
+    /// tonic `Channel` and typed client stubs are real, but the final typed
+    /// proto method-dispatch (JSON → typed request) is a deployment task. The
+    /// message names the exact proto path. **No backend response is fabricated.**
+    #[error("transport CONTRACT boundary: {0}")]
+    TransportContract(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -307,36 +365,53 @@ pub enum ActionOutcome {
 /// Composes the reused L7 transport pieces: a gRPC-Web client over the bridge,
 /// the exposure FSM, and an evidence emitter. It exposes exactly the typed
 /// [`ControlAction`] surface and enforces the propose-decide-execute law.
-pub struct ControlCenter {
+pub struct ControlCenter<T: ControlTransport = StubTransport> {
     config: ControlCenterConfig,
-    client: GrpcWebClientStub,
+    transport: T,
     exposure: ExposureFsm,
     evidence: Arc<InMemoryWebEvidenceEmitter>,
 }
 
-impl ControlCenter {
+impl ControlCenter<StubTransport> {
     /// Build a Control Center from a config, wiring the reused L7 transport
-    /// (bridge with the default localhost allowlists) and a fresh evidence
-    /// chain.
+    /// (bridge with the default localhost allowlists, wrapped in
+    /// [`StubTransport`]) and a fresh evidence chain.
+    ///
+    /// Use [`ControlCenter::with_transport`] to construct the panel over the
+    /// real [`RealGrpcTransport`] instead of the echo stub.
     #[must_use]
     pub fn new(config: ControlCenterConfig) -> Self {
         let bridge = GrpcWebBridge::new(GrpcWebBridge::default_localhost_config());
-        let client = GrpcWebClientStub::new(bridge);
+        let transport = StubTransport::new(GrpcWebClientStub::new(bridge));
+        Self::with_transport(config, transport)
+    }
+
+    /// Build a Control Center with the default (localhost-only) config over the
+    /// echo [`StubTransport`].
+    #[must_use]
+    pub fn new_localhost() -> Self {
+        Self::new(ControlCenterConfig::default())
+    }
+}
+
+impl<T: ControlTransport + Sync> ControlCenter<T> {
+    /// Build a Control Center from a config over an explicit
+    /// [`ControlTransport`] (e.g. the real [`RealGrpcTransport`]).
+    ///
+    /// The no-execute law is transport-independent: whatever the transport,
+    /// mutating actions terminate at [`ActionOutcome::PolicyPending`] and there
+    /// is no `Executed` outcome.
+    #[must_use]
+    pub fn with_transport(config: ControlCenterConfig, transport: T) -> Self {
         let evidence = Arc::new(InMemoryWebEvidenceEmitter::new(
             config.evidence_subject.clone(),
         ));
         Self {
             config,
-            client,
+            transport,
             exposure: ExposureFsm::new(),
             evidence,
         }
-    }
-
-    /// Build a Control Center with the default (localhost-only) config.
-    #[must_use]
-    pub fn new_localhost() -> Self {
-        Self::new(ControlCenterConfig::default())
     }
 
     /// The active config.
@@ -389,7 +464,7 @@ impl ControlCenter {
         //     effect, which the Capability Runtime then executes and evidences.
         // No execution is simulated here.
         let response = self
-            .client
+            .transport
             .send(
                 &self.config.origin,
                 &routed.service_fqn,
@@ -453,6 +528,84 @@ impl ControlCenter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A test-double transport that *succeeds* (echoes the payload) without any
+    /// network. It stands in for "a real transport that connected", letting us
+    /// prove the no-execute guarantee holds for a **successful** transport, not
+    /// only for the failing/echo cases — i.e. the guarantee is transport-
+    /// independent, a property of [`ControlCenter::submit_action`]'s control
+    /// flow, not of any one transport.
+    struct RecordingTransport;
+
+    impl ControlTransport for RecordingTransport {
+        #[allow(
+            clippy::unused_async,
+            reason = "implements the async ControlTransport contract; the double \
+                      resolves synchronously"
+        )]
+        async fn send(
+            &self,
+            _origin: &str,
+            _service: &str,
+            _method: &str,
+            payload: Vec<u8>,
+        ) -> Result<Vec<u8>, ControlCenterError> {
+            Ok(payload)
+        }
+    }
+
+    #[tokio::test]
+    async fn no_execute_guarantee_holds_for_a_successful_transport(
+    ) -> Result<(), ControlCenterError> {
+        // Even when the transport SUCCEEDS, a mutating action terminates at
+        // PolicyPending — there is no Executed outcome. Transport-independent.
+        let cc = ControlCenter::with_transport(ControlCenterConfig::default(), RecordingTransport);
+        let outcome = cc
+            .submit_action(&ControlAction::RequestServiceRestart {
+                service: "aios-fs".to_string(),
+            })
+            .await?;
+        assert!(matches!(outcome, ActionOutcome::PolicyPending { .. }));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn real_transport_never_yields_a_data_outcome_for_mutating() {
+        // Wired to the REAL transport, a mutating action must never surface as
+        // executed/Data — worst case it errors at the named CONTRACT boundary.
+        let cc = ControlCenter::with_transport(
+            ControlCenterConfig::default(),
+            RealGrpcTransport::localhost_default(),
+        );
+        let result = cc
+            .submit_action(&ControlAction::RequestServiceRestart {
+                service: "aios-fs".to_string(),
+            })
+            .await;
+        assert!(!matches!(result, Ok(ActionOutcome::Data { .. })));
+        assert!(matches!(
+            result,
+            Err(ControlCenterError::TransportContract(_)) | Ok(ActionOutcome::PolicyPending { .. })
+        ));
+    }
+
+    #[test]
+    fn stylesheet_carries_aios_color_tokens_for_both_themes() {
+        let sheet = control_center_stylesheet();
+        // Both theme blocks are present.
+        assert!(sheet.contains(":root {"));
+        assert!(sheet.contains(r#":root[data-theme="dark"]"#));
+        // The design-token color custom properties are present.
+        assert!(sheet.contains("--aios-color-"));
+
+        // Single-theme variants also carry the color tokens.
+        let light = control_center_stylesheet_for(false);
+        let dark = control_center_stylesheet_for(true);
+        assert!(light.contains("--aios-color-"));
+        assert!(dark.contains("--aios-color-"));
+        // Light and dark differ (theming is real, not a copy).
+        assert_ne!(light, dark);
+    }
 
     #[test]
     fn config_defaults_to_localhost() {

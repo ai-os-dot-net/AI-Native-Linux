@@ -1,8 +1,10 @@
 # AIOS Control Center (L7) — Design
 
 **Crate:** `aios-control-center` · **Layer:** L7 (Renderers / Interaction) ·
-**Status of this scaffold:** `SHELL` for the transport/backend hop,
-`REAL`(E3) for the typed-action taxonomy + exposure-decision path.
+**Status of this scaffold:** `REAL`(E3) for the typed-action taxonomy, the
+exposure-decision path, **and the transport seam** (real `tonic` `Channel` +
+real backend client stubs); `PARTIAL` for the read/mutating backend hops — only
+the final typed proto method-dispatch remains a narrowly-scoped `CONTRACT`.
 
 ---
 
@@ -105,42 +107,67 @@ construction:
 **Real today (E3, unit-tested):**
 
 - The typed taxonomy and the read-only / mutating routing split.
-- Every `submit_action` passes the **real** `GrpcWebBridge` gate via
-  `GrpcWebClientStub::send` (origin allowlist + service allowlist + size ceil).
+- Every `submit_action` passes the **real** `GrpcWebBridge` gate via the default
+  `StubTransport` (origin allowlist + service allowlist + size ceil).
 - The **LAN-exposure-requires-a-decision-id** path runs the real `ExposureFsm`
   and emits a real `aios_evidence`-backed receipt.
+- **The transport seam** (`src/transport.rs`). `ControlCenter` is now generic
+  over a `ControlTransport` trait. `RealGrpcTransport` builds configured `tonic`
+  `Endpoint`s (localhost default endpoints — policy `50051`, evidence `50055`,
+  sgr `50058` — with connect + request timeouts) and constructs the **real,
+  importable** backend tonic client stubs over real `Channel`s:
+  `aios_policy::service::PolicyKernelClient`,
+  `aios_sgr::service::SgrServiceClient`,
+  `aios_evidence::service::EvidenceLogClient` (`connect_clients`, unit-tested
+  offline via `connect_lazy`).
 
-**`CONTRACT` boundary (deployment task, marked `// CONTRACT:` at the seam in
-`submit_action`):** `GrpcWebClientStub::send` is an **echo stub** — it validates
-the gate but does not reach a live backend. A real deployment wires the bridge
-to a tonic `Channel` so that:
+**`CONTRACT` boundary (the _only_ one left — the final typed method-dispatch, in
+`RealGrpcTransport::send`):** the `Channel` and the typed client stubs are real,
+but mapping the abstract `(service, method, JSON payload)` to a concrete typed
+proto request is a deployment task. `send` builds the real endpoint and then
+returns `ControlCenterError::TransportContract` **naming the exact proto path**,
+because:
 
-- read-only actions reach `SgrService` / `EvidenceLog` and return real data, and
-- mutating proposals reach `PolicyKernel.EvaluatePolicy`, whose `PolicyDecision`
-  (`Allow` / `RequireApproval` / `Deny`, from `aios_policy::decision`) gates the
-  domain effect, which the **Capability Runtime** then executes and evidences.
+- `aios.sgr.SgrService` has **no** `GetServiceHealth` RPC — the health read maps
+  to `aios.sgr.v1alpha1.SgrService/GetUnit` + `GetGraphState`;
+- `aios.evidence.EvidenceLog` has **no** `TailReceipts` RPC — the tail maps to
+  `aios.evidence.v1alpha1.EvidenceLog/Query`;
+- `aios.policy.v1alpha1.PolicyKernel/EvaluatePolicy` **does** exist, but its
+  `EvaluatePolicyRequest.envelope_proto` needs an `aios_action::ActionEnvelope`
+  transcode of the JSON proposal; its `PolicyDecision`
+  (`Allow` / `RequireApproval` / `Deny`) then gates the domain effect, which the
+  **Capability Runtime** executes and evidences.
 
-**No execution is simulated.** A mutating action terminates at `PolicyPending`;
-nothing in this crate turns a proposal into a system effect.
+**No execution is simulated.** A mutating action terminates at `PolicyPending`
+(no `Executed` outcome exists), and this no-execute law is **transport-
+independent** — proven by a success-returning transport double in the tests.
+Nothing in this crate turns a proposal into a system effect.
 
 ---
 
 ## 6. Taxonomy grade & what E3+ requires next
 
-| Capability                                         | Grade now  | To advance                                                                                  |
-| -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------- |
-| Typed action taxonomy + routing                    | `REAL` E3  | — (unit-tested)                                                                             |
-| Bridge-gate enforcement on submit                  | `REAL` E3  | — (reuses tested bridge)                                                                    |
-| LAN exposure requires decision id + evidence       | `REAL` E3  | — (unit-tested)                                                                             |
-| Read-only action → real backend data               | `SHELL`    | Wire `GrpcWebClientStub` to a tonic `Channel` reaching `SgrService`/`EvidenceLog`.          |
-| Mutating action → live `PolicyKernel` decision     | `CONTRACT` | Reach `PolicyKernel.EvaluatePolicy` with a real `ActionEnvelope`; consume `PolicyDecision`. |
-| Proposal → Capability Runtime execution + evidence | `CONTRACT` | Post-decision execution path (owned by `aios-capability-runtime`, not this crate).          |
-| HTTP serving / Next.js front-end                   | `DEFERRED` | Reuse `aios-renderer-web` `https.rs` listener; not in this scaffold's scope.                |
+| Capability                                                  | Grade now  | To advance                                                                                                                |
+| ----------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Typed action taxonomy + routing                             | `REAL` E3  | — (unit-tested)                                                                                                           |
+| Bridge-gate enforcement on submit                           | `REAL` E3  | — (reuses tested bridge)                                                                                                  |
+| LAN exposure requires decision id + evidence                | `REAL` E3  | — (unit-tested)                                                                                                           |
+| Transport seam (real `Channel` + real backend client stubs) | `REAL` E3  | — (`RealGrpcTransport`; `connect_clients` unit-tested offline via `connect_lazy`)                                         |
+| Base stylesheet from design tokens                          | `REAL` E3  | — (`control_center_stylesheet`; asserts `--aios-color-*` for both themes)                                                 |
+| Read-only action → real backend data                        | `PARTIAL`  | Transport REAL; encode the typed proto request (`SgrService/GetUnit`+`GetGraphState`, `EvidenceLog/Query`) and issue RPC. |
+| Mutating action → live `PolicyKernel` decision              | `PARTIAL`  | Transport REAL; transcode JSON proposal → `ActionEnvelope`, call `PolicyKernel/EvaluatePolicy`, consume `PolicyDecision`. |
+| Proposal → Capability Runtime execution + evidence          | `CONTRACT` | Post-decision execution path (owned by `aios-capability-runtime`, not this crate).                                        |
+| HTTP serving / Next.js front-end                            | `DEFERRED` | Reuse `aios-renderer-web` `https.rs` listener; not in this scaffold's scope.                                              |
 
 ## 7. Dependencies
 
-- `aios-renderer-web` (path) — sole AIOS dependency; re-exports the policy /
-  evidence / action crates this crate references.
+- `aios-renderer-web` (path) — the reused L7 transport (bridge / exposure FSM /
+  evidence emitter) and the `css_compile::aios_default_stylesheet` design-token
+  seam consumed by `control_center_stylesheet`.
+- `aios-policy` / `aios-sgr` / `aios-evidence` (path) — the **real** backend
+  tonic client stubs (`PolicyKernelClient` / `SgrServiceClient` /
+  `EvidenceLogClient`) wired by `RealGrpcTransport`.
+- `tonic` (workspace) — `Endpoint` / `Channel` for the real transport seam.
 - `serde` / `serde_json` — typed action payload encoding.
 - `thiserror` — `ControlCenterError`.
 - `tracing` — structured logging seam.
