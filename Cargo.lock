@@ -66,6 +66,7 @@ version = "0.1.0"
 dependencies = [
  "aios-action",
  "aios-capability-runtime",
+ "aios-cognitive",
  "aios-evidence",
  "aios-sandbox",
  "aios-sgr",
@@ -242,11 +243,15 @@ dependencies = [
 name = "aios-control-center"
 version = "0.0.1"
 dependencies = [
+ "aios-evidence",
+ "aios-policy",
  "aios-renderer-web",
+ "aios-sgr",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tonic",
  "tracing",
 ]
 

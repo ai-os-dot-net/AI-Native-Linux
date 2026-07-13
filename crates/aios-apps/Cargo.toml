@@ -30,6 +30,10 @@ aios-capability-runtime   = { path = "../aios-capability-runtime" }
 aios-sgr                  = { path = "../aios-sgr" }
 aios-sandbox              = { path = "../aios-sandbox" }
 aios-evidence             = { path = "../aios-evidence" }
+# L6 → L5 (legal: depend on lower layers only; aios-cognitive has no dep on
+# aios-apps, so this is acyclic). Backs the cognitive proposal seam in
+# `cognitive_bridge` — see COGNITIVE_PROPOSER_CONTRACT in environment_plan.
+aios-cognitive            = { path = "../aios-cognitive" }
 
 [build-dependencies]
 tonic-build          = { workspace = true }

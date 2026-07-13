@@ -16,6 +16,7 @@
 //! Every enum is closed; adding a variant is a versioned spec change.
 
 pub mod app_profile;
+pub mod cognitive_bridge;
 pub mod compatibility_orchestrator;
 pub mod compatibility_runtime;
 pub mod ecosystem;

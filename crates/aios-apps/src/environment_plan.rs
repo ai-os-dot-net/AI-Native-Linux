@@ -42,9 +42,13 @@
 //!   Capability-Runtime execution are a `CONTRACT` boundary — marked
 //!   `// CONTRACT:` at [`EnvironmentProvisioningPlan::route_for_decision`]. No
 //!   execution is faked.
-//! * The **L5 cognitive proposal** hook is a `CONTRACT` seam (see
-//!   [`COGNITIVE_PROPOSER_CONTRACT`]); the planner is deterministic in L6 to
-//!   avoid a fragile / cyclic L5 dependency.
+//! * The **L5 cognitive proposal** hook is now wired `REAL` at `E3` in
+//!   [`crate::cognitive_bridge`]: a real [`aios_cognitive::CognitiveIntent`] is
+//!   mapped to a typed environment intent, the deterministic planner produces
+//!   the plan, and it terminates at `AwaitingPolicyDecision`. What remains
+//!   `CONTRACT` is only the *live* gRPC `CognitiveCore/ProposePlan` RPC that
+//!   would mint the intent from a running model — see
+//!   [`COGNITIVE_PROPOSER_CONTRACT`].
 
 use std::sync::Mutex;
 
@@ -67,17 +71,22 @@ pub const POLICY_KERNEL_SERVICE: &str = "aios.policy.PolicyKernel";
 /// action and returns a `PolicyDecision`.
 pub const POLICY_EVALUATE_METHOD: &str = "EvaluatePolicy";
 
-/// CONTRACT seam for the optional L5 Cognitive Core proposer.
+/// The L5 Cognitive Core planning RPC that mints a typed intent.
 ///
-/// If/when L5 is wired to *propose* an environment plan under cognitive
-/// planning, the adapter must call the L5 planning surface
-/// (`aios.cognitive.CognitiveCore` `ProposePlan`) to obtain a typed intent, then
-/// hand the derived inputs to [`EnvironmentProvisioningPlan::from_analysis`].
+/// The in-process proposal seam is now **REAL** — see
+/// [`crate::cognitive_bridge`]: it consumes a real
+/// [`aios_cognitive::CognitiveIntent`], maps it to a typed environment intent,
+/// and drives the deterministic planner to a `AwaitingPolicyDecision` plan with
+/// sealed evidence. The L6→L5 dependency is legal (a layer may depend on
+/// lower-numbered layers) and acyclic (`aios-cognitive` has no dependency on
+/// `aios-apps`).
 ///
-/// The L5 hook is intentionally left as a contract (not implemented) so that
-/// L6 planning stays deterministic and free of a fragile / potentially cyclic
-/// dependency on `aios-cognitive`. The Cognitive Core still only *proposes*;
-/// this module still only *proposes*; nothing here executes.
+/// What this constant still marks as `CONTRACT` is the **live gRPC channel**:
+/// delivering a `ProposePlan` call to a running `aios.cognitive.CognitiveCore`
+/// backend so a model *mints* the [`aios_cognitive::CognitiveIntent`]. The bridge
+/// accepts an already-minted intent; no model is called and none is fabricated.
+/// The Cognitive Core still only *proposes*; this module still only *proposes*;
+/// nothing here executes.
 pub const COGNITIVE_PROPOSER_CONTRACT: &str = "aios.cognitive.CognitiveCore/ProposePlan";
 
 // ---------------------------------------------------------------------------
