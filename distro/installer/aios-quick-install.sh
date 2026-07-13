@@ -285,6 +285,19 @@ do_filesystems() {
 do_encryption() {
     info "=== Setting up LUKS2 encryption ==="
 
+    # device-mapper kernel modules must be loaded before cryptsetup can create
+    # the /dev/mapper target; the live env does not autoload them. Pipeline 4757
+    # proved the install reaches here then fails: "Cannot initialize
+    # device-mapper. Is dm_mod kernel module loaded?". dm_verity is loaded now
+    # too — it is needed by the later rootfs-integrity step. modprobe is a no-op
+    # if a module is built into the kernel.
+    for _mod in dm_mod dm_crypt dm_verity; do
+        modprobe "${_mod}" 2>/dev/null || true
+    done
+    if [ ! -e /dev/mapper/control ]; then
+        die "device-mapper unavailable (/dev/mapper/control missing after modprobe dm_mod)" 5
+    fi
+
     LUKS_TMP_KEYFILE="$(mktemp /tmp/aios-quick-luks-key.XXXXXX)"
     dd if=/dev/urandom of="${LUKS_TMP_KEYFILE}" bs=64 count=1 status=none || die "Keygen failed" 5
     chmod 600 "${LUKS_TMP_KEYFILE}"
