@@ -119,7 +119,14 @@ validate_env() {
     AIOS_SQUASHFS="${AIOS_SQUASHFS:-/run/initramfs/live/aios.squashfs}"
 
     if [ ! -f "${AIOS_SQUASHFS}" ]; then
-        for _alt in /run/initramfs/live/filesystem.squashfs \
+        # /run/initramfs/live-media is where OUR initramfs (distro/aios-boot/
+        # initramfs/init, try_mount_live_medium) mounts the live ISO; /run is
+        # mount --move'd wholesale into the real root at switch_root (init
+        # Step 6), so the path survives into the running live system. The
+        # remaining entries are dracut/archiso/live-boot conventions kept as
+        # fallbacks.
+        for _alt in /run/initramfs/live-media/live/aios.squashfs \
+                    /run/initramfs/live/filesystem.squashfs \
                     /run/archiso/bootmnt/aios.squashfs \
                     /run/live/medium/aios.squashfs; do
             if [ -f "${_alt}" ]; then
