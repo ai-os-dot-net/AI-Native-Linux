@@ -1156,3 +1156,9 @@ gitnexus analyze auto-run DISABLED for the session (it was an 8GB-heap disk hog)
 - Task #10 (EnvironmentProvisioningPlan) agent launched on stable Wine/Waydroid base
 - Backlog added: #10 env-provisioning, #11 shared design tokens (KDE/Web pixel parity)
 - Next: confirm pipeline 4612 green; verify #10 agent; then #6/#7 (Secure Boot/TPM, 8 CI gates -> enterprise exit)
+
+[2026-07-13] OBJECTIVE LOCKED (operator): military-grade BY ENGINEERING (certification-ready), NOT formal certification — for now.
+- Meaning: mature STIG_ALIGNED / FIPS 140-3 mode / AIRGAP_HIGH / SELinux enforcing / signed+measured boot / dm-verity from PARTIAL -> REAL(E4 live-proven). Make the system certifiable; the formal CMVP/CC/STIG-ATO stamp is an external lab process, out of scope now.
+- Existing building blocks: aios-capability-runtime/{fips,sbom,selinux}.rs, aios-time/attestation.rs, aios-distribution/airgap_store.rs, distro/secureboot/*, controls.json (56 controls incl. STIG 18).
+- #6/#7 reframed toward this: #6 = live Secure Boot/TPM/dm-verity/SELinux-enforcing QEMU proof + airgap channel; #7 = 8 blocking gates + raise remaining PARTIAL STIG/CIS controls to enforced + DEFENSE-READINESS report (per-control REAL/PARTIAL/cert-needed vs STIG/FIPS/CC).
+- Differentiator ABOVE typical mil-grade: append-only evidence (AI can't rewrite audit), AI-proposes-never-executes, secrets-as-capabilities.

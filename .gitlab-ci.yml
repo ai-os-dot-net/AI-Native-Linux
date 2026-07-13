@@ -1,6 +1,34 @@
-# AI-OS.NET GitLab CI/CD — Revision 12
+# AI-OS.NET GitLab CI/CD — Revision 12 / R13.7 enterprise-exit gates
 # Push target: gitlab remote (http://192.168.1.180)
 # Mirror: GitHub backup repository only; GitHub Actions are disabled.
+#
+# ==========================================================================
+# R13.7 — THE 8 ENTERPRISE-EXIT GATES (REV13-ENTERPRISE-SPEC §10, §12)
+# Full rationale + status matrix: distro/build/ENTERPRISE-EXIT-GATES.md
+# CI must block enterprise release on boot, install, update, service health,
+# rollback, signature, SBOM/provenance, or compliance failure.
+#
+#   Gate                        CI carrier job                     blocking?
+#   1 boot (live QEMU)          assemble-iso (--require-health)    YES
+#                               r13-qemu-boot-smoke                manual/see note
+#   2 install (QEMU install)    qemu-install-gate                  NO (allow_failure)
+#   3 update+rollback           release-update-gate                YES (R13.7)
+#   4 security/compliance       distro-shell-tests                 YES (default)
+#      └ test-rev13-compliance.sh, test-rev12-security-baseline.sh
+#   5 CVE process               distro-shell-tests                 YES (default)
+#      └ test-rev13-cve-process.sh
+#   6 reproducible/hermetic     distro-shell-tests                 YES (default)
+#      └ test-rev13-hermetic.sh
+#   7 signature/secureboot      distro-shell-tests                 YES (default)
+#      └ test-rev13-secureboot.sh
+#   8 daemon/service contract   distro-shell-tests                 YES (default)
+#      └ test-rev13-daemon.sh
+#
+# Blocking policy: a gate is flipped to allow_failure:false ONLY after a proven
+# green run. Gates 3-8 are green and blocking. Gate 2 (qemu-install-gate) stays
+# allow_failure:true until the autoinstall trigger fix lands and proves green —
+# see the TODO(R13.7) marker on that job.
+# ==========================================================================
 
 stages:
   - check
@@ -101,6 +129,12 @@ cargo-test:
 distro-shell-tests:
   stage: test
   image: ${AIOS_RUST_CI_IMAGE}
+  # R13.7 enterprise-exit gates 4-8 (compliance, CVE, hermetic, secureboot,
+  # daemon) are carried by this job. It is BLOCKING (GitLab default
+  # allow_failure:false) — a failure in any rev13 sub-gate below red-lines the
+  # pipeline and blocks enterprise release. Stated explicitly for the exit-gate
+  # contract in distro/build/ENTERPRISE-EXIT-GATES.md.
+  allow_failure: false
   # metadata gate does a scaffold debug build — reuse the cargo cache
   cache:
     key: "${CI_COMMIT_REF_SLUG}-cargo"
@@ -389,6 +423,10 @@ qemu-install-gate:
   stage: verify
   image: ${AIOS_RUST_CI_IMAGE}
   timeout: 2h
+  # R13.7 exit-gate 2 (install). Stays non-blocking: the autoinstall trigger is
+  # being fixed on a parallel branch and this gate is not yet proven green.
+  # TODO(R13.7): flip qemu-install-gate + boot-smoke to blocking once autoinstall
+  # fix lands & proven.
   allow_failure: true
   needs:
     - job: assemble-iso
@@ -427,14 +465,15 @@ qemu-install-gate:
 # ==========================================================================
 # STAGE 6 — VERIFY: RELEASE/UPDATE GATE (R12.4–R12.5 acceptance against the
 # REAL assemble-iso artifact: publish → verify → stage → update → rollback
-# over the extracted ISO staging tree). allow_failure until one proven
-# green run, then flip to blocking (same convention as qemu-install-gate).
+# over the extracted ISO staging tree).
+# R13.7 exit-gate 3 (update+rollback): proven green -> flipped to BLOCKING.
 # ==========================================================================
 release-update-gate:
   stage: verify
   image: ${AIOS_RUST_CI_IMAGE}
   timeout: 1h
-  allow_failure: true
+  # R13.7: exit-gate 3 flipped to blocking after a proven green run.
+  allow_failure: false
   needs:
     - job: assemble-iso
       artifacts: true

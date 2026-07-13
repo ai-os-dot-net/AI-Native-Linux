@@ -221,8 +221,8 @@
       "title": "Ensure the boot chain is signed and recorded (boot-chain manifest)",
       "baseline": "cis",
       "aios_mechanism": "boot-integrity",
-      "enforcement_ref": "distro/build/build-aios-iso.sh::boot-chain",
-      "status": "partial",
+      "enforcement_ref": "distro/build/build-aios-iso.sh::require_boot_signature",
+      "status": "enforced",
       "evidence_record_type": null
     },
     {
