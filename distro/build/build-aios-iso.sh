@@ -671,7 +671,7 @@ INSTALLER_SRC="${REPO_ROOT}/distro/installer"
 INSTALLER_DST="${ROOTFS_DIR}/usr/lib/aios/install"
 mkdir -p "${INSTALLER_DST}"
 
-for installer in aios-installer.sh aios-quick-install.sh; do
+for installer in aios-installer.sh aios-quick-install.sh aios-autoinstall.sh; do
     if [ -f "${INSTALLER_SRC}/${installer}" ]; then
         cp "${INSTALLER_SRC}/${installer}" "${INSTALLER_DST}/${installer}"
         chmod 755 "${INSTALLER_DST}/${installer}"
@@ -681,6 +681,21 @@ for installer in aios-installer.sh aios-quick-install.sh; do
         die "Required installer script missing: ${INSTALLER_SRC}/${installer}"
     fi
 done
+
+# LIVE-ISO autoinstall trigger unit. This unit is a LIVE-ONLY concern (kernel
+# cmdline `aios.autoinstall` -> aios-autoinstall.sh -> poweroff) and is
+# deliberately NOT part of distro/systemd/ (the R13.3 installed-daemon set the
+# daemon gate freezes). It is staged into the live rootfs here and enabled
+# below in Step 5 alongside the other multi-user.target.wants symlinks.
+AUTOINSTALL_UNIT_SRC="${INSTALLER_SRC}/aios-autoinstall.service"
+if [ -f "${AUTOINSTALL_UNIT_SRC}" ]; then
+    mkdir -p "${ROOTFS_DIR}/etc/systemd/system"
+    cp "${AUTOINSTALL_UNIT_SRC}" "${ROOTFS_DIR}/etc/systemd/system/aios-autoinstall.service"
+    chmod 644 "${ROOTFS_DIR}/etc/systemd/system/aios-autoinstall.service"
+    info "Live autoinstall unit staged: /etc/systemd/system/aios-autoinstall.service"
+else
+    die "Required live autoinstall unit missing: ${AUTOINSTALL_UNIT_SRC}"
+fi
 
 ok "Live installer tools installed."
 
@@ -778,6 +793,16 @@ fi
 # Enable the boot-time service health reporter so it runs on every boot and
 # emits its AIOS-HEALTH verdict to the console for the QEMU health gate.
 svc="aios-health-report.service"
+if [ -f "${SYSTEMD_DST}/${svc}" ]; then
+    ln -sf "../${svc}" "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/${svc}"
+    info "Enabled: ${svc}"
+fi
+
+# Enable the LIVE autoinstall trigger. Pulled into every live boot but gated by
+# ConditionKernelCommandLine=aios.autoinstall — it only RUNS when the install
+# gate injects that flag; a normal live boot skips it and reaches the login
+# prompt. Staged into SYSTEMD_DST in Step 4 (not from distro/systemd/).
+svc="aios-autoinstall.service"
 if [ -f "${SYSTEMD_DST}/${svc}" ]; then
     ln -sf "../${svc}" "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/${svc}"
     info "Enabled: ${svc}"
