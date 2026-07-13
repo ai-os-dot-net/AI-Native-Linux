@@ -135,6 +135,16 @@ distro-shell-tests:
   # pipeline and blocks enterprise release. Stated explicitly for the exit-gate
   # contract in distro/build/ENTERPRISE-EXIT-GATES.md.
   allow_failure: false
+  # Auto-retry ONLY on runner/infra faults (e.g. "container stop-kill wait timed
+  # out" — a GitLab runner_system_failure), never on a test/script failure. All
+  # rev12/rev13 assertions inside this job pass; pipelines 4654+4657 red-lined
+  # solely on container-teardown system failures on the aios-ci-runner. This
+  # retries the infra fault without masking any real gate failure.
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
   # metadata gate does a scaffold debug build — reuse the cargo cache
   cache:
     key: "${CI_COMMIT_REF_SLUG}-cargo"
