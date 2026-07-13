@@ -85,6 +85,54 @@ cleanup_on_failure() {
 trap 'cleanup_on_failure' ERR
 trap 'cleanup_on_failure; exit 130' INT TERM
 
+# ── Live-medium self-mount fallback ───────────────────────────────────────────
+#
+# Pipeline-4679 evidence: the initramfs mountpoint /run/initramfs/live-media
+# does NOT survive switch_root (systemd mounts a fresh /run tmpfs; init's
+# `mount --move /run` is `|| true`, so a failed subtree move is silent). The
+# overlay root keeps working because kernel mount objects outlive path
+# visibility — but no PATH to the squashfs remains. So the installer mounts
+# the live medium itself: derive the ISO label from the kernel cmdline
+# (root=live:CDLABEL=X, same grammar as distro/aios-boot/initramfs/init) and
+# scan the same candidate device list the initramfs uses.
+
+LIVE_MEDIUM_MOUNT="/run/aios-installer/medium"
+
+mount_live_medium_fallback() {
+    local _cmdline _label="" _dev
+
+    _cmdline="$(cat /proc/cmdline 2>/dev/null || true)"
+    case "${_cmdline}" in
+        *root=live:CDLABEL=*)
+            _label="${_cmdline##*root=live:CDLABEL=}"; _label="${_label%% *}" ;;
+        *root=live:LABEL=*)
+            _label="${_cmdline##*root=live:LABEL=}"; _label="${_label%% *}" ;;
+    esac
+
+    mkdir -p "${LIVE_MEDIUM_MOUNT}"
+    modprobe iso9660 2>/dev/null || true
+
+    # Label first (exact medium), then the initramfs candidate scan order.
+    for _dev in \
+        ${_label:+"/dev/disk/by-label/${_label}"} \
+        /dev/cdrom /dev/sr0 /dev/sr1 \
+        /dev/vd[a-z] /dev/sd[a-z]; do
+        [ -e "${_dev}" ] || continue
+        if mount -o ro "${_dev}" "${LIVE_MEDIUM_MOUNT}" 2>/dev/null \
+           || mount -t iso9660 -o ro "${_dev}" "${LIVE_MEDIUM_MOUNT}" 2>/dev/null; then
+            if [ -f "${LIVE_MEDIUM_MOUNT}/live/aios.squashfs" ]; then
+                AIOS_SQUASHFS="${LIVE_MEDIUM_MOUNT}/live/aios.squashfs"
+                msg "Live medium self-mounted: ${_dev} -> ${LIVE_MEDIUM_MOUNT}"
+                return 0
+            fi
+            umount "${LIVE_MEDIUM_MOUNT}" 2>/dev/null || true
+        fi
+    done
+
+    warn "Live medium self-mount failed (label='${_label:-<none>}')"
+    return 1
+}
+
 # ── Validate environment ──────────────────────────────────────────────────────
 
 validate_env() {
@@ -119,12 +167,16 @@ validate_env() {
     AIOS_SQUASHFS="${AIOS_SQUASHFS:-/run/initramfs/live/aios.squashfs}"
 
     if [ ! -f "${AIOS_SQUASHFS}" ]; then
-        # /run/initramfs/live-media is where OUR initramfs (distro/aios-boot/
-        # initramfs/init, try_mount_live_medium) mounts the live ISO; /run is
-        # mount --move'd wholesale into the real root at switch_root (init
-        # Step 6), so the path survives into the running live system. The
-        # remaining entries are dracut/archiso/live-boot conventions kept as
-        # fallbacks.
+        # Path probes, in order: our initramfs mounts the live ISO at
+        # /run/initramfs/live-media (distro/aios-boot/initramfs/init,
+        # try_mount_live_medium) — but pipeline 4679 proved that path does NOT
+        # survive into the running live system: init's `mount --move /run` is
+        # `|| true` (a subtree move can fail silently) and systemd mounts a
+        # fresh /run tmpfs, so the initramfs mountpoints vanish while the
+        # overlay root keeps working (kernel mount objects outlive path
+        # visibility). The remaining entries are dracut/archiso/live-boot
+        # conventions. If NO path probe hits, mount_live_medium_fallback()
+        # below self-mounts the medium.
         for _alt in /run/initramfs/live-media/live/aios.squashfs \
                     /run/initramfs/live/filesystem.squashfs \
                     /run/archiso/bootmnt/aios.squashfs \
@@ -137,6 +189,14 @@ validate_env() {
     fi
 
     if [ ! -f "${AIOS_SQUASHFS}" ]; then
+        mount_live_medium_fallback || true
+    fi
+
+    if [ ! -f "${AIOS_SQUASHFS}" ]; then
+        # Self-diagnosing failure: dump what IS visible so the serial log of a
+        # failed gate names the real state instead of just "not found".
+        msg "ERROR diagnostics: /run/initramfs contents: $(ls /run/initramfs 2>/dev/null || echo '<absent>')"
+        msg "ERROR diagnostics: live mounts: $(findmnt -rn -o TARGET,SOURCE 2>/dev/null | grep -iE 'iso9660|squash|live' || echo '<none>')"
         die "Squashfs not found at ${AIOS_SQUASHFS}" 2
     fi
 
