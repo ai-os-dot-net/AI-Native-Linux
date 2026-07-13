@@ -470,3 +470,42 @@ pub fn recipe_to_css_block(recipes: &[CssRecipe]) -> String {
     lines.push("}".to_string());
     lines.join("\n")
 }
+
+// ── Shared design-token stylesheet (cross-renderer parity) ─────────────────────
+
+/// The AIOS default design-token stylesheet as CSS custom properties, sourced
+/// from the shared `aios-design-tokens` crate.
+///
+/// This is the Web renderer's consumption seam for the shared STYLE vocabulary
+/// (the counterpart to KDE's `token_compile::aios_default_qml_tokens`). Both
+/// renderers emit from the same [`aios_design_tokens::TokenSet`], so the color /
+/// spacing / radius / typography values are identical — parity is proven by
+/// `aios-design-tokens/tests/parity.rs`. Inject the returned block into the
+/// document `<head>` (or serve it) so elements resolve `var(--aios-color-*)`.
+#[must_use]
+pub fn aios_default_stylesheet(dark_theme: bool) -> String {
+    let variant = if dark_theme {
+        aios_design_tokens::ThemeVariant::Dark
+    } else {
+        aios_design_tokens::ThemeVariant::Light
+    };
+    aios_design_tokens::to_css_custom_properties(&aios_design_tokens::TokenSet::aios_default(
+        variant,
+    ))
+}
+
+#[cfg(test)]
+mod design_token_seam_tests {
+    use super::aios_default_stylesheet;
+
+    #[test]
+    fn emits_root_block_with_aios_vars() {
+        let light = aios_default_stylesheet(false);
+        assert!(light.contains(":root {"));
+        assert!(light.contains("--aios-color-surface:"));
+        let dark = aios_default_stylesheet(true);
+        assert!(dark.contains(r#":root[data-theme="dark"]"#));
+        // Light and dark surfaces differ (the point of theming).
+        assert_ne!(light, dark);
+    }
+}

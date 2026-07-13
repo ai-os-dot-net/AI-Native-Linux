@@ -29,6 +29,10 @@ aios-action    = { path = "../aios-action" }
 aios-apps      = { path = "../aios-apps" }
 aios-evidence  = { path = "../aios-evidence" }
 aios-policy    = { path = "../aios-policy" }
+# Shared design-token vocabulary (color/spacing/radius/typography) — the single
+# source of truth the Web renderer also emits from, giving cross-renderer visual
+# parity (parity proven in aios-design-tokens/tests/parity.rs).
+aios-design-tokens = { path = "../aios-design-tokens" }
 
 # Rev.6: Real Wayland compositor binding for KDE Plasma
 wayland-client         = { version = "0.31", features = ["dlopen"] }

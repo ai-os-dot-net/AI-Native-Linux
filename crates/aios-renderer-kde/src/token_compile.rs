@@ -469,3 +469,40 @@ pub fn compile_token_with_ctx(
     }
     compile_token(token)
 }
+
+// ── Shared design-token QML singleton (cross-renderer parity) ──────────────────
+
+/// The AIOS default design tokens rendered as a QML singleton, sourced from the
+/// shared `aios-design-tokens` crate.
+///
+/// This is the KDE renderer's consumption seam for the shared STYLE vocabulary
+/// (the counterpart to the Web renderer's `css_compile::aios_default_stylesheet`).
+/// Both renderers emit from the same `aios_design_tokens::TokenSet`, so the
+/// color / spacing / radius / typography values are identical — parity is proven
+/// by `aios-design-tokens/tests/parity.rs`. Write the returned string as a QML
+/// singleton (e.g. `AiosTokens.qml`) imported by the Plasma theme.
+#[must_use]
+pub fn aios_default_qml_tokens(dark_theme: bool) -> String {
+    let variant = if dark_theme {
+        aios_design_tokens::ThemeVariant::Dark
+    } else {
+        aios_design_tokens::ThemeVariant::Light
+    };
+    aios_design_tokens::to_qml_properties(&aios_design_tokens::TokenSet::aios_default(variant))
+}
+
+#[cfg(test)]
+mod design_token_seam_tests {
+    use super::aios_default_qml_tokens;
+
+    #[test]
+    fn emits_qml_singleton_with_color_props() {
+        let dark = aios_default_qml_tokens(true);
+        assert!(dark.contains("pragma Singleton"));
+        assert!(dark.contains("readonly property color colorSurface:"));
+        // QML colors use #AARRGGBB (alpha first); opaque tokens start "#ff".
+        assert!(dark.contains("colorSurface: \"#ff"));
+        let light = aios_default_qml_tokens(false);
+        assert_ne!(light, dark);
+    }
+}

@@ -36,6 +36,7 @@ members = [
     "crates/aios-hardening",
     "crates/aios-marketplace",
     "crates/aios-sdk",
+    "crates/aios-design-tokens",
 ]
 
 # Crates added later (per §22 MVP golden path order):

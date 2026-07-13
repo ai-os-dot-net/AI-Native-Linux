@@ -27,6 +27,10 @@ aios-policy    = { path = "../aios-policy" }
 aios-renderer-kde = { path = "../aios-renderer-kde" }
 aios-apps          = { path = "../aios-apps" }
 aios-renderer-cli  = { path = "../aios-renderer-cli" }
+# Shared design-token vocabulary (color/spacing/radius/typography) — the single
+# source of truth the KDE renderer also emits from, giving cross-renderer visual
+# parity (parity proven in aios-design-tokens/tests/parity.rs).
+aios-design-tokens = { path = "../aios-design-tokens" }
 
 # T-143: HTTPS server + self-signed cert (INV I9 + INV-006)
 rustls        = "0.23"

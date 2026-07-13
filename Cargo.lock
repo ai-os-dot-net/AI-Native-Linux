@@ -251,6 +251,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aios-design-tokens"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "strum",
+ "strum_macros",
+]
+
+[[package]]
 name = "aios-distribution"
 version = "0.1.0"
 dependencies = [
@@ -672,6 +681,7 @@ version = "0.1.0"
 dependencies = [
  "aios-action",
  "aios-apps",
+ "aios-design-tokens",
  "aios-evidence",
  "aios-policy",
  "async-trait",
@@ -732,6 +742,7 @@ version = "0.1.0"
 dependencies = [
  "aios-action",
  "aios-apps",
+ "aios-design-tokens",
  "aios-evidence",
  "aios-policy",
  "aios-renderer-cli",
