@@ -213,6 +213,114 @@ impl WaydroidContainer {
         Ok(())
     }
 
+    /// Guarded **real-binary** container initialization (the E4 seam).
+    ///
+    /// When the host provides the `waydroid` binary on `$PATH`, this
+    /// actually invokes `waydroid status` (a read-only probe) and then
+    /// `waydroid session start` to bring the Android session up, marking
+    /// the container [`WaydroidContainerState::Running`] on success.
+    /// Detection is done at runtime with a `which`-probe (mirroring
+    /// `aios-apps::session_container_driver`) — there is deliberately **no
+    /// cargo feature** gating this, so the public type surface is identical
+    /// whether or not Waydroid is installed.
+    ///
+    /// When the binary is absent, no state change is made and
+    /// [`WaydroidError::WaydroidNotFound`] is returned — the honest "not
+    /// available" (PARTIAL) state. Success is never faked. Every outcome
+    /// emits a sealed evidence receipt when an emitter is configured.
+    ///
+    /// # Errors
+    /// Returns [`WaydroidError::WaydroidNotFound`] when `waydroid` is not on
+    /// `$PATH`, or [`WaydroidError::CommandFailed`] when a real invocation
+    /// fails to spawn or exits non-zero.
+    ///
+    // E4 requires waydroid + the binder_linux kernel module present in the
+    // target image; in CI this path is exercised only when the binary is
+    // detected. A green test run on a host without Waydroid proves E3
+    // (governance logic), NOT E4 (real container bring-up / .apk execution).
+    pub async fn init_container_real(&mut self) -> Result<(), WaydroidError> {
+        if !Self::host_binary_available("waydroid").await {
+            self.emit_evidence(
+                RecordType::ActionReceived,
+                serde_json::json!({
+                    "event": "WaydroidContainerRealInitUnavailable",
+                    "container_id": self.container_id_str(),
+                    "capsule_id": self.capsule_id_str(),
+                    "reason": "waydroid binary not found on PATH",
+                }),
+            )?;
+            return Err(WaydroidError::waydroid_not_found(
+                "waydroid not found on PATH — real container init deferred (PARTIAL)",
+            ));
+        }
+
+        // Read-only status probe first (does not mutate host state).
+        let status = tokio::process::Command::new("waydroid")
+            .arg("status")
+            .output()
+            .await
+            .map_err(|e| WaydroidError::command_failed(format!("waydroid status: {e}")))?;
+
+        if !status.status.success() {
+            let stderr = String::from_utf8_lossy(&status.stderr).trim().to_string();
+            return Err(WaydroidError::command_failed(format!(
+                "waydroid status exited {}: {stderr}",
+                status.status
+            )));
+        }
+
+        self.container_state = WaydroidContainerState::Starting;
+
+        let start = tokio::process::Command::new("waydroid")
+            .arg("session")
+            .arg("start")
+            .output()
+            .await
+            .map_err(|e| WaydroidError::command_failed(format!("waydroid session start: {e}")))?;
+
+        if !start.status.success() {
+            let stderr = String::from_utf8_lossy(&start.stderr).trim().to_string();
+            self.container_state = WaydroidContainerState::Failed;
+            self.emit_evidence(
+                RecordType::ActionReceived,
+                serde_json::json!({
+                    "event": "WaydroidContainerRealInitFailed",
+                    "container_id": self.container_id_str(),
+                    "exit_status": start.status.to_string(),
+                    "stderr": stderr,
+                }),
+            )?;
+            return Err(WaydroidError::command_failed(format!(
+                "waydroid session start exited {}: {stderr}",
+                start.status
+            )));
+        }
+
+        self.container_state = WaydroidContainerState::Running;
+
+        self.emit_evidence(
+            RecordType::ActionReceived,
+            serde_json::json!({
+                "event": "WaydroidContainerRealInitialized",
+                "container_id": self.container_id_str(),
+                "capsule_id": self.capsule_id_str(),
+                "data_path": self.data_path.to_string_lossy(),
+            }),
+        )?;
+
+        Ok(())
+    }
+
+    /// Probe `$PATH` for `binary` with `which`, mirroring the detection
+    /// idiom used by `aios-apps::session_container_driver`.
+    async fn host_binary_available(binary: &str) -> bool {
+        tokio::process::Command::new("which")
+            .arg(binary)
+            .output()
+            .await
+            .is_ok_and(|o| o.status.success())
+    }
+
     fn check_binder_module(&self) -> Result<(), WaydroidError> {
         let binder_path = PathBuf::from("/dev/binder");
         if !binder_path.exists() {

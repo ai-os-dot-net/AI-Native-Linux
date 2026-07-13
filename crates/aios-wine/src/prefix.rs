@@ -238,6 +238,125 @@ impl WinePrefixManager {
         Ok(())
     }
 
+    /// Guarded **real-binary** prefix initialization (the E4 seam).
+    ///
+    /// When the host provides `wineboot` (or `wine`) on `$PATH`, this
+    /// actually invokes `wineboot --init` (resp. `wine wineboot --init`)
+    /// with `WINEPREFIX` pointing at this capsule's prefix path and
+    /// `WINEARCH` derived from the configured architecture, then
+    /// transitions the prefix to [`WinePrefixState::Active`] on success.
+    /// Detection is done at runtime with a `which`-probe (mirroring
+    /// `aios-apps::session_container_driver`) — there is deliberately **no
+    /// cargo feature** gating this, so the public type surface is identical
+    /// whether or not Wine is installed.
+    ///
+    /// When neither binary is present, no state change is made and
+    /// [`WineError::WineNotFound`] is returned — the honest "not available"
+    /// (PARTIAL) state. Success is never faked. Every outcome (real init,
+    /// non-zero exit, or binary-absent) emits a sealed evidence receipt.
+    ///
+    /// # Errors
+    /// Returns [`WineError::WineNotFound`] when no Wine binary is on
+    /// `$PATH`, or [`WineError::PrefixCreationFailed`] when the real
+    /// `wineboot` invocation fails to spawn, exits non-zero, or evidence
+    /// emission fails.
+    ///
+    // E4 requires wine/wineboot present in the target image; in CI this
+    // path is exercised only when the binary is detected. A green test run
+    // on a host without Wine proves E3 (governance logic), NOT E4 (real
+    // prefix bootstrap / .exe execution).
+    pub async fn create_prefix_real(&mut self) -> Result<(), WineError> {
+        self.validate_state(WinePrefixState::Creating)?;
+
+        // Runtime binary detection — mirrors the `which`-probe idiom in
+        // aios-apps::session_container_driver. No cargo feature, no change
+        // to the public type surface.
+        let (program, wrap_with_wine) = if Self::host_binary_available("wineboot").await {
+            ("wineboot", false)
+        } else if Self::host_binary_available("wine").await {
+            ("wine", true)
+        } else {
+            // Honest not-available path: emit evidence, make no state change.
+            self.emit_real_evidence(serde_json::json!({
+                "event": "WinePrefixRealInitUnavailable",
+                "prefix_id": self.prefix_id.to_string(),
+                "capsule_id": self.capsule_id.to_string(),
+                "reason": "wineboot/wine not found on PATH",
+            }))?;
+            return Err(WineError::wine_not_found(
+                "wineboot/wine not found on PATH — real prefix init deferred (PARTIAL)",
+            ));
+        };
+
+        let wine_arch = if self.architecture == WineArchitecture::Win64 {
+            "win64"
+        } else {
+            "win32"
+        };
+
+        let mut command = tokio::process::Command::new(program);
+        if wrap_with_wine {
+            command.arg("wineboot");
+        }
+        command
+            .arg("--init")
+            .env("WINEPREFIX", &self.prefix_path)
+            .env("WINEARCH", wine_arch)
+            .env("WINEDEBUG", "-all");
+
+        let output = command.output().await.map_err(|e| {
+            WineError::prefix_creation_failed(self.capsule_id.to_string(), e.to_string())
+        })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            self.emit_real_evidence(serde_json::json!({
+                "event": "WinePrefixRealInitFailed",
+                "prefix_id": self.prefix_id.to_string(),
+                "program": program,
+                "exit_status": output.status.to_string(),
+                "stderr": stderr,
+            }))?;
+            return Err(WineError::prefix_creation_failed(
+                self.capsule_id.to_string(),
+                format!("{program} --init exited {}: {stderr}", output.status),
+            ));
+        }
+
+        self.emit_real_evidence(serde_json::json!({
+            "event": "WinePrefixRealInitialized",
+            "prefix_id": self.prefix_id.to_string(),
+            "capsule_id": self.capsule_id.to_string(),
+            "prefix_path": self.prefix_path.to_string_lossy(),
+            "program": program,
+            "wine_arch": wine_arch,
+        }))?;
+
+        self.state = WinePrefixState::Active;
+        Ok(())
+    }
+
+    /// Probe `$PATH` for `binary` with `which`, mirroring the detection
+    /// idiom used by `aios-apps::session_container_driver`.
+    async fn host_binary_available(binary: &str) -> bool {
+        tokio::process::Command::new("which")
+            .arg(binary)
+            .output()
+            .await
+            .is_ok_and(|o| o.status.success())
+    }
+
+    /// Emit a real-execution evidence receipt through the capsule's
+    /// emitter, mapping any failure to a typed [`WineError`].
+    fn emit_real_evidence(&self, payload: serde_json::Value) -> Result<(), WineError> {
+        self.evidence
+            .emit(aios_evidence::RecordType::ActionReceived, payload)
+            .map(|_receipt| ())
+            .map_err(|e| {
+                WineError::prefix_creation_failed(self.capsule_id.to_string(), e.to_string())
+            })
+    }
+
     #[must_use]
     pub fn is_active(&self) -> bool {
         self.state == WinePrefixState::Active
