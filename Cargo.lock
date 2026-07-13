@@ -239,6 +239,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aios-control-center"
+version = "0.0.1"
+dependencies = [
+ "aios-renderer-web",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "aios-distribution"
 version = "0.1.0"
 dependencies = [

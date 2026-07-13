@@ -1,0 +1,25 @@
+[package]
+name = "aios-control-center"
+description = "AIOS L7 Control Center — typed/governed web admin panel: operator actions flow as typed → PolicyKernel-decided → evidence-logged system actions (SHELL/CONTRACT scaffold)"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde      = { workspace = true }
+serde_json = { workspace = true }
+thiserror  = { workspace = true }
+tracing    = { workspace = true }
+# The Control Center is an APPLICATION on top of the L7 Web renderer transport.
+# It reuses the gRPC-Web bridge, exposure FSM, and evidence emitter from
+# aios-renderer-web rather than introducing a new transport (see DESIGN.md).
+aios-renderer-web = { path = "../aios-renderer-web" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[lints]
+workspace = true

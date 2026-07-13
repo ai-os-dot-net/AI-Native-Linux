@@ -20,6 +20,7 @@ members = [
     "crates/aios-integration",
     "crates/aios-network",
     "crates/aios-renderer-web",
+    "crates/aios-control-center",
     "crates/aios-fleet",
     "crates/aios-container",
     "crates/aios-backup",
