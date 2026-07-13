@@ -56,6 +56,15 @@ BASE_PACKAGES=(
     tpm2.0-tools
     device-mapper
     lvm2
+    # Installer tool dependencies (distro/installer/aios-quick-install.sh
+    # requires: lsblk sgdisk mkfs.vfat mkfs.ext4 cryptsetup unsquashfs bootctl
+    # blkid). lsblk/blkid come from util-linux, cryptsetup + bootctl(systemd)
+    # are already above; these provide the rest. Pipeline 4742 proved the
+    # unattended install reaches the tool check and dies on missing sgdisk.
+    gptfdisk       # sgdisk (GPT partitioning)
+    dosfstools     # mkfs.vfat (ESP)
+    e2fsprogs      # mkfs.ext4 (boot/recovery/root/rollback)
+    squashfs       # unsquashfs (rootfs extraction from the live medium)
     policycoreutils
     restorecond
     selinux-policy-targeted
