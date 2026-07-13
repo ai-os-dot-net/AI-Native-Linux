@@ -43,6 +43,18 @@ stages:
 # don't pile up on the runner disk.
 default:
   interruptible: true
+  # The aios-ci-runner (CT130) intermittently fails container teardown
+  # ("container stop-kill wait timed out after 2m0s" — a runner_system_failure)
+  # AFTER the job's script has already passed. Seen on distro-shell-tests
+  # (pipelines 4654/4657) and cargo-clippy (4763). Retry ONLY infra/system
+  # faults — NOT script/test failures, which are not in the when-list and still
+  # red-line immediately. This is a resilience layer over a runner-host issue;
+  # the runner still warrants an operator-side restart/investigation.
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
 
 variables:
   # Fast cache archiver — default zip took 45+ min on the ~60k-file target/ tree
