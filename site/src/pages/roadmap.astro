@@ -6,9 +6,9 @@ import StatCard from '../components/StatCard.astro';
 // The ten-revision arc — Rev.1 origin vision through Rev.10 autonomous AI-OS.
 const revisions = [
   { rev: 'Rev.1', name: 'Vision', status: 'Origin', done: true, what: 'The original architecture vision and canonical contract — typed actions, a policy kernel and an append-only evidence log on a Linux substrate.' },
-  { rev: 'Rev.2', name: 'Constitutional core', status: 'Implemented', done: true, what: 'The 11-layer L0-L10 model as working Rust — 19 crates, 4,475 tests, all gates green. The cognitive shell, policy kernel and evidence log exist in code.' },
+  { rev: 'Rev.2', name: 'Constitutional core', status: 'Implemented', done: true, what: 'The 11-layer L0-L10 model as working Rust — 36 crates, 7,000+ tests, all gates green. The cognitive shell, policy kernel and evidence log exist in code.' },
   { rev: 'Rev.3', name: 'Five governed planes', status: 'Spec complete', done: true, what: 'S16-S28: security hardening, app capsules, kernel portability, driver/firmware capsules and the native AI terminal — CONTRACT-grade, 644 records, 34 invariants.' },
-  { rev: 'Rev.4', name: 'Bootable distribution', status: 'Planned', done: false, what: 'It boots. A recovery-safe installer ISO, a dedicated kernel pipeline, and the §22 golden path on real hardware — the move from crates to a running OS.' },
+  { rev: 'Rev.4', name: 'Bootable distribution', status: 'Boots in QEMU', done: true, what: 'It boots. A GRUB2 ISO on an openSUSE Leap 16 base boots in QEMU today, with a KDE Plasma desktop variant. The installer, dedicated kernel pipeline and real-hardware validation are hardening.' },
   { rev: 'Rev.5', name: 'Live cognition', status: 'Planned', done: false, what: 'It thinks. The cognitive core live with local models (Ollama / vLLM), external models only through the Vault Broker, a real intent → action → policy → verify → evidence loop on a live machine.' },
   { rev: 'Rev.6', name: 'Daily-driver desktop', status: 'Planned', done: false, what: 'You can use it. KDE Plasma as the real desktop, Web / CLI / voice surfaces, governed app capsules running Linux, Windows (Wine/Proton) and Android apps day to day.' },
   { rev: 'Rev.7', name: 'Fleet, cluster & cloud', status: 'Planned', done: false, what: 'It scales. Containers and Kubernetes as governed capsules, fleet and cluster remote execution, many machines under one policy and one evidence chain, cloud images.' },
@@ -22,11 +22,11 @@ const phases = [
     name: 'Rev.2 — Constitutional Core',
     status: 'Implemented',
     items: [
-      '11 layers L0-L10 as working Rust — 19 crates (aios-action … aios-distribution)',
-      '4,475 workspace tests, 0 failed; all four cargo gates green (check / test / clippy -D warnings / fmt)',
+      '11 layers L0-L10 as working Rust — 36 crates (aios-action … aios-distribution)',
+      '7,000+ workspace tests, 0 failed; all four cargo gates green (check / test / clippy -D warnings / fmt)',
       'Cognitive core, policy kernel, capability runtime, AIOS-FS, vault, renderers, network, hardware, distribution — all REAL (E2+)',
       'M20 discharged the last deferred surfaces — L5 cognitive RPCs and 22 Tier-3 verification primitives are now real',
-      'Not yet a bootable ISO — that is Rev.4',
+      'A bootable GRUB2 ISO on an openSUSE Leap 16 base now boots in QEMU (Rev.4)',
     ],
   },
   {
@@ -59,7 +59,7 @@ const phases = [
     name: 'Rev.4 → Rev.10 — The Path to Ship',
     status: 'Planned',
     items: [
-      'Rev.4 bootable ISO + installer — it boots',
+      'Rev.4 bootable ISO — boots in QEMU today; installer hardening',
       'Rev.5 live cognition + local models — it thinks',
       'Rev.6 daily-driver desktop — it is usable',
       'Rev.7 fleet / cluster / cloud — it scales',
@@ -142,25 +142,25 @@ const waves = [
 
 <BaseLayout
   title="Roadmap - AI-OS.NET"
-  description="AI-OS.NET is an AI-native Linux distribution and governed OS platform on a ten-revision arc. Rev.2 (11 layers, 19 crates, 4,475 tests) is implemented; Rev.3 (S16-S28, five governed planes, 644 typed records) is spec-complete; Rev.4-Rev.10 carry it from a bootable ISO and live cognition to a daily-driver desktop, fleet/cloud scale, certified hardening, an ecosystem, and an autonomous AI-OS."
+  description="AI-OS.NET is an AI-native Linux distribution and governed OS platform on a ten-revision arc. Rev.2 (11 layers, 36 crates, 7,000+ tests) is implemented; Rev.3 (S16-S28, five governed planes, 644 typed records) is spec-complete; Rev.4 boots — a bootable ISO on an openSUSE Leap 16 base runs in QEMU — and Rev.4-Rev.10 carry it on to live cognition, a daily-driver desktop, fleet/cloud scale, certified hardening, an ecosystem, and an autonomous AI-OS."
 >
   <div class="mx-auto max-w-content px-8 py-16">
     <div class="text-center">
       <div class="animate inline-block rounded-badge bg-[rgba(206,40,103,0.08)] px-3 py-1.5">
-        <span class="font-body text-[11px] font-medium text-[#ce2867]">Ten-revision arc · Rev.2 implemented</span>
+        <span class="font-body text-[11px] font-medium text-[#ce2867]">Ten-revision arc · Rev.2 implemented · Rev.4 boots</span>
       </div>
       <h1 class="animate mt-6 font-heading text-[40px] font-bold text-[var(--text)] md:text-[52px]" style="animation-delay:100ms">
         From constitutional core<br />to autonomous AI-OS.
       </h1>
       <p class="animate mt-4 max-w-narrow mx-auto font-body text-[18px] leading-relaxed text-[var(--muted)]" style="animation-delay:200ms">
-        The Revision 2 constitutional core is no longer just a contract — it is implemented: 11 layers L0-L10 as 19 Rust crates, 4,475 tests, all gates green. Revision 3 specifies five governed planes (S16-S28). Revisions 4 through 10 are the path to ship: it boots, it thinks, it is usable, it scales, it is trusted, it is an ecosystem, and finally it runs itself.
+        The Revision 2 constitutional core is no longer just a contract — it is implemented: 11 layers L0-L10 as 36 Rust crates, 7,000+ tests, all gates green. Revision 4 has begun: a bootable GRUB2 ISO on an openSUSE Leap 16 base now boots in QEMU. Revisions 4 through 10 are the path to ship: it boots, it thinks, it is usable, it scales, it is trusted, it is an ecosystem, and finally it runs itself.
       </p>
     </div>
 
     <section class="mt-16">
       <div class="grid grid-cols-2 gap-6 md:grid-cols-4">
-        <div class="animate stagger-1"><StatCard number="19" label="Rust Crates" description="Rev.2 L0–L10 implemented" /></div>
-        <div class="animate stagger-2"><StatCard number="4,475" label="Tests Passing" description="0 failed; all cargo gates green" /></div>
+        <div class="animate stagger-1"><StatCard number="36" label="Rust Crates" description="L0–L10 core plus the distribution layer" /></div>
+        <div class="animate stagger-2"><StatCard number="7,000+" label="Tests Passing" description="0 failed; all cargo gates green" /></div>
         <div class="animate stagger-3"><StatCard number="11" label="Layers REAL (E2+)" description="Evidence-backed, not just spec" /></div>
         <div class="animate stagger-4"><StatCard number="0" label="Deferred Surfaces" description="M20 discharged the last" /></div>
       </div>

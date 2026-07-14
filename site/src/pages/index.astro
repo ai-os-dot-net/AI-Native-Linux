@@ -126,20 +126,20 @@ const proxguardAlignment = [
 
 <BaseLayout
   title="AI-OS.NET - AI-Native Linux Distribution"
-  description="AI-OS.NET is an AI-native Linux distribution and a governed operating-system platform: goals become typed, policy-checked, verified system actions on top of a standard Linux substrate. Rev.2 — the constitutional core — is implemented as 19 Rust crates with 4,475 tests passing; Rev.3 adds five governed planes; a ten-revision roadmap leads to an autonomous AI-OS."
+  description="AI-OS.NET is an AI-native Linux distribution and a governed operating-system platform: goals become typed, policy-checked, verified system actions on top of a standard Linux substrate. Rev.2 — the constitutional core — is implemented as 36 Rust crates with 7,000+ tests passing; a bootable ISO on an openSUSE Leap 16 base now boots in QEMU; a ten-revision roadmap leads to an autonomous AI-OS."
 >
   <section class="relative overflow-hidden py-28 md:py-32">
     <div class="hero-glow"></div>
     <div class="mx-auto grid max-w-content items-center gap-12 px-8 lg:grid-cols-[1.05fr_0.95fr]">
       <div>
         <div class="animate inline-block rounded-badge bg-[rgba(206,40,103,0.08)] px-3 py-1.5">
-          <span class="font-body text-[11px] font-medium text-[#ce2867]">Rev.2 implemented · 19 crates · 4,475 tests</span>
+          <span class="font-body text-[11px] font-medium text-[#ce2867]">Rev.2 implemented · 36 crates · 7,000+ tests · bootable ISO</span>
         </div>
         <h1 class="animate mt-6 font-heading text-[44px] font-bold leading-tight text-[var(--text)] md:text-[64px]" style="animation-delay:100ms">
           AI-Native Linux.<br />A governed OS platform.
         </h1>
         <p class="animate mt-6 max-w-[680px] font-body text-[18px] leading-relaxed text-[var(--muted)]" style="animation-delay:200ms">
-          Revision 2 locked the constitutional core — 11 architectural layers of typed actions, policy decisions, AIOS-FS objects, verification, and append-only evidence — and it is now implemented: 19 Rust crates, 4,475 tests passing, all cargo gates green. Revision 3 turns that core into a governed, AI-native operating-system platform through five governed planes: explicit security posture, governed app capsules, kernel portability, driver capsules, and a native AI control plane. The constitutional rule, "AI proposes, never executes," still leads.
+          Revision 2 locked the constitutional core — 11 architectural layers of typed actions, policy decisions, AIOS-FS objects, verification, and append-only evidence — and it is now implemented: 36 Rust crates, 7,000+ tests passing, all cargo gates green. From there the workspace grew into a real distribution: a bootable GRUB2 ISO on an openSUSE Leap 16 base that boots in QEMU, a KDE Plasma desktop variant, and a signed build-and-verify pipeline on self-hosted GitLab CI. The constitutional rule, "AI proposes, never executes," still leads.
         </p>
         <p class="animate mt-4 font-body text-[13px] text-[var(--muted)]" style="animation-delay:250ms">
           An <a href="https://iconys.bg/products/ai-os" target="_blank" rel="noopener" class="text-[var(--text)] hover:text-[var(--accent)] transition-colors">iconys Engineering Intelligence</a> Linux distribution project.
@@ -181,10 +181,10 @@ const proxguardAlignment = [
   <section class="bg-[var(--surface-1)] py-16">
     <div class="mx-auto grid max-w-content grid-cols-2 gap-8 px-8 lg:grid-cols-4">
       <div class="animate stagger-1">
-        <StatCard number="19" label="Rust Crates" description="Rev.2 L0–L10 implemented — aios-action … aios-distribution" />
+        <StatCard number="36" label="Rust Crates" description="One Cargo workspace — L0–L10 core plus the distribution layer" />
       </div>
       <div class="animate stagger-2">
-        <StatCard number="4,475" label="Tests Passing" description="0 failed; all four cargo gates green" />
+        <StatCard number="7,000+" label="Tests Passing" description="0 failed; all four cargo gates green" />
       </div>
       <div class="animate stagger-3">
         <StatCard number="11" label="Layers REAL (E2+)" description="Every layer backed by evidence, not just spec" />
@@ -203,7 +203,7 @@ const proxguardAlignment = [
           Not a promise.<br />Working code.
         </h2>
         <p class="mt-4 font-body text-[15px] leading-[1.7] text-[var(--muted)]">
-          Revision 2 is implemented. The eleven-layer L0–L10 model exists as 19 Rust crates with 4,475 tests passing and all four cargo gates green — the cognitive shell, policy kernel, and append-only evidence log are running code, not a specification.
+          Revision 2 is implemented. The eleven-layer L0–L10 model — now part of a 36-crate workspace with 7,000+ tests passing and all four cargo gates green — is running code, not a specification: the cognitive shell, policy kernel, and append-only evidence log, plus a bootable ISO that boots in QEMU.
         </p>
         <div class="mt-6 rounded-[8px] border border-[var(--border)] bg-[var(--surface-1)] p-5">
           <span class="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--accent)]">§22 golden path — FULL-REAL</span>
@@ -389,11 +389,17 @@ const proxguardAlignment = [
     <SectionDivider label="FIRST BOOT" />
     <div class="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_1fr]">
       <div>
-        <h2 class="font-heading text-[28px] font-bold text-[var(--text)]">
+        <div class="inline-block rounded-badge bg-[rgba(206,40,103,0.08)] px-3 py-1.5">
+          <span class="font-body text-[11px] font-medium text-[#ce2867]">Bootable ISO · openSUSE Leap 16 base · boots in QEMU</span>
+        </div>
+        <h2 class="mt-6 font-heading text-[28px] font-bold text-[var(--text)]">
           Generic boot.<br />Dedicated host.
         </h2>
         <p class="mt-4 font-body text-[15px] leading-[1.7] text-[var(--muted)]">
-          The base system starts with a stable generic Linux kernel. After installation, AI-OS builds a machine-specific hardened kernel in a sandbox, validates it, and switches only after evidence passes.
+          The crates are no longer only a workspace — a real GRUB2 ISO on an openSUSE Leap 16 enterprise base now boots in QEMU. The base starts with a stable generic Linux kernel; after installation, AI-OS builds a machine-specific hardened kernel in a sandbox, validates it, and switches only after evidence passes.
+        </p>
+        <p class="mt-4 font-body text-[13px] leading-relaxed text-[var(--muted)]">
+          A signed distribution pipeline — check, test, lint, build, assemble, verify — and an unattended installer with update and rollback are landing on the self-hosted GitLab CI. Enterprise hardening (Secure Boot / TPM measured boot, SELinux, dm-verity) is in progress; nothing here claims certification it has not earned.
         </p>
       </div>
       <div class="flex flex-col gap-3">
