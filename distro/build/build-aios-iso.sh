@@ -1100,12 +1100,27 @@ EOF
 
 cat > "${ROOTFS_DIR}/etc/ima/ima-policy" <<'EOF'
 # AI-OS.NET Rev.12 IMA policy skeleton.
-# Stage-only baseline. Enterprise enforcement requires signed xattrs and keys.
+# Stage-only baseline: MEASURE (audit trail) only. Do NOT appraise-enforce
+# module signatures here.
+#
+# Pipeline 5099 (qemu-install-gate) proved why: the initramfs `init` loads this
+# policy into /sys/kernel/security/ima/policy at early boot; with an
+# `appraise func=MODULE_CHECK appraise_type=imasig` rule the kernel then requires
+# a security.ima signature xattr on every .ko. The vendor openSUSE kernel-default
+# modules carry a PKCS#7 module signature (valid for module.sig_enforce) but NOT
+# an IMA xattr signature, so appraisal fails closed with EPERM on EVERY module —
+# dmesg: `op=appraise_data cause=IMA-signature-required ... dm_mod/dm_crypt/
+# drm/cryptd`. That blocks the installer's LUKS step and breaks ordinary module
+# loading. Enforcing imasig on un-IMA-signed modules is a broken posture, not a
+# secure one, and contradicts this file's own "stage-only baseline" intent.
+#
+# Enterprise module appraisal is a real future task: IMA-sign every module with
+# an enrolled key (evmctl/`ima-evm-utils`), ship the key in the kernel .ima
+# keyring, THEN re-add `appraise func=MODULE_CHECK appraise_type=imasig`.
 measure func=BPRM_CHECK
 measure func=FILE_MMAP mask=MAY_EXEC
 measure func=MODULE_CHECK
 measure func=KEXEC_KERNEL_CHECK
-appraise func=MODULE_CHECK appraise_type=imasig
 EOF
 chmod 644 "${ROOTFS_DIR}/etc/ima/ima-policy"
 cp "${ROOTFS_DIR}/etc/ima/ima-policy" "${ROOTFS_DIR}/etc/aios/integrity.d/ima-policy"
