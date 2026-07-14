@@ -336,6 +336,53 @@ EOF
     chmod 644 "${meta_dir}/base-rootfs.json"
 }
 
+# Regenerate kernel module dependency metadata and force the device-mapper stack
+# to autoload at boot. `zypper --root` does not reliably run the kernel-default
+# %posttrans depmod, so modules.dep can be missing/stale in the produced rootfs.
+# The live installer then hits "Cannot initialize device-mapper. Is dm_mod
+# kernel module loaded?" at the LUKS step (pipeline 4791) because modprobe cannot
+# resolve dm_mod even though dm-mod.ko is physically present. Fail closed if the
+# module is genuinely absent — that is a packaging defect, not a depmod gap.
+finalize_kernel_modules() {
+    ${DRY_RUN} && return 0
+
+    # Locate the PHYSICAL modules tree. Never follow an absolute usrmerge symlink
+    # (that would escape to the build host); pick the real directory.
+    local mroot="" kver=""
+    local cand
+    for cand in "${OUTPUT}/usr/lib/modules" "${OUTPUT}/lib/modules"; do
+        if [ -d "${cand}" ] && [ ! -L "${cand}" ]; then mroot="${cand}"; break; fi
+    done
+    [ -n "${mroot}" ] || die "no kernel modules directory in rootfs (kernel-default missing?)"
+
+    kver="$(ls -1 "${mroot}" 2>/dev/null | head -n1)"
+    [ -n "${kver}" ] || die "no kernel version directory under ${mroot}"
+
+    # device-mapper .ko must physically exist, else LUKS install is impossible
+    if ! ls "${mroot}/${kver}"/kernel/drivers/md/dm-mod.ko* >/dev/null 2>&1; then
+        die "device-mapper module (dm-mod.ko) absent under ${mroot}/${kver} — kernel-default packaging problem"
+    fi
+
+    # Prefer an in-rootfs chroot depmod (no host-escape risk); fall back to a
+    # host depmod bound to the rootfs.
+    if [ -x "${OUTPUT}/usr/bin/depmod" ] || [ -x "${OUTPUT}/usr/sbin/depmod" ] || [ -x "${OUTPUT}/sbin/depmod" ]; then
+        chroot "${OUTPUT}" depmod -a "${kver}" || die "depmod (chroot) failed for ${kver}"
+    elif command -v depmod >/dev/null 2>&1; then
+        depmod -b "${OUTPUT}" "${kver}" || die "depmod (host, -b) failed for ${kver}"
+    else
+        die "depmod not available (in rootfs or on host) to generate modules.dep for ${kver}"
+    fi
+    [ -f "${mroot}/${kver}/modules.dep" ] || die "modules.dep not generated for ${kver}"
+
+    # Belt-and-suspenders: load the device-mapper stack at every boot as well.
+    mkdir -p "${OUTPUT}/usr/lib/modules-load.d"
+    printf 'dm_mod\ndm_crypt\ndm_verity\n' \
+        > "${OUTPUT}/usr/lib/modules-load.d/aios-device-mapper.conf"
+    chmod 644 "${OUTPUT}/usr/lib/modules-load.d/aios-device-mapper.conf"
+
+    info "kernel modules finalized for ${kver} (depmod + device-mapper autoload)"
+}
+
 info "R13.1 base: openSUSE Leap ${RELEASE} (${ARCH}), support ${SUPPORT_MONTHS} months"
 info "Output: ${OUTPUT}"
 info "Package set: ${PACKAGE_SET}"
@@ -387,6 +434,8 @@ if ! ${DRY_RUN}; then
 fi
 
 write_metadata
+
+finalize_kernel_modules
 
 if ! ${DRY_RUN}; then
     [ -x "${OUTPUT}/usr/lib/systemd/systemd" ] \

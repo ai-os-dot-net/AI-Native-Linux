@@ -217,7 +217,7 @@ validate_env() {
     fi
 
     # Tool check
-    for _bin in lsblk sgdisk mkfs.vfat mkfs.ext4 cryptsetup unsquashfs bootctl blkid; do
+    for _bin in lsblk sgdisk mkfs.vfat mkfs.ext4 cryptsetup dmsetup unsquashfs bootctl blkid; do
         if ! command -v "${_bin}" >/dev/null 2>&1; then
             die "Missing required tool: ${_bin}" 2
         fi
@@ -282,21 +282,47 @@ do_filesystems() {
 
 # ── Encryption ────────────────────────────────────────────────────────────────
 
+# device-mapper must be FUNCTIONAL before cryptsetup can create the /dev/mapper
+# target. The live env does not autoload the modules, and /dev/mapper/control
+# can exist as a static device node even when dm_mod is not actually loaded — so
+# a node-existence check is not a real test. The authoritative test is a live DM
+# ioctl via `dmsetup version`. Pipeline 4791 proved the install reaches LUKS then
+# fails with "Cannot initialize device-mapper. Is dm_mod kernel module loaded?"
+# even though the modprobe/control-node guard passed. On failure we now dump
+# forensic diagnostics to the serial console so the install-gate log pinpoints
+# the cause (module .ko absent vs modules.dep missing vs modprobe error) instead
+# of the opaque cryptsetup message.
+ensure_device_mapper() {
+    local kver _mod _line
+    kver="$(uname -r)"
+
+    : > /tmp/aios-modprobe.err
+    for _mod in dm_mod dm_crypt dm_verity; do
+        modprobe "${_mod}" 2>>/tmp/aios-modprobe.err || true
+    done
+
+    if dmsetup version >/dev/null 2>&1; then
+        return 0
+    fi
+
+    warn "device-mapper NON-FUNCTIONAL — collecting diagnostics"
+    warn "dm-diag: uname=${kver}"
+    warn "dm-diag: /dev/mapper/control $([ -e /dev/mapper/control ] && echo present || echo MISSING)"
+    warn "dm-diag: modules-dir $(ls -d "/lib/modules/${kver}" 2>/dev/null || echo MISSING)"
+    warn "dm-diag: dm .ko $(ls /lib/modules/${kver}/kernel/drivers/md/dm-*.ko* 2>/dev/null | tr '\n' ' ' || echo NONE)"
+    warn "dm-diag: modules.dep $([ -e "/lib/modules/${kver}/modules.dep" ] && echo present || echo MISSING)"
+    if [ -s /tmp/aios-modprobe.err ]; then
+        while IFS= read -r _line; do warn "dm-diag: modprobe: ${_line}"; done < /tmp/aios-modprobe.err
+    fi
+    dmsetup version 2>&1 | while IFS= read -r _line; do warn "dm-diag: dmsetup: ${_line}"; done
+
+    die "device-mapper unavailable (dmsetup version failed after modprobe dm_mod)" 5
+}
+
 do_encryption() {
     info "=== Setting up LUKS2 encryption ==="
 
-    # device-mapper kernel modules must be loaded before cryptsetup can create
-    # the /dev/mapper target; the live env does not autoload them. Pipeline 4757
-    # proved the install reaches here then fails: "Cannot initialize
-    # device-mapper. Is dm_mod kernel module loaded?". dm_verity is loaded now
-    # too — it is needed by the later rootfs-integrity step. modprobe is a no-op
-    # if a module is built into the kernel.
-    for _mod in dm_mod dm_crypt dm_verity; do
-        modprobe "${_mod}" 2>/dev/null || true
-    done
-    if [ ! -e /dev/mapper/control ]; then
-        die "device-mapper unavailable (/dev/mapper/control missing after modprobe dm_mod)" 5
-    fi
+    ensure_device_mapper
 
     LUKS_TMP_KEYFILE="$(mktemp /tmp/aios-quick-luks-key.XXXXXX)"
     dd if=/dev/urandom of="${LUKS_TMP_KEYFILE}" bs=64 count=1 status=none || die "Keygen failed" 5
