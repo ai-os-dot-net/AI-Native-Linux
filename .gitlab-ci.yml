@@ -445,10 +445,16 @@ qemu-install-gate:
   stage: verify
   image: ${AIOS_RUST_CI_IMAGE}
   timeout: 2h
-  # R13.7 exit-gate 2 (install). Stays non-blocking: the autoinstall trigger is
-  # being fixed on a parallel branch and this gate is not yet proven green.
-  # TODO(R13.7): flip qemu-install-gate + boot-smoke to blocking once autoinstall
-  # fix lands & proven.
+  # R13.7 exit-gate 2 (install). Stays non-blocking until PROVEN green once.
+  # The unattended-install chain fix has LANDED on main across a 6-defect
+  # forensic sequence: autoinstall trigger (b6ce143d), squashfs live-media path
+  # + self-mount (71d1cc58/b9fcd8f4), 48G disk (7aee98af), installer tool deps
+  # sgdisk/mkfs/unsquashfs (c9a309e0), device-mapper modules before LUKS
+  # (43aab692). Each was diagnosed from the phase-1 serial log. This run is the
+  # first where all cargo gates pass on the (restarted) runner AND the install
+  # chain is exercised end-to-end.
+  # TODO(R13.7): flip qemu-install-gate + boot-smoke to blocking once this gate
+  # is observed green.
   allow_failure: true
   needs:
     - job: assemble-iso
