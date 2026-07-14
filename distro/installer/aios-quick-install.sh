@@ -307,13 +307,22 @@ ensure_device_mapper() {
 
     warn "device-mapper NON-FUNCTIONAL — collecting diagnostics"
     warn "dm-diag: uname=${kver}"
-    warn "dm-diag: /dev/mapper/control $([ -e /dev/mapper/control ] && echo present || echo MISSING)"
-    warn "dm-diag: modules-dir $(ls -d "/lib/modules/${kver}" 2>/dev/null || echo MISSING)"
-    warn "dm-diag: dm .ko $(ls /lib/modules/${kver}/kernel/drivers/md/dm-*.ko* 2>/dev/null | tr '\n' ' ' || echo NONE)"
     warn "dm-diag: modules.dep $([ -e "/lib/modules/${kver}/modules.dep" ] && echo present || echo MISSING)"
     if [ -s /tmp/aios-modprobe.err ]; then
         while IFS= read -r _line; do warn "dm-diag: modprobe: ${_line}"; done < /tmp/aios-modprobe.err
     fi
+
+    # modprobe returns EPERM ("Permission denied") from THREE distinct enforcers:
+    # kernel lockdown, IMA MODULE_CHECK appraisal, or module.sig_enforce. They are
+    # indistinguishable from modprobe's message alone, so name the enforcer here.
+    warn "dm-diag: lockdown=$(cat /sys/kernel/security/lockdown 2>/dev/null || echo unreadable)"
+    warn "dm-diag: sig_enforce=$(cat /sys/module/module/parameters/sig_enforce 2>/dev/null || echo n/a)"
+    warn "dm-diag: ima_appraise cmdline=$(grep -oE 'ima_appraise=[a-z]+|lockdown=[a-z]+|module.sig_enforce=[0-9]' /proc/cmdline | tr '\n' ' ' || echo none)"
+    warn "dm-diag: ima runtime measurements=$([ -r /sys/kernel/security/integrity/ima/runtime_measurements_count ] && cat /sys/kernel/security/integrity/ima/runtime_measurements_count || echo n/a)"
+    warn "dm-diag: dm_mod signed=$(modinfo -F sig_id /lib/modules/${kver}/kernel/drivers/md/dm-mod.ko* 2>/dev/null | head -n1 || echo unknown)"
+    # the kernel logs the exact rejection reason to dmesg (lockdown/ima/sig)
+    dmesg 2>/dev/null | grep -aiE "lockdown|ima:|appraise|module.*(sig|verif|reject)|dm_mod|device-mapper" | tail -n 8 \
+        | while IFS= read -r _line; do warn "dm-diag: dmesg: ${_line}"; done
     dmsetup version 2>&1 | while IFS= read -r _line; do warn "dm-diag: dmsetup: ${_line}"; done
 
     die "device-mapper unavailable (dmsetup version failed after modprobe dm_mod)" 5
