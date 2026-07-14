@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use strum_macros::{EnumCount, EnumIter};
 
 use crate::color::{ColorToken, ColorValue};
+use crate::elevation::{ElevationToken, ShadowValue};
+use crate::motion::{EasingToken, MotionToken};
 use crate::scale::{RadiusToken, SpacingToken};
 use crate::typography::{FontFamily, TypographyToken, TypographyValue};
 
@@ -144,5 +146,54 @@ impl TokenSet {
                 weight: 400,
             },
         }
+    }
+
+    /// Resolve an elevation role to its concrete shadow value for this theme.
+    ///
+    /// Theme-aware: the geometry (offset/blur/spread) is fixed per role, but the
+    /// neutral-black tint is **softer in `Light`** and **deeper in `Dark`** via
+    /// increasing alpha. Total function (every `ElevationToken` in both variants
+    /// is covered) — a renderer can never ask for an unthemed elevation.
+    #[must_use]
+    pub const fn elevation(&self, token: ElevationToken) -> ShadowValue {
+        match self.variant {
+            ThemeVariant::Light => Self::elevation_light(token),
+            ThemeVariant::Dark => Self::elevation_dark(token),
+        }
+    }
+
+    const fn elevation_light(token: ElevationToken) -> ShadowValue {
+        match token {
+            ElevationToken::None => ShadowValue::NONE,
+            ElevationToken::Low => ShadowValue::new(0, 1, 2, 0, ColorValue::rgba(0, 0, 0, 0x1f)),
+            ElevationToken::Medium => {
+                ShadowValue::new(0, 2, 10, 0, ColorValue::rgba(0, 0, 0, 0x26))
+            }
+            ElevationToken::High => ShadowValue::new(0, 12, 32, 0, ColorValue::rgba(0, 0, 0, 0x33)),
+        }
+    }
+
+    const fn elevation_dark(token: ElevationToken) -> ShadowValue {
+        match token {
+            ElevationToken::None => ShadowValue::NONE,
+            ElevationToken::Low => ShadowValue::new(0, 1, 2, 0, ColorValue::rgba(0, 0, 0, 0x40)),
+            ElevationToken::Medium => {
+                ShadowValue::new(0, 2, 10, 0, ColorValue::rgba(0, 0, 0, 0x59))
+            }
+            ElevationToken::High => ShadowValue::new(0, 12, 32, 0, ColorValue::rgba(0, 0, 0, 0x80)),
+        }
+    }
+
+    /// Resolve a motion-duration step to milliseconds (theme-independent).
+    #[must_use]
+    pub const fn motion_duration(&self, token: MotionToken) -> u32 {
+        token.millis()
+    }
+
+    /// Resolve an easing role to its canonical `cubic-bezier(...)` string
+    /// (theme-independent).
+    #[must_use]
+    pub const fn motion_easing(&self, token: EasingToken) -> &'static str {
+        token.cubic_bezier()
     }
 }

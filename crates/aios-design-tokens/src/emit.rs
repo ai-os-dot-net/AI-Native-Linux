@@ -30,6 +30,8 @@ use std::fmt::Write as _;
 use strum::IntoEnumIterator;
 
 use crate::color::ColorToken;
+use crate::elevation::ElevationToken;
+use crate::motion::{EasingToken, MotionToken};
 use crate::scale::{RadiusToken, SpacingToken};
 use crate::theme::{ThemeVariant, TokenSet};
 use crate::typography::TypographyToken;
@@ -50,6 +52,48 @@ pub fn css_var_color(token: ColorToken) -> String {
 #[must_use]
 pub fn qml_prop_color(token: ColorToken) -> String {
     camel("color", token.slug())
+}
+
+/// Build the CSS custom-property variable name for an elevation token,
+/// e.g. `--aios-elevation-medium`.
+#[must_use]
+pub fn css_var_elevation(token: ElevationToken) -> String {
+    format!("{CSS_PREFIX}-elevation-{}", token.slug())
+}
+
+/// Build the QML property identifier for an elevation token, e.g.
+/// `elevationMedium`.
+#[must_use]
+pub fn qml_prop_elevation(token: ElevationToken) -> String {
+    camel("elevation", token.slug())
+}
+
+/// Build the CSS custom-property variable name for a motion-duration token,
+/// e.g. `--aios-motion-fast`.
+#[must_use]
+pub fn css_var_motion(token: MotionToken) -> String {
+    format!("{CSS_PREFIX}-motion-{}", token.slug())
+}
+
+/// Build the QML property identifier for a motion-duration token, e.g.
+/// `motionFast`.
+#[must_use]
+pub fn qml_prop_motion(token: MotionToken) -> String {
+    camel("motion", token.slug())
+}
+
+/// Build the CSS custom-property variable name for an easing token,
+/// e.g. `--aios-easing-standard`.
+#[must_use]
+pub fn css_var_easing(token: EasingToken) -> String {
+    format!("{CSS_PREFIX}-easing-{}", token.slug())
+}
+
+/// Build the QML property identifier for an easing token, e.g.
+/// `easingStandard`.
+#[must_use]
+pub fn qml_prop_easing(token: EasingToken) -> String {
+    camel("easing", token.slug())
 }
 
 /// Emit the token set as a CSS custom-property block for the Web renderer.
@@ -104,6 +148,30 @@ pub fn to_css_custom_properties(set: &TokenSet) -> String {
         );
         let _ = writeln!(out, "  {CSS_PREFIX}-font-{slug}-size: {}px;", v.size_px);
         let _ = writeln!(out, "  {CSS_PREFIX}-font-{slug}-weight: {};", v.weight);
+    }
+    for token in ElevationToken::iter() {
+        let _ = writeln!(
+            out,
+            "  {}: {};",
+            css_var_elevation(token),
+            set.elevation(token).to_css_shadow()
+        );
+    }
+    for token in MotionToken::iter() {
+        let _ = writeln!(
+            out,
+            "  {}: {}ms;",
+            css_var_motion(token),
+            set.motion_duration(token)
+        );
+    }
+    for token in EasingToken::iter() {
+        let _ = writeln!(
+            out,
+            "  {}: {};",
+            css_var_easing(token),
+            set.motion_easing(token)
+        );
     }
 
     out.push_str("}\n");
@@ -169,6 +237,30 @@ pub fn to_qml_properties(set: &TokenSet) -> String {
             "    readonly property int {}: {}",
             camel("font", &format!("{slug}-weight")),
             v.weight
+        );
+    }
+    for token in ElevationToken::iter() {
+        let _ = writeln!(
+            out,
+            "    readonly property string {}: \"{}\"",
+            qml_prop_elevation(token),
+            set.elevation(token).to_css_shadow()
+        );
+    }
+    for token in MotionToken::iter() {
+        let _ = writeln!(
+            out,
+            "    readonly property int {}: {}",
+            qml_prop_motion(token),
+            set.motion_duration(token)
+        );
+    }
+    for token in EasingToken::iter() {
+        let _ = writeln!(
+            out,
+            "    readonly property string {}: \"{}\"",
+            qml_prop_easing(token),
+            set.motion_easing(token)
         );
     }
 
