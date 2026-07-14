@@ -74,7 +74,10 @@ impl TokenSet {
             ColorToken::SurfaceVariant => ColorValue::rgb(0xf2, 0xf4, 0xf7),
             ColorToken::TextPrimary => ColorValue::rgb(0x1a, 0x1d, 0x21),
             ColorToken::TextSecondary => ColorValue::rgb(0x5a, 0x62, 0x6e),
-            ColorToken::Accent => ColorValue::rgb(0x2f, 0x6f, 0xeb),
+            // Brand accent — ai-os.net raspberry (#ce2867). Aligned to the public
+            // site brand (was #2f6feb blue); kept identical in both themes, as the
+            // site does, so the wordmark/accent reads the same everywhere.
+            ColorToken::Accent => ColorValue::rgb(0xce, 0x28, 0x67),
             ColorToken::Success => ColorValue::rgb(0x1f, 0x9d, 0x55),
             ColorToken::Warning => ColorValue::rgb(0xc4, 0x7f, 0x17),
             ColorToken::Danger => ColorValue::rgb(0xd5, 0x37, 0x2e),
@@ -88,7 +91,9 @@ impl TokenSet {
             ColorToken::SurfaceVariant => ColorValue::rgb(0x21, 0x26, 0x2d),
             ColorToken::TextPrimary => ColorValue::rgb(0xec, 0xef, 0xf3),
             ColorToken::TextSecondary => ColorValue::rgb(0x9a, 0xa4, 0xb1),
-            ColorToken::Accent => ColorValue::rgb(0x4f, 0x8b, 0xff),
+            // Brand accent — ai-os.net raspberry (#ce2867), same in both themes
+            // (was #4f8bff blue). Reads well on the dark surface, as on the site.
+            ColorToken::Accent => ColorValue::rgb(0xce, 0x28, 0x67),
             ColorToken::Success => ColorValue::rgb(0x3f, 0xb9, 0x68),
             ColorToken::Warning => ColorValue::rgb(0xe0, 0xa3, 0x3a),
             ColorToken::Danger => ColorValue::rgb(0xf0, 0x56, 0x4b),
