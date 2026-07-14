@@ -374,13 +374,14 @@ finalize_kernel_modules() {
     fi
     [ -f "${mroot}/${kver}/modules.dep" ] || die "modules.dep not generated for ${kver}"
 
-    # Belt-and-suspenders: load the device-mapper stack at every boot as well.
-    mkdir -p "${OUTPUT}/usr/lib/modules-load.d"
-    printf 'dm_mod\ndm_crypt\ndm_verity\n' \
-        > "${OUTPUT}/usr/lib/modules-load.d/aios-device-mapper.conf"
-    chmod 644 "${OUTPUT}/usr/lib/modules-load.d/aios-device-mapper.conf"
+    # NOTE: deliberately NOT writing modules-load.d for the dm stack. Forcing
+    # dm_mod/dm_crypt/dm_verity at every boot makes systemd-modules-load.service
+    # FAIL (and the boot-health gate DEGRADED, pipeline 4844) whenever any of the
+    # three cannot load in a given boot context. The installer loads them
+    # best-effort at install time (ensure_device_mapper) with a functional
+    # dmsetup check, which is the correct place and non-fatal.
 
-    info "kernel modules finalized for ${kver} (depmod + device-mapper autoload)"
+    info "kernel modules finalized for ${kver} (depmod-generated modules.dep)"
 }
 
 info "R13.1 base: openSUSE Leap ${RELEASE} (${ARCH}), support ${SUPPORT_MONTHS} months"
