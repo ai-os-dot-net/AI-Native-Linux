@@ -525,7 +525,47 @@ auto-firmware no
 LOADERCONF
     chmod 644 "${TARGET_MOUNT}/boot/efi/loader/loader.conf"
 
+    esp_diag
+
     msg "systemd-boot installed."
+}
+
+# ── ESP diagnostics (defect #12) ──────────────────────────────────────────────
+#
+# Phase-2 boot dropped straight to the EFI shell: the firmware reported
+# "failed to load Boot0002 ... Not Found" for the disk and never ran a loader.
+# We install with --no-variables (no NVRAM entry is written), so the firmware
+# can ONLY boot via the removable fallback path \EFI\BOOT\BOOTX64.EFI. Record
+# exactly what bootctl left on the ESP, and where the kernel/initrd actually
+# live, so the next cycle fixes a measured cause instead of a guess.
+esp_diag() {
+    local _esp="${TARGET_MOUNT}/boot/efi"
+
+    info "=== ESP diagnostics (defect #12) ==="
+
+    msg "esp-diag: tree under ${_esp}:"
+    find "${_esp}" -maxdepth 4 2>&1 | head -n 40 || true
+
+    if [ -f "${_esp}/EFI/BOOT/BOOTX64.EFI" ]; then
+        msg "esp-diag: fallback EFI/BOOT/BOOTX64.EFI PRESENT"
+    else
+        msg "esp-diag: fallback EFI/BOOT/BOOTX64.EFI MISSING <-- firmware cannot boot"
+    fi
+
+    # The loader entry references /vmlinuz-aios and /initramfs-aios.img. Those
+    # paths are resolved by systemd-boot on the ESP/XBOOTLDR, which must be FAT
+    # — systemd-boot cannot read ext4. Show where they really are.
+    msg "esp-diag: kernel/initrd on the ESP:"
+    ls -la "${_esp}/vmlinuz-aios" "${_esp}/initramfs-aios.img" 2>&1 | head -n 4 || true
+    msg "esp-diag: kernel/initrd on /boot:"
+    ls -la "${TARGET_MOUNT}/boot/vmlinuz-aios" "${TARGET_MOUNT}/boot/initramfs-aios.img" 2>&1 | head -n 4 || true
+
+    msg "esp-diag: filesystem types:"
+    findmnt -no SOURCE,FSTYPE,TARGET "${_esp}" 2>&1 || true
+    findmnt -no SOURCE,FSTYPE,TARGET "${TARGET_MOUNT}/boot" 2>&1 || true
+
+    msg "esp-diag: bootctl status:"
+    bootctl --esp-path="${_esp}" status 2>&1 | head -n 25 || true
 }
 
 # ── TPM2 seal (optional) ──────────────────────────────────────────────────────
