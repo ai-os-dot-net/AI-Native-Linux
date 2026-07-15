@@ -531,13 +531,20 @@ do_initramfs() {
     CHROOT_MOUNTED=1
 
     # --no-hostonly: the image must boot the installed disk on real hardware,
-    #   not only on the QEMU host that happened to generate it.
+    #   not only on the QEMU host that happened to generate it. The cost is that
+    #   dracut then omits host config — /etc/crypttab included — so the TPM2
+    #   unlock intent must travel on the kernel command line instead
+    #   (rd.luks.options=tpm2-device=auto, set in do_bootloader).
     # --add "crypt dm": the root is LUKS2 at /dev/mapper/aios-cryptroot, so the
     #   initramfs must be able to unlock it; without these the kernel panics
     #   with "unable to mount root fs".
+    # --add "tpm2-tss": without it the initramfs carries no TPM2 stack, so the
+    #   enrolled LUKS2 token cannot be used and boot stalls forever on
+    #   "Please enter passphrase for disk AIOS_LUKS" — an unattended install
+    #   that cannot come up unattended.
     local _dracut_log="/tmp/aios-dracut.log"
     if ! chroot "${TARGET_MOUNT}" dracut --force --no-hostonly \
-            --add "crypt dm" \
+            --add "crypt dm tpm2-tss" \
             /boot/initramfs-aios.img "${_kver}" > "${_dracut_log}" 2>&1; then
         err "dracut failed — last 30 lines:"
         tail -n 30 "${_dracut_log}" >&2 || true
@@ -613,6 +620,31 @@ do_bootloader() {
         *)          _selinux_params="selinux=0" ;;
     esac
 
+    # The installed system had no console= at all, so it emitted nothing to the
+    # serial port and the phase-2 boot gate could only ever see the loader's own
+    # menu. Phase 1 gets a console via QEMU -append; phase 2 boots from this
+    # entry and inherited none. A serial console is also the normal expectation
+    # on server hardware, so it is unconditional; tty0 keeps the local display.
+    local _console_params="console=tty0 console=ttyS0,115200n8"
+
+    # The initramfs is built --no-hostonly, so it carries no /etc/crypttab and
+    # never learns that the root LUKS2 device has a TPM2 token. Phase 2 proved
+    # the consequence: the system reached "Please enter passphrase for disk
+    # AIOS_LUKS" and sat there until the gate killed it — an unattended install
+    # that could not boot unattended, with a TPM2 token sitting unused in the
+    # header. Carrying the option on the cmdline keeps the initramfs portable
+    # and still tells systemd-cryptsetup to try the TPM first.
+    local _luks_options="rd.luks.options=tpm2-device=auto"
+
+    # CI_BARE must be observable: `quiet` makes systemd suppress its status
+    # lines, so "Reached target ..." — the only marker a running OS can emit
+    # that a bootloader cannot fake — would never reach the log. Hardened
+    # profiles stay quiet.
+    local _verbosity="quiet loglevel=3"
+    case "${PROFILE}" in
+        CI_BARE) _verbosity="loglevel=7 systemd.show_status=yes" ;;
+    esac
+
     local _entries_dir="${TARGET_MOUNT}/boot/efi/loader/entries"
     mkdir -p "${_entries_dir}"
 
@@ -620,7 +652,7 @@ do_bootloader() {
 title   AI-OS.NET ${AIOS_VERSION} (CI)
 linux   /vmlinuz-aios
 initrd  /initramfs-aios.img
-options root=/dev/mapper/aios-cryptroot rd.luks.uuid=${_luks_uuid} ${_root_mode} quiet loglevel=3 ${_selinux_params}${_verity_params}
+options root=/dev/mapper/aios-cryptroot rd.luks.uuid=${_luks_uuid} ${_luks_options} ${_root_mode} ${_console_params} ${_verbosity} ${_selinux_params}${_verity_params}
 LOADER
     chmod 644 "${_entries_dir}/aios.conf"
 

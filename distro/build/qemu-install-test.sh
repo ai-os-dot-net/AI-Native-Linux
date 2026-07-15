@@ -343,11 +343,25 @@ INSTALL_FAILURE_MARKERS=(
     'AIOS-RESCUE'
     'Dropping to rescue shell'
 )
+# A marker only counts if the running OS is the only thing that can print it.
+#
+# 'AI-OS\.NET' used to be in this list and made phase 2 a guaranteed pass: it
+# matches the systemd-boot menu title ("AI-OS.NET REV4 (CI)"), which the
+# *bootloader* draws before the kernel is even loaded. A phase-2 log containing
+# nothing but the UEFI handoff and a 3-2-1 countdown scored a PASS, so the gate
+# could not distinguish a booting system from a kernel that never started.
+#
+# The AIOS-INIT lines come from the retired Rev12 hand-rolled initramfs; the R13
+# installed system uses a dracut initramfs and never prints them. They are kept
+# for the legacy path but cannot carry this gate.
+#
+# "Reached target ... Multi-User" is systemd on the installed root: it cannot be
+# reached unless the kernel booted, the initramfs unlocked LUKS, dm-verity
+# validated the root, and systemd came up. That is the claim phase 2 must prove.
 BOOT_SUCCESS_MARKERS=(
     'AIOS-INIT.*=== Switching to real root ==='
     'AIOS-INIT.*Root filesystem mounted'
     'Reached target.*Multi-User'
-    'AI-OS\.NET'
 )
 BOOT_FAILURE_MARKERS=(
     'Kernel panic'
