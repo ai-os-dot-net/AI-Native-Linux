@@ -219,6 +219,19 @@ start_swtpm() {
     info "swtpm started (state=${SWTPM_STATE})"
 }
 
+# swtpm goes away once its QEMU client disconnects, so by the time phase 2 runs
+# the control socket from the phase-1 start is gone and QEMU fails to launch at
+# all ("Failed to connect to ...swtpm-sock", phase-2 log stays empty — defect
+# #11). Re-start it per phase; the state dir is reused, so TPM state carries
+# across phases as intended.
+ensure_swtpm() {
+    ${USE_SWTPM} || return 0
+    if [ -n "${SWTPM_PID}" ] && kill -0 "${SWTPM_PID}" 2>/dev/null && [ -S "${SWTPM_SOCK}" ]; then
+        return 0
+    fi
+    start_swtpm
+}
+
 # shellcheck disable=SC2329  # invoked indirectly via the EXIT trap (cleanup)
 stop_swtpm() {
     [ -n "${SWTPM_PID}" ] || return 0
@@ -416,7 +429,7 @@ print_command "qemu-img" "${QEMU_IMG_CMD[@]}"
 
 cp "${OVMF_VARS_SRC}" "${OVMF_VARS_RUN}" || die "failed to stage OVMF_VARS"
 
-start_swtpm
+ensure_swtpm
 
 # --- Phase 1: install ---------------------------------------------------------
 info "=== Phase 1: install to ${DISK_PATH} (target ${TARGET_DEV}) ==="
@@ -440,6 +453,7 @@ info "PASS phase 1: install marker found: ${MATCHED_MARKER}"
 
 # --- Phase 2: boot installed disk ---------------------------------------------
 info "=== Phase 2: boot installed disk ${DISK_PATH} ==="
+ensure_swtpm
 build_phase2_cmd
 print_command "phase2-boot" "${QEMU_CMD[@]}"
 set +e
