@@ -66,9 +66,22 @@ die() {
 TARGET_MOUNT="/mnt/aios-target"
 LUKS_TMP_KEYFILE="/tmp/aios-quick-luks-key.XXXXXX"
 SETUP_MOUNTED=0
+CHROOT_MOUNTED=0
+
+# Unmount the pseudo-filesystems bound into the target for the dracut chroot.
+# Order matters: /dev last, since the others may be busy while it is bound.
+umount_chroot() {
+    umount "${TARGET_MOUNT}/proc" 2>/dev/null || true
+    umount "${TARGET_MOUNT}/sys"  2>/dev/null || true
+    umount "${TARGET_MOUNT}/dev"  2>/dev/null || true
+    CHROOT_MOUNTED=0
+}
 
 cleanup_on_failure() {
     warn "=== Cleanup after failure ==="
+    if [ "${CHROOT_MOUNTED}" -eq 1 ]; then
+        umount_chroot
+    fi
     if [ "${SETUP_MOUNTED}" -eq 1 ]; then
         umount "${TARGET_MOUNT}/boot/efi" 2>/dev/null || true
         umount "${TARGET_MOUNT}/boot"     2>/dev/null || true
@@ -216,8 +229,9 @@ validate_env() {
         die "Disk is currently mounted: ${TARGET_DISK}" 3
     fi
 
-    # Tool check
-    for _bin in lsblk sgdisk mkfs.vfat mkfs.ext4 cryptsetup dmsetup unsquashfs bootctl blkid; do
+    # Tool check. dracut is required because the rootfs ships no prebuilt
+    # initramfs (zypper --root runs no kernel hooks) — do_initramfs builds it.
+    for _bin in lsblk sgdisk mkfs.vfat mkfs.ext4 cryptsetup dmsetup unsquashfs bootctl blkid dracut; do
         if ! command -v "${_bin}" >/dev/null 2>&1; then
             die "Missing required tool: ${_bin}" 2
         fi
@@ -482,12 +496,94 @@ EOF
     msg "System configuration written."
 }
 
+# ── Initramfs (defect #12b) ───────────────────────────────────────────────────
+#
+# The openSUSE rootfs ships a real kernel (/usr/lib/modules/<kver>/vmlinuz, with
+# /boot/vmlinuz-<kver> only a symlink to it) but NO initramfs: `zypper --root`
+# does not run the kernel package's post-install hooks, so dracut was never
+# invoked at build time. The loader entry references /initramfs-aios.img, which
+# consequently existed nowhere on the target (pipeline 5309) — the kernel would
+# have no way to unlock the LUKS2 root even once a loader could run it.
+#
+# This MUST stay ahead of do_verity: veritysetup hashes the whole root device,
+# so dracut's writes into the root afterwards would invalidate the root hash.
+do_initramfs() {
+    info "=== Generating initramfs ==="
+
+    local _modules_dir="${TARGET_MOUNT}/usr/lib/modules"
+    [ -d "${_modules_dir}" ] || die "No ${_modules_dir} — rootfs ships no kernel" 9
+
+    local _kver
+    _kver="$(ls -1 "${_modules_dir}" 2>/dev/null | head -n1)"
+    [ -n "${_kver}" ] || die "No kernel version directory under ${_modules_dir}" 9
+    [ -f "${_modules_dir}/${_kver}/vmlinuz" ] \
+        || die "No kernel image for ${_kver}" 9
+    # build-opensuse-rootfs.sh runs depmod itself (zypper --root skips the
+    # hooks); without modules.dep dracut silently produces a module-less image.
+    [ -f "${_modules_dir}/${_kver}/modules.dep" ] \
+        || die "depmod metadata missing for ${_kver}" 9
+    msg "Kernel version: ${_kver}"
+
+    mkdir -p "${TARGET_MOUNT}/proc" "${TARGET_MOUNT}/sys" "${TARGET_MOUNT}/dev"
+    mount -t proc  proc  "${TARGET_MOUNT}/proc" || die "chroot /proc mount failed" 9
+    mount -t sysfs sysfs "${TARGET_MOUNT}/sys"  || die "chroot /sys mount failed" 9
+    mount --bind /dev    "${TARGET_MOUNT}/dev"  || die "chroot /dev mount failed" 9
+    CHROOT_MOUNTED=1
+
+    # --no-hostonly: the image must boot the installed disk on real hardware,
+    #   not only on the QEMU host that happened to generate it.
+    # --add "crypt dm": the root is LUKS2 at /dev/mapper/aios-cryptroot, so the
+    #   initramfs must be able to unlock it; without these the kernel panics
+    #   with "unable to mount root fs".
+    local _dracut_log="/tmp/aios-dracut.log"
+    if ! chroot "${TARGET_MOUNT}" dracut --force --no-hostonly \
+            --add "crypt dm" \
+            /boot/initramfs-aios.img "${AIOS_KVER}" > "${_dracut_log}" 2>&1; then
+        err "dracut failed — last 30 lines:"
+        tail -n 30 "${_dracut_log}" >&2 || true
+        die "initramfs generation failed" 9
+    fi
+
+    umount_chroot
+
+    # Fail closed: dracut can exit 0 and still leave a useless image. A real
+    # initramfs with crypt+dm is tens of MB; anything tiny means the modules
+    # were not picked up.
+    local _img="${TARGET_MOUNT}/boot/initramfs-aios.img"
+    [ -s "${_img}" ] || die "dracut exited 0 but ${_img} is missing/empty" 9
+    local _sz
+    _sz=$(stat -c%s "${_img}" 2>/dev/null || echo 0)
+    [ "${_sz}" -ge 8000000 ] \
+        || die "initramfs is only ${_sz} bytes — modules were not included" 9
+    msg "initramfs generated: ${_img} (${_sz} bytes)"
+
+    # /boot/vmlinuz-<kver> is a symlink into /usr/lib/modules. Dereference it
+    # here so /boot always holds a real kernel image next to its initramfs.
+    cp -L --remove-destination "${_modules_dir}/${AIOS_KVER}/vmlinuz" \
+        "${TARGET_MOUNT}/boot/vmlinuz-aios" || die "kernel copy to /boot failed" 9
+    chmod 644 "${TARGET_MOUNT}/boot/vmlinuz-aios"
+    msg "Kernel staged at ${TARGET_MOUNT}/boot/vmlinuz-aios."
+}
+
 # ── Bootloader ────────────────────────────────────────────────────────────────
 
 do_bootloader() {
     info "=== Installing systemd-boot ==="
 
-    bootctl install --esp-path="${TARGET_MOUNT}/boot/efi" --no-variables \
+    # bootctl installs the loader from the *running* system's payload directory.
+    # The systemd package provides bootctl; the EFI payload itself comes from
+    # the separate systemd-boot package. When that package is absent bootctl
+    # still creates the ESP directory skeleton and loader.conf without ever
+    # reporting a hard failure — pipeline 5309 measured an ESP with zero .efi
+    # files while this function had already printed "systemd-boot installed."
+    # Check the payload explicitly rather than trusting the exit code.
+    local _payload="/usr/lib/systemd/boot/efi/systemd-bootx64.efi"
+    [ -f "${_payload}" ] \
+        || die "systemd-boot payload ${_payload} is missing (systemd-boot package not installed)" 8
+
+    local _esp="${TARGET_MOUNT}/boot/efi"
+
+    bootctl install --esp-path="${_esp}" --no-variables \
         || die "bootctl install failed" 8
 
     local _luks_uuid
@@ -525,7 +621,32 @@ auto-firmware no
 LOADERCONF
     chmod 644 "${TARGET_MOUNT}/boot/efi/loader/loader.conf"
 
+    # We install with --no-variables: no NVRAM boot entry is written, so the
+    # firmware can ONLY ever start the removable fallback \EFI\BOOT\BOOTX64.EFI.
+    # bootctl normally places it; assert it and install it ourselves if not.
+    if [ ! -f "${_esp}/EFI/BOOT/BOOTX64.EFI" ]; then
+        mkdir -p "${_esp}/EFI/BOOT"
+        cp "${_payload}" "${_esp}/EFI/BOOT/BOOTX64.EFI" \
+            || die "fallback EFI/BOOT/BOOTX64.EFI install failed" 8
+        msg "Fallback EFI/BOOT/BOOTX64.EFI installed from payload."
+    fi
+    [ -f "${_esp}/EFI/systemd/systemd-bootx64.efi" ] \
+        || die "bootctl exited 0 but installed no loader binary" 8
+
+    # systemd-boot reads FAT only — it cannot read the ext4 /boot partition, so
+    # the kernel and initramfs named by the loader entry must sit on the ESP.
+    cp --remove-destination "${TARGET_MOUNT}/boot/vmlinuz-aios" \
+        "${_esp}/vmlinuz-aios" || die "kernel copy to ESP failed" 8
+    cp --remove-destination "${TARGET_MOUNT}/boot/initramfs-aios.img" \
+        "${_esp}/initramfs-aios.img" || die "initramfs copy to ESP failed" 8
+    sync
+
     esp_diag
+
+    # Only claim success once every artifact the firmware and kernel need is
+    # provably on the ESP.
+    [ -s "${_esp}/vmlinuz-aios" ] && [ -s "${_esp}/initramfs-aios.img" ] \
+        || die "kernel/initramfs missing from the ESP after copy" 8
 
     msg "systemd-boot installed."
 }
@@ -738,6 +859,9 @@ main() {
     do_tpm2_seal
     do_selinux
     do_first_boot
+    # Must precede do_verity: veritysetup hashes the entire root device, so any
+    # write into the root after it (dracut's temporaries) invalidates the hash.
+    do_initramfs
     do_verity
     do_bootloader
     do_finalize

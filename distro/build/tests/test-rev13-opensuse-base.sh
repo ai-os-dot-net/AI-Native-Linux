@@ -123,6 +123,16 @@ check_grep "Builder includes Leap 16 firmware package" "${OPENSUSE_BUILDER}" 'ke
 check_absent "Builder does not require removed systemd-sysvinit package" "${OPENSUSE_BUILDER}" 'systemd-sysvinit'
 check_grep "Builder includes secure boot tooling" "${OPENSUSE_BUILDER}" 'shim'
 check_grep "Builder includes TPM tooling" "${OPENSUSE_BUILDER}" 'tpm2\.0-tools'
+# Defect #12a (pipeline 5309): the systemd package ships bootctl but NOT the
+# loader payload. Without the separate systemd-boot package the installed ESP
+# held zero .efi files and the firmware dropped to the EFI shell, while bootctl
+# had already "succeeded". A bootctl-only package set is the regression.
+check_grep "Builder includes the systemd-boot loader payload package" \
+    "${OPENSUSE_BUILDER}" '^\s*systemd-boot\s*$'
+# dracut must be present: zypper --root runs no kernel hooks, so the rootfs
+# ships no initramfs and the installer has to build one (defect #12b).
+check_grep "Builder includes dracut for installer-side initramfs generation" \
+    "${OPENSUSE_BUILDER}" '^\s*dracut\s*$'
 
 msg "ISO enterprise gate"
 check_grep "ISO builder has enterprise flag" "${ISO_BUILDER}" '--enterprise-release'

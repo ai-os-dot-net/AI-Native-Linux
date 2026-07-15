@@ -39,6 +39,13 @@ BASE_PACKAGES=(
     # NB: systemd-sysvcompat does not exist in Leap 16.0 (dropped upstream);
     # the initramfs init discovers /usr/lib/systemd/systemd directly.
     systemd
+    # systemd ships bootctl, but NOT the loader binary it installs. The EFI
+    # payload (/usr/lib/systemd/boot/efi/systemd-bootx64.efi) lives in the
+    # separate systemd-boot package. Without it `bootctl install` creates only
+    # the ESP directory skeleton + loader.conf and installs no EFI binary, so
+    # the firmware finds nothing to boot and drops to the EFI shell (defect
+    # #12a: pipeline 5309 ESP had zero .efi files while bootctl was present).
+    systemd-boot
     dbus-1
     util-linux
     iproute2
@@ -58,9 +65,10 @@ BASE_PACKAGES=(
     lvm2
     # Installer tool dependencies (distro/installer/aios-quick-install.sh
     # requires: lsblk sgdisk mkfs.vfat mkfs.ext4 cryptsetup unsquashfs bootctl
-    # blkid). lsblk/blkid come from util-linux, cryptsetup + bootctl(systemd)
-    # are already above; these provide the rest. Pipeline 4742 proved the
-    # unattended install reaches the tool check and dies on missing sgdisk.
+    # blkid). lsblk/blkid come from util-linux, cryptsetup + bootctl(systemd,
+    # with its EFI payload from systemd-boot) are already above; these provide
+    # the rest. Pipeline 4742 proved the unattended install reaches the tool
+    # check and dies on missing sgdisk.
     gptfdisk       # sgdisk (GPT partitioning)
     dosfstools     # mkfs.vfat (ESP)
     e2fsprogs      # mkfs.ext4 (boot/recovery/root/rollback)
