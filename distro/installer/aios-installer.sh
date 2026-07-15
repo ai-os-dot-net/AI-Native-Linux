@@ -804,8 +804,9 @@ generate_recovery_key() {
             | tr '\n' ' '
         )
     else
-        # Fallback: hex from urandom
-        _recovery_words=$(xxd -l "${RECOVERY_KEY_LENGTH}" -p /dev/urandom \
+        # Fallback: hex from openssl (already in the base package set). xxd ships
+        # in vim-data and is absent from the live image — see defect #10.
+        _recovery_words=$(openssl rand -hex "${RECOVERY_KEY_LENGTH}" \
             | fold -w 2 | head -n "${RECOVERY_KEY_LENGTH}" | tr '\n' ' ')
     fi
 

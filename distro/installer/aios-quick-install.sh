@@ -649,7 +649,9 @@ do_first_boot() {
     # Write recovery key (hex)
     local _recovery="${TARGET_MOUNT}/etc/aios/recovery-key.txt"
     local _hexkey
-    _hexkey=$(xxd -l 24 -p /dev/urandom | fold -w 2 | head -n 24 | tr '\n' ' ')
+    # openssl (already in the base package set) instead of xxd, which ships in
+    # vim-data and is absent from the live image — it exited 127 here (defect #10).
+    _hexkey=$(openssl rand -hex 24 | fold -w 2 | head -n 24 | tr '\n' ' ')
     echo "${_hexkey}" > "${_recovery}"
     chmod 600 "${_recovery}"
 
