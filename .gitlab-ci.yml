@@ -304,6 +304,15 @@ cargo-release:
     expire_in: 1 day
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+    # Also build on MRs that touch the ISO inputs: assemble-iso needs this job,
+    # and the install gate must be provable *before* merge, not after.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
 
 # ==========================================================================
 # STAGE 4B — R13 openSUSE ROOTFS (rootful Docker runner)
@@ -366,9 +375,17 @@ r13-opensuse-rootfs:
         - "Cargo.toml"
         - "Cargo.lock"
         - ".gitlab-ci.yml"
+    # Same chain on MRs touching the ISO inputs — see cargo-release.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
 
 # ==========================================================================
-# STAGE 5 — ASSEMBLE ISO (main push only)
+# STAGE 5 — ASSEMBLE ISO (main push + ISO-touching MRs)
 # ==========================================================================
 assemble-iso:
   stage: assemble
@@ -435,6 +452,14 @@ assemble-iso:
         - "Cargo.toml"
         - "Cargo.lock"
         - ".gitlab-ci.yml"
+    # Same chain on MRs touching the ISO inputs — see cargo-release.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
 
 # ==========================================================================
 # STAGE 6 — VERIFY: QEMU INSTALL GATE (R12.2 acceptance: install to blank
@@ -483,6 +508,16 @@ qemu-install-gate:
     expire_in: 7 days
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
+    # The whole point of the MR rules: an installer change must prove itself at
+    # this gate *before* it reaches main. Still allow_failure (job-level) until
+    # the harness has one proven green run, then flip to blocking.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
         - "crates/**/*"
         - "distro/**/*"
