@@ -364,8 +364,15 @@ do_deploy() {
     mount -t ext4 -o rw,noatime "${LUKS_MAPPER}" "${TARGET_MOUNT}" || die "Root mount failed" 7
     SETUP_MOUNTED=1
 
-    mkdir -p "${TARGET_MOUNT}/boot" "${TARGET_MOUNT}/boot/efi"
+    mkdir -p "${TARGET_MOUNT}/boot"
     mount -t ext4 -o defaults,noatime "${BOOT_PART}" "${TARGET_MOUNT}/boot" || die "Boot mount failed" 7
+
+    # The ESP mount point must be created *after* BOOT_PART is mounted: mounting
+    # the freshly-formatted (empty) boot partition over ${TARGET_MOUNT}/boot
+    # shadows anything created underneath it, so /boot/efi has to be made on the
+    # mounted boot filesystem or the ESP mount fails with "mount point does not
+    # exist" (pipeline 5118, defect #9).
+    mkdir -p "${TARGET_MOUNT}/boot/efi"
     mount -t vfat -o defaults,noatime,umask=0077 "${ESP_PART}" "${TARGET_MOUNT}/boot/efi" || die "ESP mount failed" 7
 
     msg "Extracting squashfs (${AIOS_SQUASHFS})..."
