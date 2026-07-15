@@ -538,7 +538,7 @@ do_initramfs() {
     local _dracut_log="/tmp/aios-dracut.log"
     if ! chroot "${TARGET_MOUNT}" dracut --force --no-hostonly \
             --add "crypt dm" \
-            /boot/initramfs-aios.img "${AIOS_KVER}" > "${_dracut_log}" 2>&1; then
+            /boot/initramfs-aios.img "${_kver}" > "${_dracut_log}" 2>&1; then
         err "dracut failed — last 30 lines:"
         tail -n 30 "${_dracut_log}" >&2 || true
         die "initramfs generation failed" 9
@@ -559,7 +559,7 @@ do_initramfs() {
 
     # /boot/vmlinuz-<kver> is a symlink into /usr/lib/modules. Dereference it
     # here so /boot always holds a real kernel image next to its initramfs.
-    cp -L --remove-destination "${_modules_dir}/${AIOS_KVER}/vmlinuz" \
+    cp -L --remove-destination "${_modules_dir}/${_kver}/vmlinuz" \
         "${TARGET_MOUNT}/boot/vmlinuz-aios" || die "kernel copy to /boot failed" 9
     chmod 644 "${TARGET_MOUNT}/boot/vmlinuz-aios"
     msg "Kernel staged at ${TARGET_MOUNT}/boot/vmlinuz-aios."

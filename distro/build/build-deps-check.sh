@@ -67,10 +67,26 @@ DEPENDENCIES=(
     "nproc|coreutils|shell|true|CPU count utility (or pass --jobs)"
 
     # ── Optional: Boot Components ────────────────────────────────────────
+    #
+    # These stay OPTIONAL on purpose: this script checks the BUILD HOST, and the
+    # ISO build never consumes the loader from it (build-aios-iso.sh only does a
+    # `check_opt bootctl ... || true`). The machine that genuinely needs the
+    # loader payload is the INSTALLED system, so the binding requirement lives in
+    # the rootfs package set (`systemd-boot` in build-opensuse-rootfs.sh), not
+    # here. Do not "harden" this into required=true: it would fail hosts that
+    # build correctly while still not catching the real defect.
+    #
+    # This distinction is not academic. Defect #12a shipped precisely because
+    # `bootctl` (from the systemd package) was present and the separate
+    # systemd-boot payload was not, so `bootctl install` produced an ESP with
+    # zero .efi files and reported success. What actually guards it now:
+    #   - build-opensuse-rootfs.sh ships the systemd-boot package
+    #   - test-rev13-opensuse-base.sh fails if that package is dropped
+    #   - aios-quick-install.sh do_bootloader dies if the payload is missing
     "busybox|busybox-static|boot|false|Multi-call binary for initramfs /bin/sh"
     "bootctl|systemd-boot|boot|false|systemd-boot EFI boot manager"
-    "systemd-bootx64.efi|systemd-boot|boot|false|systemd-boot EFI stub (x86_64)"
-    "systemd-bootaa64.efi|systemd-boot|boot|false|systemd-boot EFI stub (aarch64)"
+    "systemd-bootx64.efi|systemd-boot|boot|false|systemd-boot EFI stub (x86_64) — required in the ROOTFS, not on the build host"
+    "systemd-bootaa64.efi|systemd-boot|boot|false|systemd-boot EFI stub (aarch64) — required in the ROOTFS, not on the build host"
 
     # ── Optional: Security ───────────────────────────────────────────────
     "cryptsetup|cryptsetup|security|false|LUKS disk encryption (initramfs)"
