@@ -123,6 +123,12 @@ check_grep "Builder includes Leap 16 firmware package" "${OPENSUSE_BUILDER}" 'ke
 check_absent "Builder does not require removed systemd-sysvinit package" "${OPENSUSE_BUILDER}" 'systemd-sysvinit'
 check_grep "Builder includes secure boot tooling" "${OPENSUSE_BUILDER}" 'shim'
 check_grep "Builder includes TPM tooling" "${OPENSUSE_BUILDER}" 'tpm2\.0-tools'
+# R13.4: tpm2.0-tools brings the tss2 stack but no TCTI *driver*. Without one,
+# every TPM call fails with "TPM TCTI driver not available" despite /dev/tpm0
+# existing, so systemd-cryptenroll never enrols a TPM2 token. Measured in a
+# local QEMU+swtpm install run, not inferred.
+check_grep "Builder includes a TPM2 TCTI device driver (not just the tss2 stack)" \
+    "${OPENSUSE_BUILDER}" '^\s*libtss2-tcti-device0\s'
 # Defect #12a (pipeline 5309): the systemd package ships bootctl but NOT the
 # loader payload. Without the separate systemd-boot package the installed ESP
 # held zero .efi files and the firmware dropped to the EFI shell, while bootctl

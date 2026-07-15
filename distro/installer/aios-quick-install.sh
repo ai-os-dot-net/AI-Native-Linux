@@ -600,6 +600,19 @@ do_bootloader() {
         fi
     fi
 
+    # The kernel has no bare `permissive`/`enforcing` parameter — the mode is
+    # carried by enforcing=0|1, and SELinux itself is switched off with
+    # selinux=0. This previously emitted "selinux=1 permissive", so the mode
+    # word was an inert token the kernel ignored and the installed system's
+    # actual mode came from /etc/selinux/config alone. Same form the boot gate
+    # asserts: security=selinux selinux=1 enforcing=0.
+    local _selinux_params
+    case "${SELINUX_MODE}" in
+        enforcing)  _selinux_params="security=selinux selinux=1 enforcing=1" ;;
+        permissive) _selinux_params="security=selinux selinux=1 enforcing=0" ;;
+        *)          _selinux_params="selinux=0" ;;
+    esac
+
     local _entries_dir="${TARGET_MOUNT}/boot/efi/loader/entries"
     mkdir -p "${_entries_dir}"
 
@@ -607,7 +620,7 @@ do_bootloader() {
 title   AI-OS.NET ${AIOS_VERSION} (CI)
 linux   /vmlinuz-aios
 initrd  /initramfs-aios.img
-options root=/dev/mapper/aios-cryptroot rd.luks.uuid=${_luks_uuid} ${_root_mode} quiet loglevel=3 selinux=1 ${SELINUX_MODE}${_verity_params}
+options root=/dev/mapper/aios-cryptroot rd.luks.uuid=${_luks_uuid} ${_root_mode} quiet loglevel=3 ${_selinux_params}${_verity_params}
 LOADER
     chmod 644 "${_entries_dir}/aios.conf"
 
@@ -708,24 +721,35 @@ do_tpm2_seal() {
     fi
 
     info "=== Enrolling TPM2 token ==="
-    systemd-cryptenroll "${LUKS_PART}" \
-        --tpm2-device=auto \
-        --tpm2-pcrs=0+1+7 \
-        --wipe-slot=tpm2 \
-        --key-file "${LUKS_TMP_KEYFILE}" 2>&1 || {
-        warn "systemd-cryptenroll failed."
+
+    # systemd-cryptenroll has no --key-file: the option that supplies an
+    # existing passphrase to unlock the volume before enrolling is
+    # --unlock-key-file=. Passing --key-file made every enrolment abort with
+    # "unrecognized option", and the `|| warn; return 0` below turned that into
+    # a silent skip — the installs reported success with no TPM2 token in the
+    # LUKS header at all.
+    # Capture the reason. The previous code discarded it, so the --key-file
+    # defect above survived unseen behind a bare "systemd-cryptenroll failed."
+    local _enroll_log="/tmp/aios-cryptenroll.log"
+    if ! systemd-cryptenroll "${LUKS_PART}" \
+            --unlock-key-file="${LUKS_TMP_KEYFILE}" \
+            --tpm2-device=auto \
+            --tpm2-pcrs=0+1+7 \
+            --wipe-slot=tpm2 > "${_enroll_log}" 2>&1; then
+        warn "systemd-cryptenroll failed:"
+        sed 's/^/    cryptenroll: /' "${_enroll_log}" 2>/dev/null | head -n 12 || true
+        warn "TPM2 devices present: $(ls /dev/tpm* 2>/dev/null | tr '\n' ' ' || echo none)"
         return 0
-    }
+    fi
 
-    mkdir -p "${TARGET_MOUNT}/etc/aios"
-    systemd-cryptenroll "${LUKS_PART}" \
-        --tpm2-device=auto \
-        --tpm2-pcrs=0+1+7 \
-        --tpm2-public-key="${TARGET_MOUNT}/etc/aios/sealed-key.blob" \
-        --key-file "${LUKS_TMP_KEYFILE}" 2>/dev/null || true
-    chmod 400 "${TARGET_MOUNT}/etc/aios/sealed-key.blob" 2>/dev/null || true
-
-    msg "TPM2 token enrolled."
+    # Verify rather than trust the exit code: the token has to be readable back
+    # out of the LUKS2 header, otherwise "enrolled" is just a hopeful message.
+    if cryptsetup luksDump "${LUKS_PART}" 2>/dev/null | grep -qi "systemd-tpm2"; then
+        msg "TPM2 token enrolled and present in the LUKS2 header."
+    else
+        warn "systemd-cryptenroll reported success but no systemd-tpm2 token is in the LUKS2 header."
+        return 0
+    fi
 }
 
 # ── dm-verity (optional) ──────────────────────────────────────────────────────
@@ -785,15 +809,35 @@ do_selinux() {
         enforcing|permissive|disabled) ;;
         *) warn "Invalid AIOS_SELINUX_MODE=${SELINUX_MODE}; using permissive."; SELINUX_MODE="permissive" ;;
     esac
-    if [ "${SELINUX_MODE}" = "enforcing" ] \
-       && { [ ! -f "${TARGET_MOUNT}/etc/selinux/aios/policy/policy.33" ] \
-            || grep -q 'Placeholder' "${TARGET_MOUNT}/etc/selinux/aios/policy/policy.33" 2>/dev/null; }; then
-        warn "SELinux enforcing requested but only placeholder/no policy is present; using permissive."
-        SELINUX_MODE="permissive"
+
+    # Find the real compiled binary policy the way build-aios-iso.sh does, and
+    # take the store name from its path.
+    #
+    # This used to hardcode SELINUXTYPE=aios and gate enforcing on
+    # /etc/selinux/aios/policy/policy.33 — a `touchplaceholder` stub from the
+    # retired Rev12 mkrootfs.sh path. The R13 openSUSE base ships
+    # selinux-policy-targeted, i.e. /etc/selinux/targeted/policy/policy.34. So
+    # the guard tested for a file this pipeline never produces: enforcing was
+    # unreachable by construction and every install silently fell back to
+    # permissive, which R13.7 forbids for STIG_ALIGNED and AIRGAP_HIGH.
+    local _policy _policy_type
+    _policy="$(find "${TARGET_MOUNT}/etc/selinux" -mindepth 3 -maxdepth 3 \
+        -type f -path '*/policy/policy.*' 2>/dev/null | sort | head -n1)"
+
+    if [ -n "${_policy}" ]; then
+        _policy_type="$(basename "$(dirname "$(dirname "${_policy}")")")"
+        msg "SELinux policy found: ${_policy} (store: ${_policy_type})"
+    else
+        _policy_type="targeted"
+        if [ "${SELINUX_MODE}" = "enforcing" ]; then
+            warn "SELinux enforcing requested but no compiled policy is present; using permissive."
+            SELINUX_MODE="permissive"
+        fi
     fi
+
     cat > "${TARGET_MOUNT}/etc/selinux/config" <<EOF
 SELINUX=${SELINUX_MODE}
-SELINUXTYPE=aios
+SELINUXTYPE=${_policy_type}
 EOF
     chmod 644 "${TARGET_MOUNT}/etc/selinux/config"
     touch "${TARGET_MOUNT}/.autorelabel"

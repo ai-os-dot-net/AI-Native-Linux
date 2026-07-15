@@ -96,6 +96,95 @@ else
 fi
 
 printf '\n'
+msg "=== TPM2 enrolment: real option, verified result (R13.4) ==="
+
+# Both installers passed `--key-file` to systemd-cryptenroll, which has no such
+# option. Every enrolment died with "unrecognized option" and the failure path
+# only warned, so installs reported success with no TPM2 token in the LUKS2
+# header. The correct option is --unlock-key-file=.
+for _f in "${QUICK_INSTALL}" "${INTERACTIVE_INSTALL}"; do
+    _name="$(basename "${_f}")"
+
+    # Isolate the systemd-cryptenroll invocations: cryptsetup legitimately uses
+    # --key-file, so a file-wide grep would give a false pass.
+    _enroll="$(awk '/systemd-cryptenroll /{p=1} p{print} p&&/2>&1|2>\/dev\/null|--wipe-slot/{if(/\\$/)next; p=0}' "${_f}" 2>/dev/null)"
+
+    if printf '%s' "${_enroll}" | grep -qE '^\s*--unlock-key-file='; then
+        pass "${_name}: systemd-cryptenroll uses --unlock-key-file"
+    else
+        fail "${_name}: systemd-cryptenroll must use --unlock-key-file"
+    fi
+
+    if printf '%s' "${_enroll}" | grep -qE '^\s*--key-file'; then
+        fail "${_name}: systemd-cryptenroll still passes the nonexistent --key-file"
+    else
+        pass "${_name}: no bare --key-file on systemd-cryptenroll"
+    fi
+
+    # --tpm2-public-key takes a PEM public key as INPUT. Both installers handed
+    # it sealed-key.blob, an output path nothing wrote and nothing read.
+    if grep -q 'tpm2-public-key.*sealed-key.blob' "${_f}" 2>/dev/null; then
+        fail "${_name}: --tpm2-public-key still fed the bogus sealed-key.blob output path"
+    else
+        pass "${_name}: no bogus --tpm2-public-key sealed-key.blob"
+    fi
+
+    # An exit code is not evidence the token landed in the header.
+    if grep -q 'luksDump' "${_f}" 2>/dev/null && grep -q 'systemd-tpm2' "${_f}" 2>/dev/null; then
+        pass "${_name}: TPM2 enrolment is verified against the LUKS2 header"
+    else
+        fail "${_name}: TPM2 enrolment must be read back from the LUKS2 header, not assumed"
+    fi
+done
+
+printf '\n'
+msg "=== SELinux: reachable enforcing, real store, real cmdline (R13.7) ==="
+
+# The quick installer was pinned to the retired Rev12 assumptions: SELINUXTYPE=aios
+# and an enforcing guard keyed on /etc/selinux/aios/policy/policy.33 — a
+# touchplaceholder stub that only mkrootfs.sh ever made. The R13 openSUSE base
+# ships selinux-policy-targeted (/etc/selinux/targeted/policy/policy.34), so the
+# guard tested for a file this pipeline never produces and enforcing could never
+# be selected. R13.7 forbids permissive for STIG_ALIGNED / AIRGAP_HIGH.
+# Strip comments before matching: the code carries a comment explaining these
+# very defects, and a naive whole-file grep matches the explanation and reports
+# a defect that is not there.
+_qi_code="$(grep -vE '^\s*#' "${QUICK_INSTALL}" 2>/dev/null)"
+
+if printf '%s' "${_qi_code}" | grep -q 'SELINUXTYPE=aios'; then
+    fail "Quick installer still hardcodes SELINUXTYPE=aios (base ships 'targeted')"
+else
+    pass "Quick installer does not hardcode the retired 'aios' policy store"
+fi
+
+if printf '%s' "${_qi_code}" | grep -q 'selinux/aios/policy/policy\.33'; then
+    fail "Quick installer still gates enforcing on the Rev12 placeholder policy.33"
+else
+    pass "Quick installer does not gate enforcing on the Rev12 placeholder"
+fi
+
+# Must discover the real policy the same way build-aios-iso.sh does.
+if grep -q "path '\*/policy/policy\.\*'" "${QUICK_INSTALL}" 2>/dev/null; then
+    pass "Quick installer detects the real compiled policy by path"
+else
+    fail "Quick installer must detect the real compiled binary policy, not a fixed path"
+fi
+
+# The kernel takes enforcing=0|1; a bare 'permissive' token is inert.
+if printf '%s' "${_qi_code}" | grep -qE 'selinux=1 \$\{SELINUX_MODE\}'; then
+    fail "Boot entry still emits a bare SELinux mode word the kernel ignores"
+else
+    pass "Boot entry does not emit a bare SELinux mode word"
+fi
+
+if printf '%s' "${_qi_code}" | grep -q 'enforcing=1' \
+   && printf '%s' "${_qi_code}" | grep -q 'enforcing=0'; then
+    pass "Boot entry carries the real kernel parameter (enforcing=0|1)"
+else
+    fail "Boot entry must carry enforcing=0|1"
+fi
+
+printf '\n'
 msg "=== Test Summary ==="
 printf '  Passed: %d\n' "${PASSED}"
 printf '  Failed: %d\n' "${FAILED}"

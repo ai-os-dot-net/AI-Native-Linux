@@ -61,6 +61,15 @@ BASE_PACKAGES=(
     dracut
     cryptsetup
     tpm2.0-tools
+    # tpm2.0-tools pulls the tss2 stack (esys/sys/mu/rc/tctildr) but NOT a TCTI
+    # *driver*. tctildr is only the loader that goes looking for one; without a
+    # driver every TPM call dies with "TPM TCTI driver not available" even
+    # though /dev/tpm0 and /dev/tpmrm0 are present. systemd-cryptenroll then
+    # fails and the installer's warn-and-continue path hid it, so installs
+    # completed with no TPM2 token in the LUKS2 header (R13.4).
+    # Same shape as defect #12a: the tool ships, the payload does not.
+    libtss2-tcti-device0    # talks to /dev/tpm0 and /dev/tpmrm0 (real + swtpm)
+    libtss2-tcti-cmd0       # command-channel TCTI, used by swtpm/mssim setups
     device-mapper
     lvm2
     # Installer tool dependencies (distro/installer/aios-quick-install.sh
