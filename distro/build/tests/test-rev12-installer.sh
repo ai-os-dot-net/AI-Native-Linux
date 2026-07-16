@@ -279,6 +279,41 @@ for _d in proc sys dev run tmp mnt; do
 done
 
 printf '\n'
+msg "=== Immutable-root step 1: writable state lives on a separate encrypted /var ==="
+
+# A verity-protected root is read-only by construction, so every writer that
+# lives on the root today (systemd machine-id/logs, first-boot keys/evidence)
+# must move to a separate volume before verity can be enforced. Step 1 carves out
+# an encrypted /var. It must be encrypted -- a plaintext /var would put logs,
+# evidence and machine state on disk in the clear, worse than the status quo --
+# and it must be unlocked from a key on the already-unlocked root, so the whole
+# chain still hangs off the single TPM2 enrolment rather than a second one.
+if printf '%s' "${_qi_code}" | grep -q 'AIOS_VAR'; then
+    pass "Installer creates a dedicated AIOS_VAR partition"
+else
+    fail "Installer must create a separate /var partition for writable state"
+fi
+
+if printf '%s' "${_qi_code}" | grep -qE 'luksFormat[^\n]*VAR_PART|VAR_PART[^\n]*luksFormat' \
+   || printf '%s' "${_qi_code}" | grep -q 'aios-var'; then
+    pass "The /var volume is LUKS-encrypted"
+else
+    fail "/var must be encrypted, not plaintext"
+fi
+
+if printf '%s' "${_qi_code}" | grep -qE 'aios-var\s+UUID=[^ ]+\s+/etc/aios/var.key'; then
+    pass "crypttab unlocks /var from a key on the root (single TPM2 enrolment)"
+else
+    fail "/var must be unlocked by a root-resident key file, not its own TPM slot"
+fi
+
+if printf '%s' "${_qi_code}" | grep -qE '/var\s+ext4'; then
+    pass "fstab mounts the dedicated /var"
+else
+    fail "fstab must mount the separate /var volume"
+fi
+
+printf '\n'
 msg "=== SELinux: reachable enforcing, real store, real cmdline (R13.7) ==="
 
 # The quick installer was pinned to the retired Rev12 assumptions: SELINUXTYPE=aios

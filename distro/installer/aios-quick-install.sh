@@ -65,6 +65,7 @@ die() {
 
 TARGET_MOUNT="/mnt/aios-target"
 LUKS_TMP_KEYFILE="/tmp/aios-quick-luks-key.XXXXXX"
+VAR_KEYFILE=""
 SETUP_MOUNTED=0
 CHROOT_MOUNTED=0
 
@@ -87,12 +88,17 @@ cleanup_on_failure() {
         umount "${TARGET_MOUNT}/boot"     2>/dev/null || true
         umount "${TARGET_MOUNT}/recovery" 2>/dev/null || true
         umount "${TARGET_MOUNT}/var/lib/aios/rollback" 2>/dev/null || true
+        umount "${TARGET_MOUNT}/var"      2>/dev/null || true
         umount "${TARGET_MOUNT}"           2>/dev/null || true
+    fi
+    if [ -b "/dev/mapper/aios-var" ]; then
+        cryptsetup close aios-var 2>/dev/null || true
     fi
     if [ -b "/dev/mapper/aios-cryptroot" ]; then
         cryptsetup close aios-cryptroot 2>/dev/null || true
     fi
     rm -f "${LUKS_TMP_KEYFILE}" 2>/dev/null || true
+    [ -n "${VAR_KEYFILE}" ] && rm -f "${VAR_KEYFILE}" 2>/dev/null || true
 }
 
 trap 'cleanup_on_failure' ERR
@@ -175,6 +181,14 @@ validate_env() {
     RECOVERY_SIZE_MB="${AIOS_RECOVERY_SIZE_MB:-2048}"
     ROLLBACK_SIZE_MB="${AIOS_ROLLBACK_SIZE_MB:-4096}"
     HASH_SIZE_MB="${AIOS_HASH_SIZE_MB:-1024}"
+    # Root becomes a fixed size so that a separate, writable /var can take the
+    # remainder of the disk. This is step 1 of making the root immutable under
+    # dm-verity: a verity-protected root is read-only by construction, so every
+    # writer that lives on it today (systemd's machine-id and logs, first-boot's
+    # keys and evidence) has to move off it. /var is where that writable state
+    # goes. 24 GiB leaves generous room for the OS image plus a future A/B second
+    # slot; the operator can override it.
+    ROOT_SIZE_MB="${AIOS_ROOT_SIZE_MB:-24576}"
     MIN_DISK_GB="${AIOS_MIN_DISK_GB:-40}"
     SELINUX_MODE="${AIOS_SELINUX_MODE:-permissive}"
     AIOS_SQUASHFS="${AIOS_SQUASHFS:-/run/initramfs/live/aios.squashfs}"
@@ -255,7 +269,8 @@ do_partition() {
         "--new=3:0:+${RECOVERY_SIZE_MB}M" --typecode=3:8300 --change-name=3:AIOS_RECOVERY \
         "--new=4:0:+${ROLLBACK_SIZE_MB}M" --typecode=4:8300 --change-name=4:AIOS_ROLLBACK \
         "--new=5:0:+${HASH_SIZE_MB}M" --typecode=5:8300 --change-name=5:AIOS_HASH \
-        --new=6:0:0                 --typecode=6:8309 --change-name=6:AIOS_LUKS \
+        "--new=6:0:+${ROOT_SIZE_MB}M" --typecode=6:8309 --change-name=6:AIOS_LUKS \
+        --new=7:0:0                 --typecode=7:8309 --change-name=7:AIOS_VAR \
         "${TARGET_DISK}" || die "Partition creation failed" 4
 
     partprobe "${TARGET_DISK}" 2>/dev/null || true
@@ -275,12 +290,13 @@ do_partition() {
     ROOT_HASH_PART="${TARGET_DISK}${_suffix}5"
     ROOT_HASH_DEV="${ROOT_HASH_PART}"
     LUKS_PART="${TARGET_DISK}${_suffix}6"
+    VAR_PART="${TARGET_DISK}${_suffix}7"
 
-    for _p in "${ESP_PART}" "${BOOT_PART}" "${RECOVERY_PART}" "${ROLLBACK_PART}" "${ROOT_HASH_PART}" "${LUKS_PART}"; do
+    for _p in "${ESP_PART}" "${BOOT_PART}" "${RECOVERY_PART}" "${ROLLBACK_PART}" "${ROOT_HASH_PART}" "${LUKS_PART}" "${VAR_PART}"; do
         lsblk -n "${_p}" >/dev/null 2>&1 || die "Partition ${_p} not created" 4
     done
 
-    msg "Partitions: ESP=${ESP_PART} BOOT=${BOOT_PART} RECOVERY=${RECOVERY_PART} ROLLBACK=${ROLLBACK_PART} HASH=${ROOT_HASH_PART} LUKS=${LUKS_PART}"
+    msg "Partitions: ESP=${ESP_PART} BOOT=${BOOT_PART} RECOVERY=${RECOVERY_PART} ROLLBACK=${ROLLBACK_PART} HASH=${ROOT_HASH_PART} LUKS=${LUKS_PART} VAR=${VAR_PART}"
 }
 
 # ── Filesystems ───────────────────────────────────────────────────────────────
@@ -367,6 +383,32 @@ do_encryption() {
     mkfs.ext4 -q -L aios-root "${LUKS_MAPPER}" || die "mkfs.ext4 root failed" 6
 
     msg "LUKS2 container opened at ${LUKS_MAPPER}"
+
+    # /var is a separate encrypted volume, unlocked at boot by a key file that
+    # lives on the (encrypted, and later verity-protected) root — not by its own
+    # TPM enrolment. One TPM2 slot unlocks the root; the root then carries the
+    # key that unlocks /var. Leaving /var in the clear would put logs, evidence
+    # and machine state on disk unencrypted, which is worse than today.
+    VAR_KEYFILE="$(mktemp /tmp/aios-quick-var-key.XXXXXX)"
+    dd if=/dev/urandom of="${VAR_KEYFILE}" bs=64 count=1 status=none || die "var keygen failed" 5
+    chmod 600 "${VAR_KEYFILE}"
+
+    cryptsetup luksFormat --type luks2 \
+        --pbkdf argon2id \
+        --pbkdf-memory 1048576 \
+        --pbkdf-parallel 4 \
+        --pbkdf-force-iterations 4 \
+        --key-file "${VAR_KEYFILE}" \
+        --batch-mode \
+        "${VAR_PART}" || die "LUKS2 format of /var failed" 5
+
+    cryptsetup open --key-file "${VAR_KEYFILE}" \
+        "${VAR_PART}" aios-var || die "LUKS open of /var failed" 5
+
+    VAR_MAPPER="/dev/mapper/aios-var"
+    mkfs.ext4 -q -L aios-var "${VAR_MAPPER}" || die "mkfs.ext4 /var failed" 6
+
+    msg "Encrypted /var opened at ${VAR_MAPPER}"
 }
 
 # ── Mount + extract rootfs ────────────────────────────────────────────────────
@@ -392,6 +434,20 @@ do_deploy() {
     msg "Extracting squashfs (${AIOS_SQUASHFS})..."
     unsquashfs -f -d "${TARGET_MOUNT}" "${AIOS_SQUASHFS}" || die "unsquashfs failed" 7
 
+    # Move the image's /var onto the dedicated encrypted volume, then mount it
+    # there. The base ships a populated /var (rpm database, journal skeleton,
+    # subvolumes); mounting an empty partition straight over it would hide all of
+    # that from the running system. cp -a preserves ownership, modes and the
+    # SELinux/xattr labels the policy relies on. This must happen before the
+    # rollback mount below, which lands *inside* /var.
+    local _var_stage="/mnt/aios-var-stage"
+    mkdir -p "${_var_stage}"
+    mount -t ext4 -o rw,noatime "${VAR_MAPPER}" "${_var_stage}" || die "var stage mount failed" 7
+    cp -a "${TARGET_MOUNT}/var/." "${_var_stage}/" || die "seeding /var failed" 7
+    umount "${_var_stage}" || die "var stage unmount failed" 7
+    rmdir "${_var_stage}" 2>/dev/null || true
+    mount -t ext4 -o rw,noatime "${VAR_MAPPER}" "${TARGET_MOUNT}/var" || die "var mount failed" 7
+
     mkdir -p "${TARGET_MOUNT}/recovery" "${TARGET_MOUNT}/var/lib/aios/rollback"
     mount -t ext4 -o defaults,noatime "${RECOVERY_PART}" "${TARGET_MOUNT}/recovery" \
         || die "Recovery mount failed" 7
@@ -406,17 +462,30 @@ do_deploy() {
 do_configure() {
     info "=== Generating system configuration ==="
 
-    local _root_uuid _boot_uuid _esp_uuid _recovery_uuid _rollback_uuid _luks_uuid
+    local _root_uuid _boot_uuid _esp_uuid _recovery_uuid _rollback_uuid _luks_uuid _var_luks_uuid _var_fs_uuid
     _root_uuid=$(blkid -s UUID -o value "${LUKS_MAPPER}" 2>/dev/null || echo "")
     _boot_uuid=$(blkid -s UUID -o value "${BOOT_PART}" 2>/dev/null || echo "")
     _esp_uuid=$(blkid -s UUID -o value "${ESP_PART}" 2>/dev/null || echo "")
     _recovery_uuid=$(blkid -s UUID -o value "${RECOVERY_PART}" 2>/dev/null || echo "")
     _rollback_uuid=$(blkid -s UUID -o value "${ROLLBACK_PART}" 2>/dev/null || echo "")
     _luks_uuid=$(blkid -s UUID -o value "${LUKS_PART}" 2>/dev/null || echo "")
+    _var_luks_uuid=$(blkid -s UUID -o value "${VAR_PART}" 2>/dev/null || echo "")
+    _var_fs_uuid=$(blkid -s UUID -o value "${VAR_MAPPER}" 2>/dev/null || echo "")
 
     if [ -z "${_root_uuid}" ] || [ -z "${_luks_uuid}" ] || [ -z "${_recovery_uuid}" ] || [ -z "${_rollback_uuid}" ]; then
         die "UUID read failed" 1
     fi
+    if [ -z "${_var_luks_uuid}" ] || [ -z "${_var_fs_uuid}" ]; then
+        die "var UUID read failed" 1
+    fi
+
+    # The key that unlocks /var. It lives on the root filesystem, which is itself
+    # encrypted (and, once verity lands, read-only and attested). crypttab
+    # unlocks aios-var with this file after the TPM has unlocked the root, so the
+    # whole chain still hangs off the single TPM2 enrolment.
+    mkdir -p "${TARGET_MOUNT}/etc/aios"
+    install -m 0400 "${VAR_KEYFILE}" "${TARGET_MOUNT}/etc/aios/var.key" \
+        || die "installing /var key onto the root failed" 6
 
     # /etc/fstab
     cat > "${TARGET_MOUNT}/etc/fstab" <<FSTAB
@@ -424,6 +493,7 @@ do_configure() {
 UUID=${_root_uuid}    /         ext4    rw,noatime,discard,errors=remount-ro  0 1
 UUID=${_boot_uuid}    /boot     ext4    defaults,noatime                      0 2
 UUID=${_esp_uuid}     /boot/efi vfat    defaults,noatime,umask=0077           0 2
+UUID=${_var_fs_uuid}  /var      ext4    rw,noatime,nodev,nosuid               0 2
 UUID=${_recovery_uuid} /recovery ext4    defaults,noatime,nodev,nosuid         0 2
 UUID=${_rollback_uuid} /var/lib/aios/rollback ext4 defaults,noatime,nodev,nosuid 0 2
 tmpfs                 /tmp      tmpfs   defaults,noexec,nosuid,nodev,size=2G  0 0
@@ -431,9 +501,13 @@ FSTAB
     chmod 644 "${TARGET_MOUNT}/etc/fstab"
 
     # /etc/crypttab
+    # /var is unlocked by the key file on the (already-unlocked) root, not by the
+    # TPM directly. Its crypttab line therefore names a key path rather than
+    # "none"; systemd-cryptsetup orders it after the root is available.
     cat > "${TARGET_MOUNT}/etc/crypttab" <<CRYPTTAB
 # AI-OS.NET crypttab — CI-generated (${AIOS_BUILD_ID})
-aios-cryptroot   UUID=${_luks_uuid}   none   luks,discard,tpm2-device=auto
+aios-cryptroot   UUID=${_luks_uuid}       none               luks,discard,tpm2-device=auto
+aios-var         UUID=${_var_luks_uuid}   /etc/aios/var.key  luks,discard
 CRYPTTAB
     chmod 600 "${TARGET_MOUNT}/etc/crypttab"
 
@@ -616,6 +690,19 @@ do_initramfs() {
         warn "tpm2 binary in target: $(test -x "${TARGET_MOUNT}/usr/bin/tpm2" && echo present || echo MISSING)"
     fi
 
+    # Fail closed on a key leak. The initramfs lands on /boot, which is NOT
+    # encrypted. /var's key file lives on the encrypted root precisely so it is
+    # never on unencrypted media — but dracut --hostonly reads the whole
+    # /etc/crypttab, and if it decided to embed the aios-var key to unlock /var
+    # early, that key would sit in the clear on /boot and the /var encryption
+    # would be worthless. /var is not on the path to root, so dracut should not
+    # pull it in; this asserts that rather than trusting it. Checked before the
+    # size gate so a leak is reported even on an otherwise valid image.
+    if chroot "${TARGET_MOUNT}" lsinitrd /boot/initramfs-aios.img 2>/dev/null \
+        | grep -qE "etc/aios/var\.key|/cryptsetup-keys.d/aios-var"; then
+        die "SECURITY: dracut embedded the /var key into the unencrypted /boot initramfs" 9
+    fi
+
     umount_chroot
 
     # Fail closed: dracut can exit 0 and still leave a useless image. A real
@@ -738,13 +825,18 @@ do_bootloader() {
     # serial line hard enough to threaten the phase-2 timeout.
     local _verbosity="quiet loglevel=3"
     case "${PROFILE}" in
-        # log_target=console is the load-bearing half. systemd.log_level=debug
-        # alone routes to the journal, which dies with the initrd and never
-        # reaches the serial line -- the debug run produced 1133 lines that
-        # mentioned initrd-switch-root.service exactly zero times, while the
-        # service was demonstrably failing six times over.
-        CI_BARE) _verbosity="loglevel=7 systemd.show_status=yes systemd.log_level=debug systemd.log_target=console" ;;
+        # systemd.log_level=debug is deliberately NOT here. It routes to the
+        # journal, so surfacing it needs systemd.log_target=console too, and that
+        # pair floods ~10k lines through a 115200-baud serial console -- enough
+        # to push a 10s boot past the 240s phase-2 gate timeout on wall-clock
+        # alone, a false red. It earned its keep once (it found the missing /run
+        # by naming initrd-switch-root's exact failure) and is left as a
+        # documented opt-in via AIOS_DEBUG rather than always on.
+        CI_BARE) _verbosity="loglevel=7 systemd.show_status=yes" ;;
     esac
+    if [ "${AIOS_DEBUG:-0}" = "1" ]; then
+        _verbosity="${_verbosity} systemd.log_level=debug systemd.log_target=console"
+    fi
 
     local _entries_dir="${TARGET_MOUNT}/boot/efi/loader/entries"
     mkdir -p "${_entries_dir}"
@@ -1063,18 +1155,24 @@ do_finalize() {
     info "=== Finalizing ==="
     sync
 
-    if [ -f "${LUKS_TMP_KEYFILE}" ]; then
-        dd if=/dev/urandom of="${LUKS_TMP_KEYFILE}" bs=64 count=1 status=none 2>/dev/null || true
-        rm -f "${LUKS_TMP_KEYFILE}"
-    fi
+    for _kf in "${LUKS_TMP_KEYFILE}" "${VAR_KEYFILE}"; do
+        if [ -n "${_kf}" ] && [ -f "${_kf}" ]; then
+            dd if=/dev/urandom of="${_kf}" bs=64 count=1 status=none 2>/dev/null || true
+            rm -f "${_kf}"
+        fi
+    done
 
     umount "${TARGET_MOUNT}/boot/efi" 2>/dev/null || true
     umount "${TARGET_MOUNT}/boot"     2>/dev/null || true
     umount "${TARGET_MOUNT}/recovery" 2>/dev/null || true
     umount "${TARGET_MOUNT}/var/lib/aios/rollback" 2>/dev/null || true
+    umount "${TARGET_MOUNT}/var"      2>/dev/null || true
     umount "${TARGET_MOUNT}"           2>/dev/null || true
     SETUP_MOUNTED=0
 
+    if [ -b "/dev/mapper/aios-var" ]; then
+        cryptsetup close aios-var 2>/dev/null || true
+    fi
     if [ -b "/dev/mapper/aios-cryptroot" ]; then
         cryptsetup close aios-cryptroot 2>/dev/null || true
     fi
