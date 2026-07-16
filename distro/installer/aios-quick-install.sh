@@ -591,9 +591,13 @@ do_initramfs() {
     # depends() self-disable on unmet conditions). The whole point of enrolling
     # a TPM2 token is an unattended boot, so verify the stack is really in the
     # image instead of discovering it as a passphrase prompt at boot.
-    if chroot "${TARGET_MOUNT}" lsinitrd /boot/initramfs-aios.img 2>/dev/null \
-        | grep -qi "libtss2-tcti-device\|tpm2"; then
-        msg "initramfs carries the TPM2 stack (unattended LUKS unlock possible)."
+    # Ask dracut what it did, not lsinitrd what it can see. The obvious check --
+    # `lsinitrd <img> | grep tpm2` -- reports NO TPM2 stack on an image that
+    # demonstrably has one: the same build it condemned went on to unlock the
+    # volume from the TPM with zero passphrase prompts. A check that cries wolf
+    # gets ignored, which is how a real one gets missed.
+    if grep -aq "Including module: tpm2-tss" "${_dracut_log}" 2>/dev/null; then
+        msg "initramfs carries the TPM2 stack (dracut: Including module: tpm2-tss)."
     else
         warn "initramfs has NO TPM2 stack — boot will stop at a passphrase prompt."
         # dracut's own decisions are the ground truth about why. 90crypt only
@@ -688,12 +692,20 @@ do_bootloader() {
     # on server hardware, so it is unconditional; tty0 keeps the local display.
     local _console_params="console=tty0 console=ttyS0,115200n8"
 
-    # Belt and braces. do_initramfs builds the image --hostonly, so the TPM2
-    # path is pulled in from /etc/crypttab and this option is not what makes the
-    # unlock work. It is kept because rd.luks.uuid= on this same cmdline lets
-    # dracut assemble the device without consulting crypttab, and in that path
-    # the options must be stated explicitly.
-    local _luks_options="rd.luks.options=tpm2-device=auto"
+    # rd.luks.name=<uuid>=<name>, NOT rd.luks.uuid=<uuid>.
+    #
+    # rd.luks.uuid= assembles the volume under dracut's default name,
+    # /dev/mapper/luks-<uuid>, ignoring the name /etc/crypttab gives it. The
+    # loader entry below asks for root=/dev/mapper/aios-cryptroot, so the two
+    # never met: the volume unlocked correctly and unattended, systemd logged
+    # "Finished Cryptography Setup for luks-e75269b0-...", and the initqueue then
+    # sat waiting for /dev/mapper/aios-cryptroot until it timed out into the
+    # dracut emergency shell. The disk was open the whole time under a name
+    # nothing was looking for.
+    #
+    # rd.luks.name= states the mapping explicitly, so the device that appears is
+    # the device root= asks for.
+    local _luks_options="rd.luks.name=${_luks_uuid}=aios-cryptroot rd.luks.options=tpm2-device=auto"
 
     # CI_BARE must be observable: `quiet` makes systemd suppress its status
     # lines, so "Reached target ..." — the only marker a running OS can emit
@@ -711,7 +723,7 @@ do_bootloader() {
 title   AI-OS.NET ${AIOS_VERSION} (CI)
 linux   /vmlinuz-aios
 initrd  /initramfs-aios.img
-options root=/dev/mapper/aios-cryptroot rd.luks.uuid=${_luks_uuid} ${_luks_options} ${_root_mode} ${_console_params} ${_verbosity} ${_selinux_params}${_verity_params}
+options root=/dev/mapper/aios-cryptroot ${_luks_options} ${_root_mode} ${_console_params} ${_verbosity} ${_selinux_params}${_verity_params}
 LOADER
     chmod 644 "${_entries_dir}/aios.conf"
 

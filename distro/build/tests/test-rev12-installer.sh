@@ -202,6 +202,35 @@ else
 fi
 
 printf '\n'
+msg "=== The unlocked volume must appear under the name root= asks for ==="
+
+# rd.luks.uuid=<uuid> assembles the volume as /dev/mapper/luks-<uuid>, ignoring
+# the name /etc/crypttab gives it, while the loader entry asked for
+# root=/dev/mapper/aios-cryptroot. The volume unlocked from the TPM correctly and
+# unattended -- "Finished Cryptography Setup for luks-e75269b0-..." -- and the
+# initqueue then waited out its timeout for a device name that was never going to
+# appear, landing in the dracut emergency shell. The disk was open the whole time.
+if printf '%s' "${_qi_code}" | grep -q 'rd.luks.uuid='; then
+    fail "Loader entry uses rd.luks.uuid=, which names the device luks-<uuid>, not the name root= asks for"
+else
+    pass "Loader entry does not use rd.luks.uuid= (it names the device wrong)"
+fi
+
+if printf '%s' "${_qi_code}" | grep -q 'rd.luks.name=.*=aios-cryptroot'; then
+    pass "Loader entry maps the LUKS UUID to aios-cryptroot explicitly"
+else
+    fail "Loader entry must use rd.luks.name=<uuid>=aios-cryptroot so the device matches root="
+fi
+
+# The two must agree. A test that checks each in isolation would pass a system
+# where someone changed one of them.
+if printf '%s' "${_qi_code}" | grep -q 'root=/dev/mapper/aios-cryptroot'; then
+    pass "root= and the rd.luks.name mapping name the same device"
+else
+    fail "root= must name the same device rd.luks.name creates"
+fi
+
+printf '\n'
 msg "=== SELinux: reachable enforcing, real store, real cmdline (R13.7) ==="
 
 # The quick installer was pinned to the retired Rev12 assumptions: SELINUXTYPE=aios
