@@ -231,6 +231,34 @@ else
 fi
 
 printf '\n'
+msg "=== dm-verity: no invented kernel parameters, no false claims ==="
+
+# " verity dm_verity.roothash=<hash>" was emitted onto the kernel cmdline and both
+# tokens were invented. Nothing in the base reads dm_verity.roothash (zero hits
+# across /usr/lib/dracut), and the kernel's verdict on the bare word is "Unknown
+# kernel command line parameters "verity", will be passed to user space" -- so it
+# reached init as an argument. They bought no protection and were not harmless.
+if printf '%s' "${_qi_code}" | grep -q 'dm_verity\.roothash='; then
+    fail "Installer still emits dm_verity.roothash= — no code in the base reads it"
+else
+    pass "Installer emits no invented dm_verity.roothash= parameter"
+fi
+
+if printf '%s' "${_qi_code}" | grep -qE '_verity_params=" verity'; then
+    fail "Installer still emits the bare 'verity' token — the kernel passes it to init as an argument"
+else
+    pass "Installer emits no bare 'verity' cmdline token"
+fi
+
+# The stored policy must describe what exists. It claimed fail_on_corruption:true
+# for a check that was never wired up -- and a policy file is what an audit reads.
+if printf '%s' "${_qi_code}" | grep -q '"fail_on_corruption": true'; then
+    fail "verity policy claims fail_on_corruption while no boot-time check reads the hash"
+else
+    pass "verity policy does not claim enforcement that is not wired up"
+fi
+
+printf '\n'
 msg "=== SELinux: reachable enforcing, real store, real cmdline (R13.7) ==="
 
 # The quick installer was pinned to the retired Rev12 assumptions: SELINUXTYPE=aios

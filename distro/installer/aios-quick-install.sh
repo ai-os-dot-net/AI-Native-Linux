@@ -667,8 +667,24 @@ do_bootloader() {
         local _roothash
         _roothash=$(head -n1 "${TARGET_MOUNT}/etc/aios/verity/roothash.sig" | tr -d '[:space:]')
         if [ -n "${_roothash}" ]; then
+            # Root stays read-only: that part is real and independent of verity.
+            #
+            # What is NOT emitted any more is " verity dm_verity.roothash=<hash>".
+            # Both tokens were invented. Nothing in this base reads
+            # dm_verity.roothash -- grep across the whole of /usr/lib/dracut finds
+            # zero references -- and the kernel's own verdict on the bare word is
+            # "Unknown kernel command line parameters \"verity\", will be passed to
+            # user space", which hands it to init as an argument. So they bought no
+            # protection and were not inert either.
+            #
+            # dm-verity is therefore COMPUTED BUT NOT ENFORCED: do_verity builds a
+            # real hash tree and stores the root hash, and no boot-time check ever
+            # consults it. The base does ship the real mechanism
+            # (dracut's 01systemd-veritysetup, driven by veritytab /
+            # systemd.verity_root_hash=), but wiring it up means putting the verity
+            # device between LUKS and root=, which is a design change rather than a
+            # parameter fix. Until that lands, do not claim verity is enforced.
             _root_mode="ro"
-            _verity_params=" verity dm_verity.roothash=${_roothash}"
         fi
     fi
 
@@ -905,18 +921,27 @@ do_verity() {
     fi
 
     chmod 400 "${_roothash_file}"
+    # This file describes what exists, not what we wish existed. It used to claim
+    # "cmdline_parameter": "dm_verity.roothash" and "fail_on_corruption": true.
+    # Neither was true: nothing in the base reads dm_verity.roothash (zero hits
+    # across /usr/lib/dracut), so no boot-time check consulted the hash and
+    # nothing could fail on corruption. A policy file asserting a protection that
+    # is not wired up is worse than no file -- it is what an audit reads.
     cat > "${TARGET_MOUNT}/etc/aios/verity/rootfs-policy.json" <<EOF
 {
   "schema": "aios.dm_verity_policy.v1",
   "revision": 12,
   "root_hash": "/etc/aios/verity/roothash.sig",
   "hash_partition": "${ROOT_HASH_PART}",
-  "cmdline_parameter": "dm_verity.roothash",
-  "fail_on_corruption": true
+  "enforced_at_boot": false,
+  "fail_on_corruption": false,
+  "status": "COMPUTED_NOT_ENFORCED",
+  "note": "Hash tree is real and stored. No boot-time verification consults it yet. Enforcing requires wiring dracut's 01systemd-veritysetup (veritytab / systemd.verity_root_hash=), which places the verity device between LUKS and root=."
 }
 EOF
     chmod 644 "${TARGET_MOUNT}/etc/aios/verity/rootfs-policy.json"
-    msg "dm-verity root hash stored at ${_roothash_file}."
+    msg "dm-verity hash tree built and root hash stored at ${_roothash_file}."
+    warn "dm-verity is COMPUTED BUT NOT ENFORCED — no boot-time check reads the root hash."
     return 0
 }
 
