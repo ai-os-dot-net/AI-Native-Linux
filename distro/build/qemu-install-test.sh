@@ -58,6 +58,11 @@ DRY_RUN=false
 USE_KVM=false
 USE_SWTPM=false
 KEEP_DISK=false
+# Phase 3: after a clean install+boot, corrupt the encrypted root and boot again.
+# A real dm-verity root MUST refuse to reach multi-user (panic-on-corruption). If
+# it boots, verity is decoration regardless of any policy file. Opt-in because it
+# needs qemu-nbd (root) to reach the qcow2's block layout.
+VERITY_TAMPER_TEST=false
 
 usage() {
     cat <<'EOF'
@@ -134,6 +139,7 @@ while [ "$#" -gt 0 ]; do
         --disk)          [ "$#" -ge 2 ] || die "--disk requires a path"; DISK_PATH="$2"; shift 2 ;;
         --disk-size)     [ "$#" -ge 2 ] || die "--disk-size requires a size"; DISK_SIZE="$2"; shift 2 ;;
         --keep-disk)     KEEP_DISK=true; shift ;;
+        --verity-tamper-test) VERITY_TAMPER_TEST=true; KEEP_DISK=true; shift ;;
         --uefi)          shift ;; # phase 2 is always UEFI; accepted for clarity
         --ovmf-code)     [ "$#" -ge 2 ] || die "--ovmf-code requires a path"; OVMF_CODE="$2"; shift 2 ;;
         --ovmf-vars)     [ "$#" -ge 2 ] || die "--ovmf-vars requires a path"; OVMF_VARS_SRC="$2"; shift 2 ;;
@@ -485,6 +491,94 @@ if ! log_contains_any "${BOOT_LOG}" "${BOOT_SUCCESS_MARKERS[@]}"; then
     esac
 fi
 info "PASS phase 2: installed-boot marker found: ${MATCHED_MARKER}"
+
+# --- Phase 3: dm-verity tamper acceptance (opt-in) ----------------------------
+# Corrupt the dm-verity HASH TREE (the AIOS_HASH partition, p5) and boot again.
+# p5 is read by NOTHING but the kernel dm-verity target: at open, veritysetup
+# recomputes the tree root and compares it to roothash= on the cmdline, so a
+# corrupted tree makes the verity device fail to open and the boot cannot reach
+# the real root — it drops to the initramfs emergency shell. This is the clean,
+# unambiguous proof: a system that merely *ships* verity metadata but does not
+# ENFORCE it would ignore p5 and boot to multi-user unchanged. Reaching
+# multi-user here therefore proves verity is decoration; failing to proves it is
+# enforced. (Corrupting the ext4 data instead is ambiguous — a bad superblock
+# also stops ext4 without verity ever being consulted.)
+if ${VERITY_TAMPER_TEST}; then
+    info "=== Phase 3: dm-verity tamper acceptance — corrupt the hash tree, it MUST refuse to boot ==="
+    TAMPER_LOG="${OUT_DIR}/qemu-install-phase3-tamper.log"
+    : > "${TAMPER_LOG}"
+
+    command -v qemu-nbd >/dev/null 2>&1 || die "tamper test needs qemu-nbd (not found)"
+    modprobe nbd max_part=16 2>/dev/null || true
+
+    TAMPER_NBD=""
+    for _n in /dev/nbd0 /dev/nbd1 /dev/nbd2 /dev/nbd3; do
+        [ -b "${_n}" ] || continue
+        if qemu-nbd --connect="${_n}" -f qcow2 "${DISK_PATH}" 2>/dev/null; then
+            TAMPER_NBD="${_n}"; break
+        fi
+    done
+    [ -n "${TAMPER_NBD}" ] || die "tamper test: qemu-nbd could not connect (nbd unavailable) — verity enforcement UNPROVEN"
+
+    # Force the kernel to (re)read the partition table; the nbd module is often
+    # already loaded without max_part, so per-partition nodes may be absent.
+    partprobe "${TAMPER_NBD}" 2>/dev/null || blockdev --rereadpt "${TAMPER_NBD}" 2>/dev/null || true
+    udevadm settle 2>/dev/null || sleep 1
+
+    # Find the AIOS_HASH partition START from the whole-disk table (no partition
+    # node needed). `sfdisk -d` prints lines like:
+    #   /dev/nbd0p5 : start=  1234, size=..., type=..., name="AIOS_HASH"
+    TAMPER_HASH_START="$(sfdisk -d "${TAMPER_NBD}" 2>/dev/null \
+        | awk -F'[ ,=]+' '/name="AIOS_HASH"/ {for(i=1;i<=NF;i++) if($i=="start"){print $(i+1); exit}}')"
+    case "${TAMPER_HASH_START}" in
+        ''|*[!0-9]*)
+            qemu-nbd --disconnect "${TAMPER_NBD}" 2>/dev/null || true
+            die "tamper test: could not locate AIOS_HASH partition start on ${TAMPER_NBD}" ;;
+    esac
+
+    # Corrupt 64 KiB starting 8 KiB into p5. veritysetup writes a verity
+    # superblock at offset 0 then the hash tree; 8 KiB in lands inside the tree
+    # (upper levels), so the recomputed root no longer matches roothash= and the
+    # verity device refuses to open.
+    TAMPER_SEEK=$(( TAMPER_HASH_START + 16 ))   # +16 sectors = +8 KiB
+    info "tamper: corrupting 64KiB of ${TAMPER_NBD} at disk sector ${TAMPER_SEEK} (hash_start=${TAMPER_HASH_START}; dm-verity hash tree p5)"
+    if ! dd if=/dev/urandom of="${TAMPER_NBD}" bs=512 seek="${TAMPER_SEEK}" count=128 \
+            conv=notrunc,fsync status=none; then
+        qemu-nbd --disconnect "${TAMPER_NBD}" 2>/dev/null || true
+        die "tamper test: dd corruption write failed"
+    fi
+    sync
+    qemu-nbd --disconnect "${TAMPER_NBD}" 2>/dev/null || true
+
+    # Boot the corrupted disk through the same chain (TPM unlocks LUKS, then
+    # veritysetup tries to open /dev/mapper/root against the tampered tree).
+    ensure_swtpm
+    TAMPER_SAVED_BOOT_LOG="${BOOT_LOG}"
+    BOOT_LOG="${TAMPER_LOG}"
+    build_phase2_cmd
+    BOOT_LOG="${TAMPER_SAVED_BOOT_LOG}"
+    print_command "phase3-tamper-boot" "${QEMU_CMD[@]}"
+    set +e
+    timeout "${BOOT_TIMEOUT}" "${QEMU_CMD[@]}"
+    set -e
+
+    # A tampered hash tree is verity-exclusive, so ANY failure to reach the real
+    # root is verity enforcement. Reaching multi-user is the only failure mode.
+    if log_contains_any "${TAMPER_LOG}" 'Reached target.*Multi-User'; then
+        die "TAMPER FAIL: the corrupted hash tree still reached multi-user — dm-verity is DECORATION (${TAMPER_LOG})"
+    fi
+    # Corroborate that the boot genuinely stalled at the verity/root stage rather
+    # than dying at some unrelated point, so a false green cannot slip through.
+    if log_contains_any "${TAMPER_LOG}" \
+        'verity:.*corrupt' 'dm-verity device corrupted' 'data block .* is corrupted' \
+        'verification failed' 'Kernel panic.*verity' \
+        '/dev/mapper/root does not exist' 'Entering emergency mode' \
+        'Dependency failed for.*Verity' 'Timed out waiting for device.*mapper.*root'; then
+        info "PASS phase 3: the tampered verity hash tree blocked the boot before the real root (${MATCHED_MARKER})"
+    else
+        die "TAMPER INCONCLUSIVE: corrupted hash tree did not reach multi-user, but no verity/root-stage failure marker in ${TAMPER_LOG}"
+    fi
+fi
 
 RUN_OK=1
 info "SUCCESS: install gate passed (logs: ${INSTALL_LOG}, ${BOOT_LOG})"

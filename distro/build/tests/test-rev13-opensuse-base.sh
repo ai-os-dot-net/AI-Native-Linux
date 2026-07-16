@@ -119,6 +119,11 @@ check_grep "Builder detects zypper false success output" "${OPENSUSE_BUILDER}" '
 check_grep "Builder verifies repo file after addrepo" "${OPENSUSE_BUILDER}" 'zypper did not create repository file'
 check_grep "Builder skips invalid Leap 16 update repo" "${OPENSUSE_BUILDER}" 'has no dedicated update repo'
 check_grep "Builder includes vendor kernel" "${OPENSUSE_BUILDER}" 'kernel-default'
+# dm-verity is CONFIG_DM_VERITY=m but its .ko ships ONLY in kernel-default-extra
+# for the -default flavor (not kernel-default, not kernel-default-optional). The
+# immutable (verity) root boots with "verity: unknown target type" without it.
+check_grep "Builder includes kernel-default-extra for dm-verity.ko" "${OPENSUSE_BUILDER}" 'kernel-default-extra'
+check_grep "Builder fails closed if dm-verity.ko is absent" "${OPENSUSE_BUILDER}" 'kernel-default-extra missing or wrong version'
 check_grep "Builder includes Leap 16 firmware package" "${OPENSUSE_BUILDER}" 'kernel-firmware-all'
 check_absent "Builder does not require removed systemd-sysvinit package" "${OPENSUSE_BUILDER}" 'systemd-sysvinit'
 check_grep "Builder includes secure boot tooling" "${OPENSUSE_BUILDER}" 'shim'

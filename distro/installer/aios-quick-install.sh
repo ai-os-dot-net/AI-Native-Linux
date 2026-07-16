@@ -68,6 +68,11 @@ LUKS_TMP_KEYFILE="/tmp/aios-quick-luks-key.XXXXXX"
 VAR_KEYFILE=""
 SETUP_MOUNTED=0
 CHROOT_MOUNTED=0
+# do_verity computes the dm-verity root hash and stores it HERE (a shell global),
+# not in a file on the verity-protected root. do_bootloader reads it from this
+# variable to build the loader cmdline. Writing the hash into the root would
+# change the root after it was hashed and trip panic-on-corruption at boot.
+ROOT_HASH_VALUE=""
 
 # Unmount the pseudo-filesystems bound into the target for the dracut chroot.
 # Order matters: /dev last, since the others may be busy while it is bound.
@@ -193,6 +198,21 @@ validate_env() {
     SELINUX_MODE="${AIOS_SELINUX_MODE:-permissive}"
     AIOS_SQUASHFS="${AIOS_SQUASHFS:-/run/initramfs/live/aios.squashfs}"
 
+    # dm-verity is enforced by default. Enforcement means the loader entry sets
+    # root= to the verity device and hands systemd the root hash, so the kernel's
+    # dm-verity target refuses to hand out corrupted blocks (panic-on-corruption).
+    # AIOS_SKIP_VERITY=1 turns the whole feature off (do_verity returns early and
+    # the loader boots the plain LUKS root read-write, as before). This single
+    # flag drives every verity-conditional branch below (fstab root mode, crypttab
+    # /var handling, the /etc overlay, and the loader cmdline) so they can never
+    # disagree — a half-enforced root that claims verity but does not boot it is
+    # exactly the false-green class this installer keeps being bitten by.
+    if [ "${AIOS_SKIP_VERITY:-0}" = "1" ]; then
+        VERITY_ENFORCE=0
+    else
+        VERITY_ENFORCE=1
+    fi
+
     if [ ! -f "${AIOS_SQUASHFS}" ]; then
         # Path probes, in order: our initramfs mounts the live ISO at
         # /run/initramfs/live-media (distro/aios-boot/initramfs/init,
@@ -245,7 +265,15 @@ validate_env() {
 
     # Tool check. dracut is required because the rootfs ships no prebuilt
     # initramfs (zypper --root runs no kernel hooks) — do_initramfs builds it.
-    for _bin in lsblk sgdisk mkfs.vfat mkfs.ext4 cryptsetup dmsetup unsquashfs bootctl blkid dracut; do
+    local _required_tools="lsblk sgdisk mkfs.vfat mkfs.ext4 cryptsetup dmsetup unsquashfs bootctl blkid dracut"
+    # veritysetup is a hard requirement when verity is enforced: without it
+    # do_verity cannot build the hash tree, and a loader entry already committed
+    # to root=/dev/mapper/root would then be unbootable. Fail here, early, rather
+    # than at boot.
+    if [ "${VERITY_ENFORCE}" = "1" ]; then
+        _required_tools="${_required_tools} veritysetup"
+    fi
+    for _bin in ${_required_tools}; do
         if ! command -v "${_bin}" >/dev/null 2>&1; then
             die "Missing required tool: ${_bin}" 2
         fi
@@ -487,10 +515,25 @@ do_configure() {
     install -m 0400 "${VAR_KEYFILE}" "${TARGET_MOUNT}/etc/aios/var.key" \
         || die "installing /var key onto the root failed" 6
 
+    # The root line depends on whether verity is enforced. Under verity the
+    # running root device is the read-only /dev/mapper/root the systemd verity
+    # generator creates (NOT the LUKS mapper) — it is mounted read-only by the
+    # initramfs and must be listed read-only here so systemd adopts it without
+    # attempting a remount-rw that a verity device refuses. fsck pass is 0: the
+    # image is immutable and hash-verified, and e2fsck against a read-only verity
+    # target is pointless. Without verity the root is the plain LUKS mapper,
+    # read-write, as before.
+    local _root_fstab
+    if [ "${VERITY_ENFORCE}" = "1" ]; then
+        _root_fstab="/dev/mapper/root      /         ext4    ro,noatime                            0 0"
+    else
+        _root_fstab="UUID=${_root_uuid}    /         ext4    rw,noatime,discard,errors=remount-ro  0 1"
+    fi
+
     # /etc/fstab
     cat > "${TARGET_MOUNT}/etc/fstab" <<FSTAB
 # AI-OS.NET fstab — CI-generated (${AIOS_BUILD_ID})
-UUID=${_root_uuid}    /         ext4    rw,noatime,discard,errors=remount-ro  0 1
+${_root_fstab}
 UUID=${_boot_uuid}    /boot     ext4    defaults,noatime                      0 2
 UUID=${_esp_uuid}     /boot/efi vfat    defaults,noatime,umask=0077           0 2
 UUID=${_var_fs_uuid}  /var      ext4    rw,noatime,nodev,nosuid               0 2
@@ -567,7 +610,161 @@ EOF
 EOF
     chmod 600 "${TARGET_MOUNT}/var/lib/aios/rollback/current.json"
 
+    stage_etc_overlay_module
+
     msg "System configuration written."
+}
+
+# ── Writable /etc overlay for the read-only verity root ───────────────────────
+#
+# A verity root is read-only by construction, so every process that writes /etc
+# at boot (systemd-sysusers, systemd-tmpfiles, machine-id updates, first-boot,
+# network config) would fail. The fix is an overlayfs on /etc: the read-only
+# image /etc as the lower layer, a writable upper+work on the encrypted /var.
+#
+# It has to be assembled in the initramfs, before switch-root, so the real
+# system's PID 1 sees a writable /etc from its very first action. dracut's own
+# 90overlayfs module cannot do this — its check() is `[[ $hostonly ]] && return 1`,
+# i.e. it deliberately excludes itself from a host-built (hostonly) initramfs
+# because it is meant for live media. So we ship a small custom module and force
+# it in with `--add aios-etc-overlay` in do_initramfs.
+#
+# /var is a separate encrypted volume unlocked by a key on the root. dracut must
+# NOT embed that key (do_initramfs asserts it is absent from the unencrypted
+# /boot image), so the volume cannot be unlocked by systemd in the initrd the
+# normal way. Instead the pre-pivot hook reads the key from the just-mounted
+# read-only /sysroot and unlocks /var itself. The crypttab entry stays `auto`
+# (no noauto): if this hook fails for any reason, the post-pivot systemd path
+# still unlocks and mounts /var normally — the system boots (with a read-only
+# /etc, degraded but observable) rather than bricking. systemd-cryptsetup treats
+# the already-open volume as "already active" and succeeds, so the early unlock
+# and the normal path never collide.
+#
+# This module is staged BEFORE do_initramfs (which runs dracut) and BEFORE
+# do_verity (which hashes the root), so it is a write into the root that must
+# precede verity — the main() call order already guarantees this.
+stage_etc_overlay_module() {
+    if [ "${VERITY_ENFORCE}" != "1" ]; then
+        return 0
+    fi
+
+    # Persistent upper/work for the /etc overlay, on the encrypted /var. The
+    # hook also creates these at boot (idempotent); making them here keeps the
+    # on-disk layout explicit and inspectable right after install.
+    mkdir -p "${TARGET_MOUNT}/var/lib/aios/etc/upper" \
+             "${TARGET_MOUNT}/var/lib/aios/etc/work" \
+        || die "creating /etc overlay dirs on /var failed" 6
+
+    local _moddir="${TARGET_MOUNT}/usr/lib/dracut/modules.d/98aios-etc-overlay"
+    mkdir -p "${_moddir}" || die "creating dracut module dir failed" 6
+
+    # Quoted heredoc: $moddir/$hostonly/etc are dracut/runtime variables that
+    # must land in the target file verbatim, not be expanded by the installer.
+    cat > "${_moddir}/module-setup.sh" <<'MODSETUP'
+#!/bin/bash
+# AI-OS.NET: assemble a writable /etc overlay for the read-only dm-verity root.
+# Forced in via `dracut --add aios-etc-overlay`; check() stays permissive so the
+# --add is honoured under hostonly (where 90overlayfs excludes itself).
+
+check() {
+    return 0
+}
+
+depends() {
+    # Needs device-mapper (for the verity root and the LUKS /var) and the crypt
+    # tooling to unlock /var from the key on the just-mounted root.
+    echo dm crypt
+    return 0
+}
+
+installkernel() {
+    # overlayfs must be in the initramfs, not just the real root.
+    instmods overlay
+}
+
+install() {
+    # cryptsetup comes from 90crypt; list it optionally as belt-and-suspenders.
+    # grep is used by the hook's already-mounted guard.
+    inst_multiple -o cryptsetup mount mkdir grep
+    inst_hook pre-pivot 50 "$moddir/aios-etc-overlay.sh"
+}
+MODSETUP
+    chmod 755 "${_moddir}/module-setup.sh"
+
+    cat > "${_moddir}/aios-etc-overlay.sh" <<'OVERLAYHOOK'
+#!/bin/sh
+# AI-OS.NET pre-pivot hook: unlock the encrypted /var and layer a writable
+# overlay on the read-only verity root's /etc, before switch-root.
+#
+# Runs after sysroot.mount (dracut-pre-pivot.service ordering), so /sysroot is
+# the read-only verity root. On any failure it warns loudly and exits 0 rather
+# than dropping to an emergency shell: verity integrity is enforced by the kernel
+# regardless of this hook, and a bricked boot is worse than a read-only /etc that
+# the post-pivot path can still bring /var up under. Every exit reason is printed.
+
+command -v warn >/dev/null 2>&1 || . /lib/dracut-lib.sh 2>/dev/null || true
+_say() { warn "aios-etc-overlay: $*" 2>/dev/null || echo "aios-etc-overlay: $*" >&2; }
+
+SYSROOT="${NEWROOT:-/sysroot}"
+CRYPTTAB="${SYSROOT}/etc/crypttab"
+
+[ -f "${CRYPTTAB}" ] || { _say "no ${CRYPTTAB}; /etc stays read-only"; exit 0; }
+
+# Parse the aios-var line: <name> <device> <keyfile> <options>. No awk (not in
+# the initramfs); skip comment lines.
+_name=""; _dev=""; _key=""
+while read -r f1 f2 f3 _rest; do
+    case "${f1}" in
+        \#*|"") continue ;;
+        aios-var) _name="${f1}"; _dev="${f2}"; _key="${f3}"; break ;;
+    esac
+done < "${CRYPTTAB}"
+
+[ -n "${_name}" ] || { _say "no aios-var in crypttab; /etc stays read-only"; exit 0; }
+
+# Resolve UUID=/PARTUUID= specifiers to a device path cryptsetup accepts.
+case "${_dev}" in
+    UUID=*)     _dev="/dev/disk/by-uuid/${_dev#UUID=}" ;;
+    PARTUUID=*) _dev="/dev/disk/by-partuuid/${_dev#PARTUUID=}" ;;
+esac
+
+# Unlock /var if it is not already open (e.g. a re-run). The key lives on the
+# read-only root; it is never placed in the unencrypted initramfs.
+if [ ! -b /dev/mapper/aios-var ]; then
+    if [ ! -f "${SYSROOT}${_key}" ]; then
+        _say "var key ${SYSROOT}${_key} missing; /etc stays read-only"; exit 0
+    fi
+    if ! cryptsetup open --key-file "${SYSROOT}${_key}" "${_dev}" aios-var; then
+        _say "cryptsetup open aios-var failed; /etc stays read-only"; exit 0
+    fi
+fi
+
+# Mount /var under the sysroot if it is not there yet.
+mkdir -p "${SYSROOT}/var"
+if ! grep -q " ${SYSROOT}/var " /proc/mounts 2>/dev/null; then
+    if ! mount -t ext4 -o rw,noatime /dev/mapper/aios-var "${SYSROOT}/var"; then
+        _say "mount /var failed; /etc stays read-only"; exit 0
+    fi
+fi
+
+_upper="${SYSROOT}/var/lib/aios/etc/upper"
+_work="${SYSROOT}/var/lib/aios/etc/work"
+if ! mkdir -p "${_upper}" "${_work}"; then
+    _say "mkdir overlay upper/work failed; /etc stays read-only"; exit 0
+fi
+
+if mount -t overlay aios-etc \
+        -o "lowerdir=${SYSROOT}/etc,upperdir=${_upper},workdir=${_work}" \
+        "${SYSROOT}/etc"; then
+    _say "writable /etc overlay assembled (upper on encrypted /var)"
+else
+    _say "overlay mount failed; /etc stays read-only"
+fi
+exit 0
+OVERLAYHOOK
+    chmod 755 "${_moddir}/aios-etc-overlay.sh"
+
+    msg "Staged 98aios-etc-overlay dracut module for the read-only root's writable /etc."
 }
 
 # ── Initramfs (defect #12b) ───────────────────────────────────────────────────
@@ -653,8 +850,34 @@ do_initramfs() {
     # default (01-dist.conf sets hostonly=yes); -v makes dracut print
     # "Including module:" lines so its decisions are readable in the log below
     # instead of inferred.
+    # When verity is enforced the initramfs also needs:
+    #   systemd-veritysetup — runs systemd-veritysetup@root.service, which the
+    #     veritysetup generator emits from the roothash=/systemd.verity_root_*
+    #     cmdline params, opening /dev/mapper/root between the LUKS unlock and the
+    #     root mount. Its own check() returns 255 (include only if required), so
+    #     like tpm2-tss it never volunteers and must be forced in.
+    #   aios-etc-overlay — our pre-pivot hook that gives the read-only root a
+    #     writable /etc (staged by stage_etc_overlay_module).
+    local _dracut_modules="crypt dm tpm2-tss"
+    # Kernel drivers forced in regardless of hostonly auto-detection. dracut in
+    # hostonly mode includes only drivers the *running* system uses; the installer
+    # chroot uses neither dm-verity nor overlay, so both must be forced or the
+    # image ships without them.
+    local _dracut_drivers=""
+    if [ "${VERITY_ENFORCE}" = "1" ]; then
+        _dracut_modules="${_dracut_modules} systemd-veritysetup aios-etc-overlay"
+        # 01systemd-veritysetup installs veritysetup + the generator + units, but
+        # has NO installkernel(), so it never pulls the kernel dm-verity target
+        # module. Without dm-verity.ko in the image, systemd-veritysetup asks
+        # device-mapper for a "verity" target the kernel does not know and boot
+        # dies with "device-mapper: table: verity: unknown target type" →
+        # /dev/mapper/root never appears. overlay.ko is likewise needed by the
+        # aios-etc-overlay pre-pivot hook. Force both in.
+        _dracut_drivers="dm-verity overlay"
+    fi
     if ! chroot "${TARGET_MOUNT}" dracut --force --hostonly -v \
-            --add "crypt dm tpm2-tss" \
+            --add "${_dracut_modules}" \
+            ${_dracut_drivers:+--add-drivers "${_dracut_drivers}"} \
             /boot/initramfs-aios.img "${_kver}" > "${_dracut_log}" 2>&1; then
         err "dracut failed — last 30 lines:"
         tail -n 30 "${_dracut_log}" >&2 || true
@@ -690,6 +913,70 @@ do_initramfs() {
         warn "tpm2 binary in target: $(test -x "${TARGET_MOUNT}/usr/bin/tpm2" && echo present || echo MISSING)"
     fi
 
+    # Fail closed on verity enforcement. If the loader entry will boot
+    # root=/dev/mapper/root but the initramfs carries no systemd-veritysetup, the
+    # verity device is never opened and the kernel panics on a missing root. And
+    # without aios-etc-overlay the read-only root has no writable /etc. Both are
+    # forced in via --add above; assert dracut actually included them, from
+    # dracut's own "Including module:" lines (the same ground truth the tpm2
+    # check uses), rather than discovering the gap at boot.
+    if [ "${VERITY_ENFORCE}" = "1" ]; then
+        if grep -aq "Including module: systemd-veritysetup" "${_dracut_log}" 2>/dev/null; then
+            msg "initramfs carries systemd-veritysetup (verity opens before root mount)."
+        else
+            err "dracut did NOT include systemd-veritysetup — decisions:"
+            grep -aoE "Including module: [a-z0-9-]+" "${_dracut_log}" 2>/dev/null \
+                | sed 's/^/    /' | tr '\n' ' ' | head -c 900 >&2 || true
+            printf '\n' >&2
+            die "verity enforced but initramfs has no systemd-veritysetup — root would never open" 9
+        fi
+        if grep -aq "Including module: aios-etc-overlay" "${_dracut_log}" 2>/dev/null; then
+            msg "initramfs carries aios-etc-overlay (writable /etc on the read-only root)."
+        else
+            die "verity enforced but initramfs has no aios-etc-overlay — /etc would be read-only" 9
+        fi
+        # The dracut *modules* above are the userspace side. The kernel dm-verity
+        # target module is the other half and is forced via --add-drivers; assert
+        # it physically landed in the image, else boot dies with "verity: unknown
+        # target type". lsinitrd is authoritative for kernel modules, BUT it
+        # extracts and decompresses the ~98MB image on every call and its FIRST
+        # invocation in the cramped installer env can emit a truncated listing
+        # (observed: the very next identical call listed dm-verity.ko fine). So
+        # capture the listing ONCE and assert against that single snapshot — never
+        # re-invoke lsinitrd per module, which reintroduces the flaky-first-call
+        # false negative. An empty capture means lsinitrd itself failed (a real
+        # blocker), distinct from a complete listing that lacks the module.
+        local _initrd_list
+        _initrd_list="$(chroot "${TARGET_MOUNT}" lsinitrd /boot/initramfs-aios.img 2>/dev/null)"
+        if [ -z "${_initrd_list}" ]; then
+            die "cannot verify initramfs contents — lsinitrd produced no listing for /boot/initramfs-aios.img" 9
+        fi
+        # Match with a bash `case` on the captured listing, NOT an external grep.
+        # A prior `grep -qF "dm-verity.ko"` here cried wolf on an image that
+        # demonstrably carried the module (the very next `grep -F "drivers/md/dm-"`
+        # on the SAME variable printed the dm-verity.ko line) — the live installer's
+        # grep does not behave like GNU grep, and no pattern form (-E, -F, escaped
+        # or not) was reliable. bash's own glob matching is built in, uses no
+        # subprocess, and is immune to whatever grep sits in PATH, so it is the
+        # authoritative test for "is this substring in the listing".
+        case "${_initrd_list}" in
+            *dm-verity.ko*)
+                msg "initramfs carries the dm-verity kernel target (dm-verity.ko present)." ;;
+            *)
+                err "dracut did NOT include dm-verity.ko — md/ modules in image:"
+                printf '%s\n' "${_initrd_list}" | while IFS= read -r _l; do
+                    case "${_l}" in *drivers/md/dm-*) printf '    %s\n' "${_l}" >&2 ;; esac
+                done
+                die "verity enforced but initramfs has no dm-verity.ko — root would fail with 'verity: unknown target type'" 9 ;;
+        esac
+        case "${_initrd_list}" in
+            *overlay.ko*)
+                msg "initramfs carries overlay.ko (aios-etc-overlay can mount the writable /etc)." ;;
+            *)
+                die "verity enforced but initramfs has no overlay.ko — the /etc overlay hook would fail" 9 ;;
+        esac
+    fi
+
     # Fail closed on a key leak. The initramfs lands on /boot, which is NOT
     # encrypted. /var's key file lives on the encrypted root precisely so it is
     # never on unencrypted media — but dracut --hostonly reads the whole
@@ -698,10 +985,20 @@ do_initramfs() {
     # would be worthless. /var is not on the path to root, so dracut should not
     # pull it in; this asserts that rather than trusting it. Checked before the
     # size gate so a leak is reported even on an otherwise valid image.
-    if chroot "${TARGET_MOUNT}" lsinitrd /boot/initramfs-aios.img 2>/dev/null \
-        | grep -qE "etc/aios/var\.key|/cryptsetup-keys.d/aios-var"; then
-        die "SECURITY: dracut embedded the /var key into the unencrypted /boot initramfs" 9
+    # Matched with a bash `case`, NOT an external grep: the live installer's grep
+    # proved unreliable for substring tests (see the dm-verity check above), and
+    # this is a security guard that must not fail open. bash glob matching is a
+    # builtin, immune to whatever grep is in PATH. Reuse the listing captured in
+    # the verity block when present; capture here when verity is off (that path
+    # never populated _initrd_list) so the guard always runs against a real image.
+    local _leak_list="${_initrd_list:-}"
+    if [ -z "${_leak_list}" ]; then
+        _leak_list="$(chroot "${TARGET_MOUNT}" lsinitrd /boot/initramfs-aios.img 2>/dev/null)"
     fi
+    case "${_leak_list}" in
+        *etc/aios/var.key*|*/cryptsetup-keys.d/aios-var*)
+            die "SECURITY: dracut embedded the /var key into the unencrypted /boot initramfs" 9 ;;
+    esac
 
     umount_chroot
 
@@ -748,31 +1045,44 @@ do_bootloader() {
     local _luks_uuid
     _luks_uuid=$(blkid -s UUID -o value "${LUKS_PART}" 2>/dev/null || echo "")
 
+    # Root device and mode. Without verity the root is the plain LUKS mapper,
+    # read-write. With verity enforced, root= names the verity device the systemd
+    # veritysetup generator creates — /dev/mapper/root (the generator hardcodes
+    # the volume name "root" for the root fs; it is NOT configurable to
+    # "aios-verity") — mounted read-only, and the cmdline carries the parameters
+    # that generator consumes to build it.
+    #
+    # The old invented tokens (" verity dm_verity.roothash=<hash>") are gone:
+    # nothing in the base read dm_verity.roothash, and the bare word "verity" was
+    # passed to init as an argument. What replaces them is systemd's own,
+    # real verity boot path.
+    local _root_dev="/dev/mapper/aios-cryptroot"
     local _root_mode="rw"
     local _verity_params=""
-    if [ -f "${TARGET_MOUNT}/etc/aios/verity/roothash.sig" ]; then
-        local _roothash
-        _roothash=$(head -n1 "${TARGET_MOUNT}/etc/aios/verity/roothash.sig" | tr -d '[:space:]')
-        if [ -n "${_roothash}" ]; then
-            # Root stays read-only: that part is real and independent of verity.
-            #
-            # What is NOT emitted any more is " verity dm_verity.roothash=<hash>".
-            # Both tokens were invented. Nothing in this base reads
-            # dm_verity.roothash -- grep across the whole of /usr/lib/dracut finds
-            # zero references -- and the kernel's own verdict on the bare word is
-            # "Unknown kernel command line parameters \"verity\", will be passed to
-            # user space", which hands it to init as an argument. So they bought no
-            # protection and were not inert either.
-            #
-            # dm-verity is therefore COMPUTED BUT NOT ENFORCED: do_verity builds a
-            # real hash tree and stores the root hash, and no boot-time check ever
-            # consults it. The base does ship the real mechanism
-            # (dracut's 01systemd-veritysetup, driven by veritytab /
-            # systemd.verity_root_hash=), but wiring it up means putting the verity
-            # device between LUKS and root=, which is a design change rather than a
-            # parameter fix. Until that lands, do not claim verity is enforced.
-            _root_mode="ro"
-        fi
+    if [ "${VERITY_ENFORCE}" = "1" ]; then
+        local _roothash _hash_partuuid
+        # Read the hash from the shell global do_verity set, NOT a file inside the
+        # root: the root is now frozen read-only and carries no roothash file (that
+        # would have changed the hashed bytes). do_verity runs before this in main.
+        _roothash="${ROOT_HASH_VALUE}"
+        [ -n "${_roothash}" ] \
+            || die "verity enforced but do_verity left no root hash" 8
+        # The hash device (p5) is referenced by GPT PARTUUID, which exists
+        # regardless of any filesystem/verity superblock UUID and is resolved
+        # early by udev by-partuuid links. The systemd veritysetup generator runs
+        # the value through fstab_node_to_udev_node(), which understands PARTUUID=.
+        _hash_partuuid=$(blkid -s PARTUUID -o value "${ROOT_HASH_PART}" 2>/dev/null || echo "")
+        [ -n "${_hash_partuuid}" ] \
+            || die "cannot read PARTUUID of the verity hash partition ${ROOT_HASH_PART}" 8
+        _root_dev="/dev/mapper/root"
+        _root_mode="ro"
+        # roothash= + systemd.verity_root_data= + systemd.verity_root_hash= are
+        # the generator's real inputs (present in this base). Data device = the
+        # LUKS mapper (post-unlock, same bytes the hash tree was built over); hash
+        # device = p5. panic-on-corruption is the kernel dm-verity target's own
+        # refuse-to-serve-tampered-blocks behaviour — the operator's refuse-to-boot
+        # decision, enforced by the kernel, not by any userspace policy file.
+        _verity_params="roothash=${_roothash} systemd.verity_root_data=/dev/mapper/aios-cryptroot systemd.verity_root_hash=PARTUUID=${_hash_partuuid} systemd.verity_root_options=panic-on-corruption"
     fi
 
     # The kernel has no bare `permissive`/`enforcing` parameter — the mode is
@@ -845,7 +1155,7 @@ do_bootloader() {
 title   AI-OS.NET ${AIOS_VERSION} (CI)
 linux   /vmlinuz-aios
 initrd  /initramfs-aios.img
-options root=/dev/mapper/aios-cryptroot ${_luks_options} ${_root_mode} ${_console_params} ${_verbosity} ${_selinux_params}${_verity_params}
+options root=${_root_dev} ${_verity_params} ${_luks_options} ${_root_mode} ${_console_params} ${_verbosity} ${_selinux_params}
 LOADER
     chmod 644 "${_entries_dir}/aios.conf"
 
@@ -1005,49 +1315,72 @@ do_verity() {
         info "dm-verity skipped (AIOS_SKIP_VERITY=1)."
         return 0
     fi
+    # validate_env already made veritysetup a hard requirement when enforcing, so
+    # this only trips if that guard was bypassed; fail closed rather than silently
+    # producing an unenforced root under a loader entry committed to verity.
     if ! command -v veritysetup >/dev/null 2>&1; then
-        warn "veritysetup not found — dm-verity skipped."
-        return 0
+        die "veritysetup not found but verity is enforced" 5
     fi
+    # CRITICAL ORDERING: veritysetup hashes the raw LUKS block device, so the
+    # on-disk bytes of the root ext4 must be FINAL and FROZEN before the hash is
+    # taken, and NOTHING may change them afterwards — any later write (even a
+    # single metadata block) makes the boot-time hash check fail and the kernel
+    # panics "dm-verity device corrupted" on a pristine install. This bit us
+    # exactly that way: the old code wrote roothash.sig + rootfs-policy.json INTO
+    # the root AFTER hashing, and hashed while the fs was still mounted rw (dirty
+    # pages/journal not flushed to the device). The fixes below, in order:
+    #
+    #   1. The descriptive policy file is the LAST write into the root, and it is
+    #      written BEFORE the freeze so it is covered by the hash (immutable and
+    #      truthful). It no longer references a roothash.sig file (that file is
+    #      gone — the hash lives on the kernel cmdline, not inside the root).
+    #   2. sync + remount the root READ-ONLY: this flushes every dirty page and
+    #      commits the ext4 journal, so the block device bytes are stable and
+    #      identical to what the kernel will verity-check at boot (also mounted
+    #      ro). do_bootloader only touches /boot and /boot/efi (separate rw
+    #      partitions), so it needs no writable root.
+    #   3. The root hash goes to a shell global + a tmp file OUTSIDE the root, so
+    #      storing it does not perturb the hashed bytes.
     mkdir -p "${TARGET_MOUNT}/etc/aios/verity"
-    local _roothash_file="${TARGET_MOUNT}/etc/aios/verity/roothash.sig"
-    local _roothash
-
-    if veritysetup format "${LUKS_MAPPER}" "${ROOT_HASH_DEV}" \
-        --root-hash-file="${_roothash_file}" 2>/dev/null; then
-        _roothash=$(head -n1 "${_roothash_file}" | tr -d '[:space:]')
-    else
-        warn "dm-verity hash generation skipped."
-        return 0
-    fi
-
-    if [ -z "${_roothash}" ]; then
-        warn "dm-verity root hash empty — skipped."
-        return 0
-    fi
-
-    chmod 400 "${_roothash_file}"
-    # This file describes what exists, not what we wish existed. It used to claim
-    # "cmdline_parameter": "dm_verity.roothash" and "fail_on_corruption": true.
-    # Neither was true: nothing in the base reads dm_verity.roothash (zero hits
-    # across /usr/lib/dracut), so no boot-time check consulted the hash and
-    # nothing could fail on corruption. A policy file asserting a protection that
-    # is not wired up is worse than no file -- it is what an audit reads.
     cat > "${TARGET_MOUNT}/etc/aios/verity/rootfs-policy.json" <<EOF
 {
   "schema": "aios.dm_verity_policy.v1",
-  "revision": 12,
-  "root_hash": "/etc/aios/verity/roothash.sig",
+  "revision": 14,
+  "root_hash": "kernel-cmdline:roothash=",
   "hash_partition": "${ROOT_HASH_PART}",
-  "enforced_at_boot": false,
-  "fail_on_corruption": false,
-  "status": "COMPUTED_NOT_ENFORCED",
-  "note": "Hash tree is real and stored. No boot-time verification consults it yet. Enforcing requires wiring dracut's 01systemd-veritysetup (veritytab / systemd.verity_root_hash=), which places the verity device between LUKS and root=."
+  "verity_device": "/dev/mapper/root",
+  "data_device": "/dev/mapper/aios-cryptroot",
+  "enforced_at_boot": true,
+  "fail_on_corruption": true,
+  "corruption_action": "panic-on-corruption",
+  "status": "ENFORCED",
+  "note": "Root hash is on the kernel cmdline (roothash= + systemd.verity_root_data= + systemd.verity_root_hash=), NOT stored inside this read-only root. systemd-veritysetup opens /dev/mapper/root in the initramfs and root= boots it. systemd.verity_root_options=panic-on-corruption makes the kernel dm-verity target panic on any block whose hash does not match. This policy file is itself covered by the hash (written before the tree was built)."
 }
 EOF
     chmod 644 "${TARGET_MOUNT}/etc/aios/verity/rootfs-policy.json"
-    msg "dm-verity hash tree built and root hash stored at ${_roothash_file}."
-    warn "dm-verity is COMPUTED BUT NOT ENFORCED — no boot-time check reads the root hash."
+
+    # Freeze the root: flush + commit the journal, then make it read-only so the
+    # bytes cannot change between hashing here and verification at boot.
+    sync
+    if ! mount -o remount,ro "${TARGET_MOUNT}" 2>/dev/null; then
+        die "cannot remount the root read-only before hashing — refusing to hash a live rw fs" 5
+    fi
+
+    # Build the hash tree over the now-frozen data device. --root-hash-file points
+    # at installer-local storage (a tmpfs path), never the target root.
+    local _roothash_file="/run/aios-verity-roothash"
+    if ! veritysetup format "${LUKS_MAPPER}" "${ROOT_HASH_DEV}" \
+        --root-hash-file="${_roothash_file}" 2>/dev/null; then
+        die "dm-verity hash generation failed (verity is enforced)" 5
+    fi
+    ROOT_HASH_VALUE=$(head -n1 "${_roothash_file}" | tr -d '[:space:]')
+    rm -f "${_roothash_file}"
+    if [ -z "${ROOT_HASH_VALUE}" ]; then
+        die "dm-verity produced an empty root hash (verity is enforced)" 5
+    fi
+
+    msg "dm-verity hash tree built over the frozen (ro) root; root hash ${ROOT_HASH_VALUE}."
+    msg "dm-verity is ENFORCED — the loader cmdline boots /dev/mapper/root with panic-on-corruption."
     return 0
 }
 

@@ -84,9 +84,16 @@ const AIOS_ETC: &str = "/etc/aios";
 const AIOS_VAR: &str = "/var/lib/aios";
 const AIOS_RUN: &str = "/run/aios";
 const FIRST_BOOT_FLAG: &str = "/etc/aios/first-boot";
-const HOST_KEY_PRIV: &str = "/etc/aios/host-key.priv";
-const HOST_KEY_PUB: &str = "/etc/aios/host-key.pub";
-const HOST_ID_FILE: &str = "/etc/aios/host-id";
+// Host identity keypair and host-id live on the encrypted /var, NOT on the root.
+// The root is now a read-only dm-verity volume with a writable /etc overlay whose
+// upper layer sits on /var; writing the private host key through that overlay
+// would place a security-sensitive secret in the overlay upper by side effect
+// rather than by intent. Putting it directly under /var/lib/aios keeps it on the
+// encrypted volume deliberately. These paths have no external consumers (only
+// this binary reads/writes them). write_file() create_dir_all()s the parent.
+const HOST_KEY_PRIV: &str = "/var/lib/aios/host-key.priv";
+const HOST_KEY_PUB: &str = "/var/lib/aios/host-key.pub";
+const HOST_ID_FILE: &str = "/var/lib/aios/host-id";
 const SECURITY_PROFILE_FILE: &str = "/etc/aios/security-profile";
 const VERITY_DIR: &str = "/etc/aios/verity";
 const RECOVERY_DIR: &str = "/etc/aios/recovery";

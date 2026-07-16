@@ -92,7 +92,11 @@ done
 # on crypto_LUKS, and 91tpm2-tss/check() returns 255 (never volunteers at all).
 # Naming both on --add is what forces them in; without tpm2-tss the installed
 # system boots to a passphrase prompt instead of unlocking from the TPM.
-if grep -qE '^\s*--add "[^"]*\btpm2-tss\b[^"]*"' "${QUICK_INSTALL}" 2>/dev/null; then
+# The module set is now assembled in a _dracut_modules variable and passed as
+# --add "${_dracut_modules}". Assert both: tpm2-tss is in that set AND the set is
+# force-added. (grep the raw file — the variable spans its own line.)
+if grep -qE '_dracut_modules="[^"]*\btpm2-tss\b' "${QUICK_INSTALL}" 2>/dev/null \
+   && grep -qE '^\s*--add "\$\{_dracut_modules\}"' "${QUICK_INSTALL}" 2>/dev/null; then
     pass "Quick installer force-adds tpm2-tss (dracut never volunteers it)"
 else
     fail "Quick installer must --add tpm2-tss; dracut's check() returns 255 and will omit it"
@@ -222,40 +226,217 @@ else
     fail "Loader entry must use rd.luks.name=<uuid>=aios-cryptroot so the device matches root="
 fi
 
-# The two must agree. A test that checks each in isolation would pass a system
-# where someone changed one of them.
-if printf '%s' "${_qi_code}" | grep -q 'root=/dev/mapper/aios-cryptroot'; then
-    pass "root= and the rd.luks.name mapping name the same device"
+printf '\n'
+msg "=== dm-verity is ENFORCED: real systemd verity params, verity device as root ==="
+
+# Under enforcement root= no longer names the LUKS mapper — it names the verity
+# device the systemd veritysetup generator creates. That generator hardcodes the
+# volume name "root", so the device is /dev/mapper/root (NOT a configurable
+# "aios-verity"). The LUKS mapper is now the verity DATA device instead.
+if printf '%s' "${_qi_code}" | grep -q '_root_dev="/dev/mapper/root"'; then
+    pass "Loader boots root=/dev/mapper/root (the systemd verity device) under enforcement"
 else
-    fail "root= must name the same device rd.luks.name creates"
+    fail "Under verity, root= must name the generator's verity device /dev/mapper/root"
 fi
 
-printf '\n'
-msg "=== dm-verity: no invented kernel parameters, no false claims ==="
+# The verity data device must be the same LUKS mapper rd.luks.name creates, or the
+# hash tree (built over that mapper) is checked against the wrong bytes. Checking
+# them together, not in isolation, catches a change to only one.
+if printf '%s' "${_qi_code}" | grep -q 'systemd.verity_root_data=/dev/mapper/aios-cryptroot' \
+   && printf '%s' "${_qi_code}" | grep -q 'rd.luks.name=.*=aios-cryptroot'; then
+    pass "verity data device is the LUKS mapper rd.luks.name creates (they agree)"
+else
+    fail "systemd.verity_root_data= must be /dev/mapper/aios-cryptroot, the rd.luks.name device"
+fi
 
-# " verity dm_verity.roothash=<hash>" was emitted onto the kernel cmdline and both
-# tokens were invented. Nothing in the base reads dm_verity.roothash (zero hits
-# across /usr/lib/dracut), and the kernel's verdict on the bare word is "Unknown
-# kernel command line parameters "verity", will be passed to user space" -- so it
-# reached init as an argument. They bought no protection and were not harmless.
+# The hash device is referenced by PARTUUID (stable, superblock-independent,
+# resolved early by udev; the generator runs it through fstab_node_to_udev_node).
+if printf '%s' "${_qi_code}" | grep -q 'systemd.verity_root_hash=PARTUUID='; then
+    pass "verity hash device is referenced by PARTUUID"
+else
+    fail "systemd.verity_root_hash= must reference the hash partition by PARTUUID="
+fi
+
+# panic-on-corruption IS the enforcement: the kernel dm-verity target refuses to
+# serve a block whose hash does not match. This is the byte-flip acceptance
+# property — flip a byte in /usr and the machine must refuse to boot.
+if printf '%s' "${_qi_code}" | grep -q 'systemd.verity_root_options=panic-on-corruption'; then
+    pass "verity uses panic-on-corruption (kernel refuses a tampered block)"
+else
+    fail "verity must set systemd.verity_root_options=panic-on-corruption"
+fi
+
+# roothash= is the generator's real input; dm_verity.roothash= and the bare
+# 'verity' token were invented and read by nothing. They must not return.
+if printf '%s' "${_qi_code}" | grep -qE '\broothash=\$\{_roothash\}|\broothash=[0-9a-f]'; then
+    pass "cmdline carries the real roothash= parameter"
+else
+    fail "cmdline must carry roothash= for the systemd veritysetup generator"
+fi
 if printf '%s' "${_qi_code}" | grep -q 'dm_verity\.roothash='; then
-    fail "Installer still emits dm_verity.roothash= — no code in the base reads it"
+    fail "Installer still emits the invented dm_verity.roothash= — nothing reads it"
 else
     pass "Installer emits no invented dm_verity.roothash= parameter"
 fi
-
 if printf '%s' "${_qi_code}" | grep -qE '_verity_params=" verity'; then
-    fail "Installer still emits the bare 'verity' token — the kernel passes it to init as an argument"
+    fail "Installer still emits the bare 'verity' token"
 else
     pass "Installer emits no bare 'verity' cmdline token"
 fi
 
-# The stored policy must describe what exists. It claimed fail_on_corruption:true
-# for a check that was never wired up -- and a policy file is what an audit reads.
-if printf '%s' "${_qi_code}" | grep -q '"fail_on_corruption": true'; then
-    fail "verity policy claims fail_on_corruption while no boot-time check reads the hash"
+# The stored policy must describe what exists. Now that enforcement IS wired, it
+# must truthfully say so — the inverse of the pre-enforcement state.
+if printf '%s' "${_qi_code}" | grep -q '"fail_on_corruption": true' \
+   && printf '%s' "${_qi_code}" | grep -q '"enforced_at_boot": true' \
+   && printf '%s' "${_qi_code}" | grep -q '"status": "ENFORCED"'; then
+    pass "verity policy truthfully reports enforcement (wired to the cmdline)"
 else
-    pass "verity policy does not claim enforcement that is not wired up"
+    fail "verity policy must report enforced_at_boot/fail_on_corruption true, status ENFORCED"
+fi
+if printf '%s' "${_qi_code}" | grep -q 'COMPUTED_NOT_ENFORCED'; then
+    fail "verity policy still carries the old COMPUTED_NOT_ENFORCED status"
+else
+    pass "verity policy no longer claims the pre-enforcement state"
+fi
+
+# CRITICAL: the root bytes must be frozen before hashing and never touched after,
+# or the kernel panics "dm-verity device corrupted" on a pristine install. Assert
+# do_verity remounts the root read-only BEFORE veritysetup format runs. Both
+# strings are unique to do_verity, so compare their global line numbers.
+_remount_ln="$(printf '%s\n' "${_qi_code}" | grep -n 'remount,ro' | head -1 | cut -d: -f1)"
+_format_ln="$(printf '%s\n' "${_qi_code}" | grep -n 'veritysetup format' | head -1 | cut -d: -f1)"
+if [ -n "${_remount_ln}" ] && [ -n "${_format_ln}" ] && [ "${_remount_ln}" -lt "${_format_ln}" ]; then
+    pass "do_verity freezes the root (remount,ro) BEFORE veritysetup format"
+else
+    fail "do_verity must remount the root read-only before hashing (else fresh install panics dm-verity corrupted)"
+fi
+# The root hash must NOT be written into the verity-protected root (that write
+# would change the hashed bytes). do_verity stores it in a shell global; the
+# roothash.sig file inside the root is gone.
+if printf '%s\n' "${_qi_code}" | grep -qE 'root-hash-file=.*TARGET_MOUNT'; then
+    fail "do_verity writes the root hash file INTO the root — that invalidates the hash at boot"
+else
+    pass "do_verity keeps the root-hash file out of the verity root"
+fi
+if printf '%s\n' "${_qi_code}" | grep -q 'ROOT_HASH_VALUE=\$(head'; then
+    pass "do_verity exports the root hash via a shell global (not a root-internal file)"
+else
+    fail "do_verity must export the root hash via ROOT_HASH_VALUE for do_bootloader"
+fi
+# do_bootloader must consume that global, not read a file from the frozen root.
+if printf '%s\n' "${_qi_code}" | grep -q '_roothash="${ROOT_HASH_VALUE}"'; then
+    pass "do_bootloader reads the root hash from the shell global, not the frozen root"
+else
+    fail "do_bootloader must read ROOT_HASH_VALUE (the root is frozen ro and has no roothash file)"
+fi
+
+# The systemd-veritysetup dracut module installs the userspace tool but has no
+# installkernel(), so it never pulls the kernel dm-verity target. Under hostonly
+# dracut also will not auto-include it (the installer chroot uses no verity), so
+# the initramfs would ship without dm-verity.ko and boot dies with "verity:
+# unknown target type". The installer must force the driver in.
+if printf '%s' "${_qi_code}" | grep -qE '_dracut_drivers=.*dm-verity' \
+   && printf '%s' "${_qi_code}" | grep -q 'add-drivers'; then
+    pass "Installer force-adds the dm-verity kernel driver into the initramfs"
+else
+    fail "Installer must --add-drivers dm-verity (systemd-veritysetup does not pull the kernel target)"
+fi
+# ...and must fail closed if the driver did not actually land in the image, rather
+# than discovering the missing target at boot.
+if printf '%s' "${_qi_code}" | grep -q 'has no dm-verity.ko'; then
+    pass "Installer fails closed if dm-verity.ko is absent from the built initramfs"
+else
+    fail "Installer must verify dm-verity.ko is in the initramfs and die if it is not"
+fi
+# The initramfs/live-installer grep proved unreliable for substring tests (a
+# grep -qF that should have matched "dm-verity.ko" in the listing cried wolf on
+# an image that carried it). The module and key-leak checks that run there must
+# therefore match with a bash `case` (a builtin, no external grep), not any grep.
+if printf '%s' "${_qi_code}" | grep -qF '*dm-verity.ko*)' \
+   && printf '%s' "${_qi_code}" | grep -qF '*overlay.ko*)'; then
+    pass "initramfs module checks use a bash case (grep-free), immune to the installer's grep"
+else
+    fail "dm-verity.ko / overlay.ko checks must match with a bash case, not an external grep"
+fi
+if printf '%s' "${_qi_code}" | grep -qF '*etc/aios/var.key*|*/cryptsetup-keys.d/aios-var*)'; then
+    pass "The /var key-leak guard matches with a bash case (cannot fail open on a grep quirk)"
+else
+    fail "The /var key-leak guard must match with a bash case, not an external grep"
+fi
+# And must not regress to the escaped-dot ERE that silently neutered the guard.
+if printf '%s' "${_qi_code}" | grep -qF 'grep -qE "etc/aios/var\.key'; then
+    fail "The /var key-leak guard reintroduced the escaped-dot ERE — busybox would fail it open"
+else
+    pass "The /var key-leak guard carries no escaped-dot ERE"
+fi
+
+printf '\n'
+msg "=== dm-verity enforcement fails closed, and the boot chain is wired ==="
+
+# do_verity must die on a failed hash build, not warn-and-return: do_bootloader
+# is about to point root= at the verity device, so a missing hash is unbootable.
+# Extract to the next top-level section marker, NOT the first '^}' — do_verity now
+# contains a JSON heredoc whose closing brace sits at column 0 and would truncate
+# a '/^}/' range before the die lines below it.
+_verity_body="$(sed -n '/^do_verity()/,/^# ── SELinux/p' "${QUICK_INSTALL}" 2>/dev/null | grep -vE '^\s*#')"
+if printf '%s' "${_verity_body}" | grep -q 'die "dm-verity hash generation failed'; then
+    pass "do_verity dies on a failed hash build (no warn-and-continue)"
+else
+    fail "do_verity must die when the hash build fails under enforcement"
+fi
+
+# The initramfs must carry systemd-veritysetup (opens the verity device) and
+# aios-etc-overlay (writable /etc on the read-only root). Both are force-added
+# because their check() self-disables under hostonly.
+if printf '%s' "${_qi_code}" | grep -qE '_dracut_modules=.*systemd-veritysetup'; then
+    pass "do_initramfs force-adds systemd-veritysetup (verity never volunteers it)"
+else
+    fail "do_initramfs must --add systemd-veritysetup or the verity device never opens"
+fi
+if printf '%s' "${_qi_code}" | grep -qE '_dracut_modules=.*aios-etc-overlay'; then
+    pass "do_initramfs force-adds aios-etc-overlay (writable /etc)"
+else
+    fail "do_initramfs must --add aios-etc-overlay for the read-only root's /etc"
+fi
+
+# The installer must stage the custom overlay module (dracut's own 90overlayfs
+# excludes itself under hostonly).
+if printf '%s' "${_qi_code}" | grep -q '98aios-etc-overlay' \
+   && printf '%s' "${_qi_code}" | grep -q 'lowerdir=.*upperdir=.*workdir='; then
+    pass "Installer stages the 98aios-etc-overlay dracut module with an overlay mount"
+else
+    fail "Installer must stage a custom /etc overlay dracut module"
+fi
+
+# The read-only root must be mounted ro in fstab, or systemd tries a remount-rw
+# the verity device refuses.
+if printf '%s' "${_qi_code}" | grep -qE '_root_fstab="/dev/mapper/root\s+/\s+ext4\s+ro'; then
+    pass "fstab mounts the verity root read-only"
+else
+    fail "fstab root line must mount /dev/mapper/root read-only under verity"
+fi
+
+# do_bootloader writes the verity cmdline, so it must run AFTER do_verity emits
+# the hash. (do_initramfs-before-do_verity is asserted separately above.)
+_vr_line="$(grep -n '^\s*do_verity\s*$' "${QUICK_INSTALL}" 2>/dev/null | tail -n1 | cut -d: -f1)"
+_bl_line="$(grep -n '^\s*do_bootloader\s*$' "${QUICK_INSTALL}" 2>/dev/null | tail -n1 | cut -d: -f1)"
+if [ -n "${_vr_line}" ] && [ -n "${_bl_line}" ] && [ "${_vr_line}" -lt "${_bl_line}" ]; then
+    pass "do_verity runs before do_bootloader (hash exists before the cmdline is written)"
+else
+    fail "do_verity must run before do_bootloader (got verity=${_vr_line:-none} bootloader=${_bl_line:-none})"
+fi
+
+printf '\n'
+msg "=== First-boot state lives off the read-only root ==="
+
+# Host keypair and host-id must be written to the encrypted /var, not the
+# read-only root (and not into the /etc overlay upper by side effect).
+_fb_src="${DISTRO_DIR}/first-boot/aios-first-boot.rs"
+if grep -qE 'HOST_KEY_PRIV:\s*&str\s*=\s*"/var/lib/aios/' "${_fb_src}" 2>/dev/null \
+   && grep -qE 'HOST_ID_FILE:\s*&str\s*=\s*"/var/lib/aios/' "${_fb_src}" 2>/dev/null; then
+    pass "first-boot writes host keypair and host-id to /var/lib/aios (off the ro root)"
+else
+    fail "first-boot host key/host-id must live under /var/lib/aios, not /etc on the ro root"
 fi
 
 printf '\n'

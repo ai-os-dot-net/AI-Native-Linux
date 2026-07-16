@@ -57,6 +57,17 @@ BASE_PACKAGES=(
     sudo
     timezone
     kernel-default
+    # dm-verity is CONFIG_DM_VERITY=m in the Leap 16.0 kernel, but the .ko is NOT
+    # shipped in kernel-default (nor kernel-default-optional). For the -default
+    # flavor the ONLY package that carries
+    # /usr/lib/modules/<kver>-default/kernel/drivers/md/dm-verity.ko.zst is
+    # kernel-default-extra (verified against the oss filelists metadata). Without
+    # it the initramfs has veritysetup + the systemd unit but no kernel target, so
+    # the immutable root dies at boot with "device-mapper: table: verity: unknown
+    # target type" → /dev/mapper/root never appears → emergency shell. Same defect
+    # shape as dm_mod/tpm2 above: the tool ships, the kernel payload does not.
+    # zypper resolves kernel-default-extra to the exact kernel-default version.
+    kernel-default-extra
     kernel-firmware-all
     dracut
     cryptsetup
@@ -378,6 +389,15 @@ finalize_kernel_modules() {
     # device-mapper .ko must physically exist, else LUKS install is impossible
     if ! ls "${mroot}/${kver}"/kernel/drivers/md/dm-mod.ko* >/dev/null 2>&1; then
         die "device-mapper module (dm-mod.ko) absent under ${mroot}/${kver} — kernel-default packaging problem"
+    fi
+
+    # dm-verity .ko must physically exist, else the immutable (verity) root cannot
+    # be assembled and the installed system dies at boot with "verity: unknown
+    # target type". It ships only in kernel-default-extra (added to BASE_PACKAGES);
+    # fail closed here so a packaging regression is a loud build failure, not a
+    # silent boot failure discovered only in QEMU.
+    if ! ls "${mroot}/${kver}"/kernel/drivers/md/dm-verity.ko* >/dev/null 2>&1; then
+        die "dm-verity module (dm-verity.ko) absent under ${mroot}/${kver} — kernel-default-extra missing or wrong version"
     fi
 
     # Prefer an in-rootfs chroot depmod (no host-escape risk); fall back to a
