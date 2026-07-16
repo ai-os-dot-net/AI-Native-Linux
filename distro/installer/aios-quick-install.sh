@@ -530,25 +530,86 @@ do_initramfs() {
     mount --bind /dev    "${TARGET_MOUNT}/dev"  || die "chroot /dev mount failed" 9
     CHROOT_MOUNTED=1
 
-    # --no-hostonly: the image must boot the installed disk on real hardware,
-    #   not only on the QEMU host that happened to generate it. The cost is that
-    #   dracut then omits host config — /etc/crypttab included — so the TPM2
-    #   unlock intent must travel on the kernel command line instead
-    #   (rd.luks.options=tpm2-device=auto, set in do_bootloader).
+    # --hostonly, deliberately, and NOT --no-hostonly.
+    #
+    # --no-hostonly was the earlier choice, reasoned as "the image must boot on
+    # real hardware, not only the QEMU host that generated it". That reasoning
+    # was wrong: this initramfs is built by the installer *on the target system*,
+    # from inside the target's own root. The target IS the host. There is no
+    # second machine for it to be portable to — the image never leaves this disk.
+    #
+    # The cost of that mistake was concrete. dracut's 90crypt module gates its
+    # whole TPM2 path on hostonly plus a crypttab that names it:
+    #
+    #     depends() {
+    #         if [[ $hostonly && -f "$dracutsysrootdir"/etc/crypttab ]]; then
+    #             if grep -q ... -e "tpm2-device=" ...
+    #
+    # --no-hostonly therefore built an image with no TPM2 support at all, so the
+    # LUKS2 token this installer enrols could never be used and boot stalled on
+    # "Please enter passphrase for disk AIOS_LUKS" until the gate killed it — an
+    # unattended install that cannot come up unattended. Putting
+    # rd.luks.options=tpm2-device=auto on the cmdline could not rescue it: the
+    # option asks for a stack the image does not contain.
+    #
+    # do_configure has already written /etc/crypttab with tpm2-device=auto, so
+    # hostonly reads it and pulls the TPM2 path in as designed.
+    #
     # --add "crypt dm": the root is LUKS2 at /dev/mapper/aios-cryptroot, so the
     #   initramfs must be able to unlock it; without these the kernel panics
     #   with "unable to mount root fs".
-    # --add "tpm2-tss": without it the initramfs carries no TPM2 stack, so the
-    #   enrolled LUKS2 token cannot be used and boot stalls forever on
-    #   "Please enter passphrase for disk AIOS_LUKS" — an unattended install
-    #   that cannot come up unattended.
     local _dracut_log="/tmp/aios-dracut.log"
-    if ! chroot "${TARGET_MOUNT}" dracut --force --no-hostonly \
+    # Every module here is named explicitly, and nothing is left to dracut's
+    # host detection, because that detection cannot work from where we stand:
+    #
+    #   90crypt/check()    includes crypt only if host_fs_types contains
+    #                      crypto_LUKS -- i.e. only if the LUKS volume backs the
+    #                      root of the *running* system. We run inside a chroot
+    #                      from the installer; the target's LUKS root is not our
+    #                      root, so that probe answers "no" about a machine dracut
+    #                      is not running on.
+    #   90crypt/depends()  pulls tpm2-tss only when $hostonly is set AND
+    #                      /etc/crypttab names tpm2-device=. Both hold here, but
+    #                      the chain runs only if crypt survived check() above.
+    #   91tpm2-tss/check() returns 255 -- "include me only if someone requires
+    #                      me" -- so it never volunteers on its own.
+    #
+    # --add forces a module in regardless of its check(), which is exactly the
+    # guarantee this boot path needs. hostonly stays on to match the distro
+    # default (01-dist.conf sets hostonly=yes); -v makes dracut print
+    # "Including module:" lines so its decisions are readable in the log below
+    # instead of inferred.
+    if ! chroot "${TARGET_MOUNT}" dracut --force --hostonly -v \
             --add "crypt dm tpm2-tss" \
             /boot/initramfs-aios.img "${_kver}" > "${_dracut_log}" 2>&1; then
         err "dracut failed — last 30 lines:"
         tail -n 30 "${_dracut_log}" >&2 || true
         die "initramfs generation failed" 9
+    fi
+
+    # dracut can exit 0 having quietly skipped the TPM2 path (its check() and
+    # depends() self-disable on unmet conditions). The whole point of enrolling
+    # a TPM2 token is an unattended boot, so verify the stack is really in the
+    # image instead of discovering it as a passphrase prompt at boot.
+    if chroot "${TARGET_MOUNT}" lsinitrd /boot/initramfs-aios.img 2>/dev/null \
+        | grep -qi "libtss2-tcti-device\|tpm2"; then
+        msg "initramfs carries the TPM2 stack (unattended LUKS unlock possible)."
+    else
+        warn "initramfs has NO TPM2 stack — boot will stop at a passphrase prompt."
+        # dracut's own decisions are the ground truth about why. 90crypt only
+        # pulls in tpm2-tss when hostonly is on AND /etc/crypttab names
+        # tpm2-device=; tpm2-tss itself self-disables unless a `tpm2` binary
+        # exists. Any of those failing is silent, so show all three inputs.
+        warn "dracut: modules it decided to include:"
+        grep -aoE "Including module: [a-z0-9-]+" "${_dracut_log}" 2>/dev/null \
+            | sed 's/^/    /' | tr '\n' ' ' | head -c 700 || true
+        printf '\n'
+        warn "dracut: hostonly / tpm2 / crypt decisions:"
+        grep -aiE "hostonly|tpm2|omitting|crypt" "${_dracut_log}" 2>/dev/null \
+            | sed 's/^/    dracut: /' | head -n 8 || true
+        warn "target /etc/crypttab:"
+        sed 's/^/    /' "${TARGET_MOUNT}/etc/crypttab" 2>/dev/null | head -n 4 || true
+        warn "tpm2 binary in target: $(test -x "${TARGET_MOUNT}/usr/bin/tpm2" && echo present || echo MISSING)"
     fi
 
     umount_chroot
@@ -627,13 +688,11 @@ do_bootloader() {
     # on server hardware, so it is unconditional; tty0 keeps the local display.
     local _console_params="console=tty0 console=ttyS0,115200n8"
 
-    # The initramfs is built --no-hostonly, so it carries no /etc/crypttab and
-    # never learns that the root LUKS2 device has a TPM2 token. Phase 2 proved
-    # the consequence: the system reached "Please enter passphrase for disk
-    # AIOS_LUKS" and sat there until the gate killed it — an unattended install
-    # that could not boot unattended, with a TPM2 token sitting unused in the
-    # header. Carrying the option on the cmdline keeps the initramfs portable
-    # and still tells systemd-cryptsetup to try the TPM first.
+    # Belt and braces. do_initramfs builds the image --hostonly, so the TPM2
+    # path is pulled in from /etc/crypttab and this option is not what makes the
+    # unlock work. It is kept because rd.luks.uuid= on this same cmdline lets
+    # dracut assemble the device without consulting crypttab, and in that path
+    # the options must be stated explicitly.
     local _luks_options="rd.luks.options=tpm2-device=auto"
 
     # CI_BARE must be observable: `quiet` makes systemd suppress its status
@@ -762,11 +821,32 @@ do_tpm2_seal() {
     # LUKS header at all.
     # Capture the reason. The previous code discarded it, so the --key-file
     # defect above survived unseen behind a bare "systemd-cryptenroll failed."
+    # This is a BOOTSTRAP enrolment and is deliberately not bound to PCRs.
+    #
+    # An installer cannot bind to PCR 0+1+7 and have it work: those registers are
+    # measured by the firmware of the boot chain that is running *right now* --
+    # the live installation medium -- and the installed system boots a different
+    # chain. Sealing against 0+1+7 here produced a token that could never be
+    # unsealed later, so every boot fell through to a passphrase prompt while the
+    # LUKS header truthfully reported an enrolled TPM2 token. Measured, not
+    # guessed: the CI installer runs with no UEFI firmware at all (direct kernel
+    # boot) while the installed system runs through OVMF, so PCR 0/1/7 could not
+    # have matched under any circumstances.
+    #
+    # The real binding happens on first boot, from inside the installed system,
+    # where the PCRs are the ones that will actually exist at every later boot.
+    # aios-first-boot re-enrols with --tpm2-pcrs=0+1+7 and wipes this slot; the
+    # gate proves the final state is PCR-bound rather than assuming it.
+    #
+    # Why an unbound TPM2 slot rather than a keyfile: the key stays inside the
+    # TPM instead of sitting in the clear on the unencrypted ESP next to the
+    # disk it protects. The exposure window is one boot, and it requires physical
+    # possession of this specific machine rather than just its disk.
     local _enroll_log="/tmp/aios-cryptenroll.log"
     if ! systemd-cryptenroll "${LUKS_PART}" \
             --unlock-key-file="${LUKS_TMP_KEYFILE}" \
             --tpm2-device=auto \
-            --tpm2-pcrs=0+1+7 \
+            --tpm2-pcrs= \
             --wipe-slot=tpm2 > "${_enroll_log}" 2>&1; then
         warn "systemd-cryptenroll failed:"
         sed 's/^/    cryptenroll: /' "${_enroll_log}" 2>/dev/null | head -n 12 || true
@@ -883,16 +963,46 @@ do_first_boot() {
     touch "${TARGET_MOUNT}/etc/aios/first-boot"
     chmod 644 "${TARGET_MOUNT}/etc/aios/first-boot"
 
-    # Write recovery key (hex)
+    # Write recovery key (hex) AND enrol it into the LUKS2 header.
+    #
+    # This used to only write the file. Nothing ever called luksAddKey, so the
+    # "recovery key" was a random number in a text file that unlocked nothing --
+    # while installer/README.md told the operator it was their way back in. A
+    # recovery key that does not recover is worse than none: it is relied upon
+    # exactly once, at the moment recovery is already needed.
     local _recovery="${TARGET_MOUNT}/etc/aios/recovery-key.txt"
     local _hexkey
     # openssl (already in the base package set) instead of xxd, which ships in
     # vim-data and is absent from the live image — it exited 127 here (defect #10).
     _hexkey=$(openssl rand -hex 24 | fold -w 2 | head -n 24 | tr '\n' ' ')
-    echo "${_hexkey}" > "${_recovery}"
+
+    # No trailing newline in the key material: cryptsetup reads a key file
+    # verbatim, but a typed passphrase carries no newline. Writing the file with
+    # `echo` would enrol "<key>\n" and the operator typing "<key>" would be
+    # rejected -- the key would exist in the header and still be unusable by hand.
+    local _rk_tmp
+    _rk_tmp="$(mktemp /tmp/aios-recovery-key.XXXXXX)"
+    chmod 600 "${_rk_tmp}"
+    printf '%s' "${_hexkey}" > "${_rk_tmp}"
+
+    if ! cryptsetup luksAddKey "${LUKS_PART}" "${_rk_tmp}" \
+            --key-file "${LUKS_TMP_KEYFILE}" 2>/dev/null; then
+        shred -u "${_rk_tmp}" 2>/dev/null || rm -f "${_rk_tmp}"
+        die "recovery key could not be enrolled into the LUKS2 header" 6
+    fi
+
+    # Prove it unlocks. An exit code says the command ran, not that the key works.
+    if ! cryptsetup open --test-passphrase --key-file "${_rk_tmp}" "${LUKS_PART}" 2>/dev/null; then
+        shred -u "${_rk_tmp}" 2>/dev/null || rm -f "${_rk_tmp}"
+        die "recovery key was added but does not unlock the volume" 6
+    fi
+    shred -u "${_rk_tmp}" 2>/dev/null || rm -f "${_rk_tmp}"
+
+    printf '%s\n' "${_hexkey}" > "${_recovery}"
     chmod 600 "${_recovery}"
 
-    msg "First-boot flag + recovery key written."
+    msg "First-boot flag written."
+    msg "Recovery key enrolled in the LUKS2 header and verified to unlock."
     msg "Recovery key: ${_recovery}"
 }
 

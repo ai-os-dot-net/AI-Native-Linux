@@ -73,7 +73,7 @@ msg "=== Boot chain: loader payload + initramfs (defect #12) ==="
 # in either case.
 for _needle in \
     'do_initramfs' \
-    'dracut --force --no-hostonly' \
+    'dracut --force --hostonly' \
     '/usr/lib/systemd/boot/efi/systemd-bootx64.efi' \
     'EFI/BOOT/BOOTX64.EFI' \
     'initramfs-aios.img'; do
@@ -87,6 +87,17 @@ done
 # Ordering is load-bearing, not cosmetic: veritysetup hashes the whole root
 # device, so dracut's writes into the root must land BEFORE do_verity or the
 # stored root hash no longer matches the filesystem it describes.
+# dracut's own module resolution cannot be trusted from inside the installer's
+# chroot: 90crypt/check() only volunteers when the *running* system's root sits
+# on crypto_LUKS, and 91tpm2-tss/check() returns 255 (never volunteers at all).
+# Naming both on --add is what forces them in; without tpm2-tss the installed
+# system boots to a passphrase prompt instead of unlocking from the TPM.
+if grep -qE '^\s*--add "[^"]*\btpm2-tss\b[^"]*"' "${QUICK_INSTALL}" 2>/dev/null; then
+    pass "Quick installer force-adds tpm2-tss (dracut never volunteers it)"
+else
+    fail "Quick installer must --add tpm2-tss; dracut's check() returns 255 and will omit it"
+fi
+
 _ir_line="$(grep -n '^\s*do_initramfs\s*$' "${QUICK_INSTALL}" 2>/dev/null | tail -n1 | cut -d: -f1)"
 _vr_line="$(grep -n '^\s*do_verity\s*$' "${QUICK_INSTALL}" 2>/dev/null | tail -n1 | cut -d: -f1)"
 if [ -n "${_ir_line}" ] && [ -n "${_vr_line}" ] && [ "${_ir_line}" -lt "${_vr_line}" ]; then
@@ -136,6 +147,59 @@ for _f in "${QUICK_INSTALL}" "${INTERACTIVE_INSTALL}"; do
         fail "${_name}: TPM2 enrolment must be read back from the LUKS2 header, not assumed"
     fi
 done
+
+printf '\n'
+msg "=== Recovery key must actually recover (defect #13) ==="
+
+# Strip comments before matching: the code carries comments explaining these very
+# defects, and a naive whole-file grep matches the explanation and reports a
+# defect that is not there.
+_qi_code="$(grep -vE '^\s*#' "${QUICK_INSTALL}" 2>/dev/null)"
+
+# do_first_boot wrote /etc/aios/recovery-key.txt and installer/README.md told the
+# operator it was their way back in -- but nothing ever called luksAddKey, so the
+# file held a random number that unlocked nothing. A recovery key that does not
+# recover is worse than none: it is relied on exactly once, when recovery is
+# already needed.
+if printf '%s' "${_qi_code}" | grep -q 'luksAddKey'; then
+    pass "Quick installer enrols the recovery key into the LUKS2 header"
+else
+    fail "Quick installer writes a recovery key it never adds to LUKS (unlocks nothing)"
+fi
+
+if printf '%s' "${_qi_code}" | grep -q 'test-passphrase'; then
+    pass "Quick installer proves the recovery key actually unlocks the volume"
+else
+    fail "Quick installer must verify the recovery key unlocks, not trust luksAddKey's exit code"
+fi
+
+printf '\n'
+msg "=== TPM2 PCR binding happens where the PCRs are real (R13.4) ==="
+
+# The installer runs in the live medium's boot chain, so PCR 0/1/7 it can measure
+# are not the ones the installed system will have. Sealing against them at install
+# time yielded a token that never unsealed: every boot fell through to a passphrase
+# prompt while the LUKS header truthfully reported an enrolled TPM2 token. The
+# install-time slot must therefore be unbound, and the real binding must happen on
+# first boot from inside the installed system.
+if printf '%s' "${_qi_code}" | grep -qE '^\s*--tpm2-pcrs=0\+1\+7'; then
+    fail "Installer still seals against PCRs it measured in the wrong boot chain"
+else
+    pass "Installer does not bind PCRs it cannot know (bootstrap slot is unbound)"
+fi
+
+if grep -q '"0+1+7"' "${DISTRO_DIR}/first-boot/aios-first-boot.rs" 2>/dev/null \
+   && grep -q -- '--tpm2-pcrs=' "${DISTRO_DIR}/first-boot/aios-first-boot.rs" 2>/dev/null; then
+    pass "First-boot re-enrols TPM2 bound to the installed system's real PCRs"
+else
+    fail "First-boot must re-enrol with --tpm2-pcrs=0+1+7; otherwise the unbound bootstrap slot becomes permanent"
+fi
+
+if grep -q 'wipe-slot=tpm2' "${DISTRO_DIR}/first-boot/aios-first-boot.rs" 2>/dev/null; then
+    pass "First-boot wipes the unbound bootstrap slot after re-enrolling"
+else
+    fail "First-boot must wipe the unbound bootstrap slot, or it survives alongside the bound one"
+fi
 
 printf '\n'
 msg "=== SELinux: reachable enforcing, real store, real cmdline (R13.7) ==="
