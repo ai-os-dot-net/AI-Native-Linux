@@ -727,9 +727,23 @@ do_bootloader() {
     # lines, so "Reached target ..." — the only marker a running OS can emit
     # that a bootloader cannot fake — would never reach the log. Hardened
     # profiles stay quiet.
+    # systemd.log_level=debug on CI_BARE: initrd-switch-root.service fails after
+    # the disk is unlocked and the root filesystem is mounted, and systemd loops
+    # through Switch Root six times before giving up to the emergency shell. At
+    # the default level it reports only "[FAILED] Failed to start Switch Root."
+    # and points at `systemctl status`, which nothing in a headless gate can run.
+    # Two guesses have already been spent on this (the bare `verity` token, and
+    # dracut hostonly); the reason has to come from systemd itself.
+    # `rd.debug` is deliberately NOT added -- it is shell tracing and floods the
+    # serial line hard enough to threaten the phase-2 timeout.
     local _verbosity="quiet loglevel=3"
     case "${PROFILE}" in
-        CI_BARE) _verbosity="loglevel=7 systemd.show_status=yes" ;;
+        # log_target=console is the load-bearing half. systemd.log_level=debug
+        # alone routes to the journal, which dies with the initrd and never
+        # reaches the serial line -- the debug run produced 1133 lines that
+        # mentioned initrd-switch-root.service exactly zero times, while the
+        # service was demonstrably failing six times over.
+        CI_BARE) _verbosity="loglevel=7 systemd.show_status=yes systemd.log_level=debug systemd.log_target=console" ;;
     esac
 
     local _entries_dir="${TARGET_MOUNT}/boot/efi/loader/entries"

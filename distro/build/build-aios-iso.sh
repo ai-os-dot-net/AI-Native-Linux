@@ -1647,15 +1647,31 @@ mkdir -p "${ISO_DIR}/live"
 
 # Create mksquashfs exclude file
 EXCLUDE_FILE="${BUILD_DIR}/squashfs-excludes.txt"
+# Exclude the CONTENTS of these directories, never the directories themselves.
+#
+# A bare `run` drops the mount point too, and this image is not only a live
+# medium: do_deploy unsquashes this exact squashfs onto the installed disk, so
+# the installed root shipped with no /run, /proc, /sys, /dev, /tmp or /mnt at
+# all. The live path hid it because the live initramfs creates those on a tmpfs
+# overlay. The installed system mounts its root read-only, so PID 1 could not
+# create them either, and systemd said so:
+#
+#     Failed to create /sysroot/run: Read-only file system
+#     Failed to resolve /sysroot//run: No such file or directory
+#     Failed to switch root, trying to continue: No such file or directory
+#
+# switch-root then retried six times and dropped to the dracut emergency shell,
+# on a system whose disk had already unlocked from the TPM and whose root had
+# already mounted. `/*` keeps the empty mount point and drops what is inside it.
 cat > "${EXCLUDE_FILE}" <<'EOF'
-proc
-sys
-dev
-run
-tmp
+proc/*
+sys/*
+dev/*
+run/*
+tmp/*
 lost+found
-mnt
-media
+mnt/*
+media/*
 EOF
 
 mksquashfs "${ROOTFS_DIR}" "${ISO_DIR}/live/aios.squashfs" \

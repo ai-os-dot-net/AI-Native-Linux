@@ -259,6 +259,26 @@ else
 fi
 
 printf '\n'
+msg "=== The image must ship the mount points a read-only root cannot create ==="
+
+# mksquashfs excluded `run`, `proc`, `sys`, `dev`, `tmp` and `mnt` as bare names,
+# which drops the directories, not just their contents. do_deploy unsquashes this
+# same image onto the installed disk, so the installed root had no mount points at
+# all. Its root mounts read-only, so PID 1 could not create them either:
+#   "Failed to create /sysroot/run: Read-only file system"
+#   "Failed to switch root, trying to continue: No such file or directory"
+# switch-root retried six times and fell into the dracut emergency shell -- on a
+# system whose disk had already unlocked from the TPM and whose root had mounted.
+_excl="$(sed -n '/^cat > "${EXCLUDE_FILE}"/,/^EOF$/p' "${BUILD_SCRIPT}" 2>/dev/null)"
+for _d in proc sys dev run tmp mnt; do
+    if printf '%s' "${_excl}" | grep -qE "^${_d}$"; then
+        fail "squashfs excludes bare '${_d}' — that drops the mount point, not just its contents"
+    else
+        pass "squashfs keeps the '${_d}' mount point"
+    fi
+done
+
+printf '\n'
 msg "=== SELinux: reachable enforcing, real store, real cmdline (R13.7) ==="
 
 # The quick installer was pinned to the retired Rev12 assumptions: SELINUXTYPE=aios
