@@ -1147,6 +1147,33 @@ fn phase_7_backup(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBoot
         ctx.backup_targets.clone(),
     );
 
+    // INV-033 requires at least one OFF_HOST backup target. On an UNATTENDED
+    // (non-interactive) install there may be no real off-host target to supply,
+    // and a hard failure would make every CI/cloud/headless machine unbootable.
+    // Variant-1 hybrid: high-security profiles (STIG_ALIGNED, AIRGAP_HIGH) still
+    // hard-require an off-host target — the operator must pass --backup-targets;
+    // for normal profiles on an unattended install we record the contract as
+    // PENDING (the machine boots, but the missing off-host target is flagged for
+    // the operator to set later) rather than invent a fake target. Interactive
+    // installs keep the hard requirement — the operator is present to supply one.
+    let mut backup_pending_offhost = false;
+    if let Err(e) = contract.validate() {
+        // Defer ONLY the missing-off-host case. Any other validation failure
+        // (encrypt_at_source false, or no targets at all) is a real defect and
+        // still fails closed regardless of profile or mode.
+        let only_missing_offhost = !contract.has_off_host_target()
+            && contract.encrypt_at_source
+            && !contract.targets.is_empty();
+        if !backup_offhost_deferrable(&ctx.security_profile, cli.non_interactive)
+            || !only_missing_offhost
+        {
+            return Err(FirstBootError::Config(format!(
+                "backup contract validation failed: {e}"
+            )));
+        }
+        backup_pending_offhost = true;
+    }
+
     fs::create_dir_all(BACKUP_DIR)?;
     let contract_json = serde_json::json!({
         "contract_id": ctx.backup_contract_id,
@@ -1156,7 +1183,14 @@ fn phase_7_backup(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBoot
         "rollback_anchor": contract.rollback_anchor,
         "targets": contract.targets,
         "created_at": now_rfc3339(),
-        "constitutional": true,
+        // Fully constitutional only once an off-host target satisfies INV-033.
+        "constitutional": !backup_pending_offhost,
+        "status": if backup_pending_offhost {
+            "pending_off_host_target"
+        } else {
+            "active"
+        },
+        "pending_off_host_target": backup_pending_offhost,
     });
     write_file_mode(
         &format!("{BACKUP_DIR}/contract.json"),
@@ -1164,20 +1198,27 @@ fn phase_7_backup(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBoot
         0o644,
     )?;
 
-    if let Err(e) = contract.validate() {
-        return Err(FirstBootError::Config(format!(
-            "backup contract validation failed: {e}"
-        )));
+    if backup_pending_offhost {
+        log_stage(
+            "backup",
+            "WARN",
+            &format!(
+                "Contract '{}' recorded PENDING: no off-host target for profile {} \
+                 (unattended install). INV-033 not yet satisfied — set an off-host \
+                 backup target to complete the contract.",
+                ctx.backup_contract_id, ctx.security_profile,
+            ),
+        );
+    } else {
+        log_stage(
+            "backup",
+            "OK",
+            &format!(
+                "Contract '{}' with targets: {:?}",
+                ctx.backup_contract_id, ctx.backup_targets,
+            ),
+        );
     }
-
-    log_stage(
-        "backup",
-        "OK",
-        &format!(
-            "Contract '{}' with targets: {:?}",
-            ctx.backup_contract_id, ctx.backup_targets,
-        ),
-    );
 
     record_evidence(
         ctx,
@@ -1186,10 +1227,21 @@ fn phase_7_backup(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBoot
             "contract_id": ctx.backup_contract_id,
             "targets": ctx.backup_targets,
             "encrypt_at_source": true,
+            "pending_off_host_target": backup_pending_offhost,
         }),
     )?;
 
     Ok(())
+}
+
+/// INV-033 hybrid decision: whether a missing OFF_HOST backup target may be
+/// DEFERRED (the contract is recorded PENDING and the boot continues) instead of
+/// failing the install. Deferral is allowed ONLY for an unattended
+/// (non-interactive) install on a non-strict profile; STIG_ALIGNED and
+/// AIRGAP_HIGH always require a real off-host target, and interactive installs
+/// keep the hard requirement because an operator is present to supply one.
+fn backup_offhost_deferrable(security_profile: &str, non_interactive: bool) -> bool {
+    non_interactive && !matches!(security_profile, "STIG_ALIGNED" | "AIRGAP_HIGH")
 }
 
 /// Phase 7.5: Generate recovery key shards (3-of-5 threshold).
@@ -1849,5 +1901,19 @@ mod tests {
         let msg = format!("{e}");
         assert!(msg.contains("Permissive"));
         assert!(msg.contains("INV-001"));
+    }
+
+    #[test]
+    fn backup_offhost_deferrable_only_unattended_normal_profiles() {
+        // Unattended (non-interactive) normal profiles may defer the off-host
+        // target: the machine boots and the contract is flagged PENDING.
+        assert!(backup_offhost_deferrable("SECURE_DEFAULT", true));
+        assert!(backup_offhost_deferrable("DEV_RELAXED", true));
+        // High-security profiles always require a real off-host target.
+        assert!(!backup_offhost_deferrable("STIG_ALIGNED", true));
+        assert!(!backup_offhost_deferrable("AIRGAP_HIGH", true));
+        // Interactive installs keep the hard requirement (operator is present).
+        assert!(!backup_offhost_deferrable("SECURE_DEFAULT", false));
+        assert!(!backup_offhost_deferrable("STIG_ALIGNED", false));
     }
 }
