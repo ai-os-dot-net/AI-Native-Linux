@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="76 105 360 360" role="img" aria-label="AIOS octopus mark">
+  <defs>
+    <linearGradient id="mAccent" x1="120" y1="120" x2="392" y2="452" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ce2867" />
+      <stop offset="100%" stop-color="#a855f7" />
+    </linearGradient>
+    <linearGradient id="mMantle" x1="150" y1="118" x2="362" y2="330" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ce2867" />
+      <stop offset="100%" stop-color="#a855f7" />
+    </linearGradient>
+  </defs>
+
+  <!-- tentacles (drawn first so the mantle overlaps their roots) -->
+  <g fill="none" stroke="url(#mAccent)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M196 292C150 320 120 360 130 410C136 440 165 452 190 438" stroke-width="20" opacity=".92" />
+    <path d="M222 298C205 340 195 380 205 415C210 435 230 442 246 432" stroke-width="17" opacity=".88" />
+    <path d="M244 300C238 330 236 355 244 375" stroke-width="14" opacity=".84" />
+    <path d="M268 300C274 330 276 355 268 375" stroke-width="14" opacity=".84" />
+    <path d="M290 298C307 340 317 380 307 415C302 435 282 442 266 432" stroke-width="17" opacity=".88" />
+    <path d="M316 292C362 320 392 360 382 410C376 440 347 452 322 438" stroke-width="20" opacity=".92" />
+  </g>
+  <circle cx="190" cy="438" r="4.5" fill="#ce2867" />
+  <circle cx="322" cy="438" r="4.5" fill="#a855f7" />
+  <circle cx="246" cy="432" r="3.5" fill="#ce2867" />
+  <circle cx="266" cy="432" r="3.5" fill="#a855f7" />
+
+  <!-- mantle / head -->
+  <path d="M256 118C330 118 366 168 362 232C360 268 344 292 316 300L196 300C168 292 152 268 150 232C146 168 182 118 256 118Z" fill="url(#mMantle)" />
+  <ellipse cx="256" cy="168" rx="72" ry="38" fill="#ffffff" opacity=".08" />
+
+  <!-- neural core marker -->
+  <polygon points="256,128 268,134.5 268,147.5 256,154 244,147.5 244,134.5" fill="none" stroke="#ffffff" stroke-width="1.6" opacity=".7" />
+  <circle cx="256" cy="141" r="3" fill="#ffffff" opacity=".9" />
+
+  <!-- eyes (sit on the magenta mantle, so they read on any page background) -->
+  <circle cx="214" cy="210" r="23" fill="#f7f7f8" />
+  <circle cx="298" cy="210" r="23" fill="#f7f7f8" />
+  <circle cx="214" cy="210" r="10" fill="#09090b" />
+  <circle cx="217" cy="207" r="3" fill="#ffffff" />
+  <circle cx="298" cy="210" r="10" fill="#09090b" />
+  <circle cx="301" cy="207" r="3" fill="#ffffff" />
+
+  <!-- mouth -->
+  <path d="M240 252C247 259 265 259 272 252" fill="none" stroke="#09090b" stroke-width="4" stroke-linecap="round" opacity=".5" />
+</svg>

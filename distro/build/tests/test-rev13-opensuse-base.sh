@@ -119,10 +119,31 @@ check_grep "Builder detects zypper false success output" "${OPENSUSE_BUILDER}" '
 check_grep "Builder verifies repo file after addrepo" "${OPENSUSE_BUILDER}" 'zypper did not create repository file'
 check_grep "Builder skips invalid Leap 16 update repo" "${OPENSUSE_BUILDER}" 'has no dedicated update repo'
 check_grep "Builder includes vendor kernel" "${OPENSUSE_BUILDER}" 'kernel-default'
+# dm-verity is CONFIG_DM_VERITY=m but its .ko ships ONLY in kernel-default-extra
+# for the -default flavor (not kernel-default, not kernel-default-optional). The
+# immutable (verity) root boots with "verity: unknown target type" without it.
+check_grep "Builder includes kernel-default-extra for dm-verity.ko" "${OPENSUSE_BUILDER}" 'kernel-default-extra'
+check_grep "Builder fails closed if dm-verity.ko is absent" "${OPENSUSE_BUILDER}" 'kernel-default-extra missing or wrong version'
 check_grep "Builder includes Leap 16 firmware package" "${OPENSUSE_BUILDER}" 'kernel-firmware-all'
 check_absent "Builder does not require removed systemd-sysvinit package" "${OPENSUSE_BUILDER}" 'systemd-sysvinit'
 check_grep "Builder includes secure boot tooling" "${OPENSUSE_BUILDER}" 'shim'
 check_grep "Builder includes TPM tooling" "${OPENSUSE_BUILDER}" 'tpm2\.0-tools'
+# R13.4: tpm2.0-tools brings the tss2 stack but no TCTI *driver*. Without one,
+# every TPM call fails with "TPM TCTI driver not available" despite /dev/tpm0
+# existing, so systemd-cryptenroll never enrols a TPM2 token. Measured in a
+# local QEMU+swtpm install run, not inferred.
+check_grep "Builder includes a TPM2 TCTI device driver (not just the tss2 stack)" \
+    "${OPENSUSE_BUILDER}" '^\s*libtss2-tcti-device0\s'
+# Defect #12a (pipeline 5309): the systemd package ships bootctl but NOT the
+# loader payload. Without the separate systemd-boot package the installed ESP
+# held zero .efi files and the firmware dropped to the EFI shell, while bootctl
+# had already "succeeded". A bootctl-only package set is the regression.
+check_grep "Builder includes the systemd-boot loader payload package" \
+    "${OPENSUSE_BUILDER}" '^\s*systemd-boot\s*$'
+# dracut must be present: zypper --root runs no kernel hooks, so the rootfs
+# ships no initramfs and the installer has to build one (defect #12b).
+check_grep "Builder includes dracut for installer-side initramfs generation" \
+    "${OPENSUSE_BUILDER}" '^\s*dracut\s*$'
 
 msg "ISO enterprise gate"
 check_grep "ISO builder has enterprise flag" "${ISO_BUILDER}" '--enterprise-release'

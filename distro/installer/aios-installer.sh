@@ -757,29 +757,38 @@ seal_tpm2() {
     msg "  PCR 1 — firmware config (UEFI setup, boot order)"
     msg "  PCR 7 — Secure Boot state (PK, KEK, db/dbx)"
 
-    local _sealed_blob="${TARGET_MOUNT}/etc/aios/sealed-key.blob"
-    mkdir -p "$(dirname "${_sealed_blob}")"
-
-    # Use systemd-cryptenroll to embed TPM2 token into the LUKS2 header
+    # Use systemd-cryptenroll to embed TPM2 token into the LUKS2 header.
+    #
+    # Two defects lived here (both silent — the failure path only warned):
+    #   - --key-file does not exist on systemd-cryptenroll; the option that
+    #     supplies the current passphrase is --unlock-key-file=. Every enrolment
+    #     aborted with "unrecognized option" and was swallowed by the warn.
+    #   - --tpm2-public-key=PATH takes a PEM *public key* as INPUT, for enrolling
+    #     a signed PCR policy. It was handed sealed-key.blob, an output path that
+    #     nothing ever wrote and nothing ever read. It sealed nothing.
     if command -v systemd-cryptenroll >/dev/null 2>&1; then
         systemd-cryptenroll "${LUKS_DEV}" \
+            --unlock-key-file="${LUKS_TMP_KEYFILE}" \
             --tpm2-device=auto \
             --tpm2-pcrs=0+1+7 \
-            --tpm2-public-key="${_sealed_blob}" \
-            --wipe-slot=tpm2 \
-            --key-file "${LUKS_TMP_KEYFILE}" 2>&1 || {
+            --wipe-slot=tpm2 2>&1 || {
             warn "systemd-cryptenroll failed. TPM2 sealing will be skipped."
             warn "You will need to enter the LUKS passphrase manually on boot."
             return 0
         }
-        msg "TPM2 token enrolled successfully in LUKS2 header."
     else
         warn "systemd-cryptenroll not available. TPM2 sealing skipped."
         return 0
     fi
 
-    chmod 400 "${_sealed_blob}"
-    msg "Sealed key blob stored: ${_sealed_blob}"
+    # Read the token back rather than trusting the exit code.
+    if cryptsetup luksDump "${LUKS_DEV}" 2>/dev/null | grep -qi "systemd-tpm2"; then
+        msg "TPM2 token enrolled successfully in LUKS2 header."
+    else
+        warn "systemd-cryptenroll reported success but no systemd-tpm2 token is present."
+        warn "You will need to enter the LUKS passphrase manually on boot."
+        return 0
+    fi
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -804,8 +813,9 @@ generate_recovery_key() {
             | tr '\n' ' '
         )
     else
-        # Fallback: hex from urandom
-        _recovery_words=$(xxd -l "${RECOVERY_KEY_LENGTH}" -p /dev/urandom \
+        # Fallback: hex from openssl (already in the base package set). xxd ships
+        # in vim-data and is absent from the live image — see defect #10.
+        _recovery_words=$(openssl rand -hex "${RECOVERY_KEY_LENGTH}" \
             | fold -w 2 | head -n "${RECOVERY_KEY_LENGTH}" | tr '\n' ' ')
     fi
 
