@@ -39,6 +39,13 @@ BASE_PACKAGES=(
     # NB: systemd-sysvcompat does not exist in Leap 16.0 (dropped upstream);
     # the initramfs init discovers /usr/lib/systemd/systemd directly.
     systemd
+    # systemd ships bootctl, but NOT the loader binary it installs. The EFI
+    # payload (/usr/lib/systemd/boot/efi/systemd-bootx64.efi) lives in the
+    # separate systemd-boot package. Without it `bootctl install` creates only
+    # the ESP directory skeleton + loader.conf and installs no EFI binary, so
+    # the firmware finds nothing to boot and drops to the EFI shell (defect
+    # #12a: pipeline 5309 ESP had zero .efi files while bootctl was present).
+    systemd-boot
     dbus-1
     util-linux
     iproute2
@@ -50,17 +57,38 @@ BASE_PACKAGES=(
     sudo
     timezone
     kernel-default
+    # dm-verity is CONFIG_DM_VERITY=m in the Leap 16.0 kernel, but the .ko is NOT
+    # shipped in kernel-default (nor kernel-default-optional). For the -default
+    # flavor the ONLY package that carries
+    # /usr/lib/modules/<kver>-default/kernel/drivers/md/dm-verity.ko.zst is
+    # kernel-default-extra (verified against the oss filelists metadata). Without
+    # it the initramfs has veritysetup + the systemd unit but no kernel target, so
+    # the immutable root dies at boot with "device-mapper: table: verity: unknown
+    # target type" → /dev/mapper/root never appears → emergency shell. Same defect
+    # shape as dm_mod/tpm2 above: the tool ships, the kernel payload does not.
+    # zypper resolves kernel-default-extra to the exact kernel-default version.
+    kernel-default-extra
     kernel-firmware-all
     dracut
     cryptsetup
     tpm2.0-tools
+    # tpm2.0-tools pulls the tss2 stack (esys/sys/mu/rc/tctildr) but NOT a TCTI
+    # *driver*. tctildr is only the loader that goes looking for one; without a
+    # driver every TPM call dies with "TPM TCTI driver not available" even
+    # though /dev/tpm0 and /dev/tpmrm0 are present. systemd-cryptenroll then
+    # fails and the installer's warn-and-continue path hid it, so installs
+    # completed with no TPM2 token in the LUKS2 header (R13.4).
+    # Same shape as defect #12a: the tool ships, the payload does not.
+    libtss2-tcti-device0    # talks to /dev/tpm0 and /dev/tpmrm0 (real + swtpm)
+    libtss2-tcti-cmd0       # command-channel TCTI, used by swtpm/mssim setups
     device-mapper
     lvm2
     # Installer tool dependencies (distro/installer/aios-quick-install.sh
     # requires: lsblk sgdisk mkfs.vfat mkfs.ext4 cryptsetup unsquashfs bootctl
-    # blkid). lsblk/blkid come from util-linux, cryptsetup + bootctl(systemd)
-    # are already above; these provide the rest. Pipeline 4742 proved the
-    # unattended install reaches the tool check and dies on missing sgdisk.
+    # blkid). lsblk/blkid come from util-linux, cryptsetup + bootctl(systemd,
+    # with its EFI payload from systemd-boot) are already above; these provide
+    # the rest. Pipeline 4742 proved the unattended install reaches the tool
+    # check and dies on missing sgdisk.
     gptfdisk       # sgdisk (GPT partitioning)
     dosfstools     # mkfs.vfat (ESP)
     e2fsprogs      # mkfs.ext4 (boot/recovery/root/rollback)
@@ -361,6 +389,15 @@ finalize_kernel_modules() {
     # device-mapper .ko must physically exist, else LUKS install is impossible
     if ! ls "${mroot}/${kver}"/kernel/drivers/md/dm-mod.ko* >/dev/null 2>&1; then
         die "device-mapper module (dm-mod.ko) absent under ${mroot}/${kver} — kernel-default packaging problem"
+    fi
+
+    # dm-verity .ko must physically exist, else the immutable (verity) root cannot
+    # be assembled and the installed system dies at boot with "verity: unknown
+    # target type". It ships only in kernel-default-extra (added to BASE_PACKAGES);
+    # fail closed here so a packaging regression is a loud build failure, not a
+    # silent boot failure discovered only in QEMU.
+    if ! ls "${mroot}/${kver}"/kernel/drivers/md/dm-verity.ko* >/dev/null 2>&1; then
+        die "dm-verity module (dm-verity.ko) absent under ${mroot}/${kver} — kernel-default-extra missing or wrong version"
     fi
 
     # Prefer an in-rootfs chroot depmod (no host-escape risk); fall back to a

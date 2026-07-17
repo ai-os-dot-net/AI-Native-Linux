@@ -84,9 +84,16 @@ const AIOS_ETC: &str = "/etc/aios";
 const AIOS_VAR: &str = "/var/lib/aios";
 const AIOS_RUN: &str = "/run/aios";
 const FIRST_BOOT_FLAG: &str = "/etc/aios/first-boot";
-const HOST_KEY_PRIV: &str = "/etc/aios/host-key.priv";
-const HOST_KEY_PUB: &str = "/etc/aios/host-key.pub";
-const HOST_ID_FILE: &str = "/etc/aios/host-id";
+// Host identity keypair and host-id live on the encrypted /var, NOT on the root.
+// The root is now a read-only dm-verity volume with a writable /etc overlay whose
+// upper layer sits on /var; writing the private host key through that overlay
+// would place a security-sensitive secret in the overlay upper by side effect
+// rather than by intent. Putting it directly under /var/lib/aios keeps it on the
+// encrypted volume deliberately. These paths have no external consumers (only
+// this binary reads/writes them). write_file() create_dir_all()s the parent.
+const HOST_KEY_PRIV: &str = "/var/lib/aios/host-key.priv";
+const HOST_KEY_PUB: &str = "/var/lib/aios/host-key.pub";
+const HOST_ID_FILE: &str = "/var/lib/aios/host-id";
 const SECURITY_PROFILE_FILE: &str = "/etc/aios/security-profile";
 const VERITY_DIR: &str = "/etc/aios/verity";
 const RECOVERY_DIR: &str = "/etc/aios/recovery";
@@ -102,6 +109,12 @@ const SUBJECTS_DIR: &str = "/etc/aios/subjects";
 const TPM_DIR: &str = "/etc/aios/tpm";
 const TPM_PERSISTENT_HANDLE: &str = "0x81008001";
 const ADMIN_GROUP: &str = "admin";
+const CRYPTTAB_PATH: &str = "/etc/crypttab";
+
+/// PCR set the installed system seals its LUKS TPM2 token against.
+///
+/// 0 = firmware code, 1 = firmware configuration, 7 = secure-boot state.
+const LUKS_TPM2_PCRS: &str = "0+1+7";
 
 // ─── First-Boot Context ────────────────────────────────────────────────────
 
@@ -152,7 +165,10 @@ impl std::fmt::Display for FirstBootError {
             Self::Io(e) => write!(f, "I/O error: {e}"),
             Self::Serde(e) => write!(f, "JSON error: {e}"),
             Self::SelinuxNotEnforcing(mode) => {
-                write!(f, "SELinux not enforcing (mode: {mode}). INV-001 violation.")
+                write!(
+                    f,
+                    "SELinux not enforcing (mode: {mode}). INV-001 violation."
+                )
             }
             Self::HardwareCheckFailed(msg) => write!(f, "Hardware check failed: {msg}"),
             Self::Config(msg) => write!(f, "Configuration error: {msg}"),
@@ -183,9 +199,13 @@ impl From<std::fmt::Error> for FirstBootError {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-fn now_utc() -> DateTime<Utc> { Utc::now() }
+fn now_utc() -> DateTime<Utc> {
+    Utc::now()
+}
 
-fn now_rfc3339() -> String { now_utc().to_rfc3339() }
+fn now_rfc3339() -> String {
+    now_utc().to_rfc3339()
+}
 
 fn now_secs() -> u64 {
     SystemTime::now()
@@ -246,9 +266,86 @@ fn cmd_ok(program: &str, args: &[&str]) -> bool {
         .is_ok_and(|s| s.success())
 }
 
-fn file_exists(path: &str) -> bool { Path::new(path).exists() }
+/// Run a child and capture stdout and stderr interleaved, along with success.
+///
+/// `cmd_output` drops stdout on failure and stderr on success. `systemd-cryptenroll`
+/// splits its diagnostics across both streams, so neither half alone explains why
+/// an enrolment failed.
+fn cmd_combined(program: &str, args: &[&str]) -> Result<(bool, String), FirstBootError> {
+    let output = Command::new(program)
+        .args(args)
+        .output()
+        .map_err(|e| FirstBootError::Child(program.to_string(), e.to_string()))?;
+    let mut combined = String::from_utf8_lossy(&output.stdout).into_owned();
+    combined.push_str(&String::from_utf8_lossy(&output.stderr));
+    Ok((output.status.success(), combined.trim().to_string()))
+}
 
-fn dir_exists(path: &str) -> bool { Path::new(path).is_dir() }
+/// Resolve the TPM2-unlocked LUKS backing device recorded in `/etc/crypttab`.
+///
+/// Fields are `<name> <device> <keyfile> <options>`; we take the `UUID=` device of
+/// the first mapping whose options request TPM2 unlocking. `None` means this system
+/// does not unlock a volume via the TPM at all.
+fn crypttab_tpm2_device(crypttab: &str) -> Option<String> {
+    crypttab
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .find_map(|line| {
+            let mut fields = line.split_whitespace();
+            let _name = fields.next()?;
+            let device = fields.next()?;
+            let _keyfile = fields.next()?;
+            if !fields.next()?.contains("tpm2-device=") {
+                return None;
+            }
+            let uuid = device.strip_prefix("UUID=")?;
+            Some(format!("/dev/disk/by-uuid/{uuid}"))
+        })
+}
+
+/// Parse the PCR set a `systemd-tpm2` LUKS token is sealed against.
+///
+/// `cryptsetup luksDump` renders the token's `tpm2-pcrs` JSON field under the printed
+/// label `tpm2-hash-pcrs:` — the JSON key and the dump label are *not* the same string.
+/// The label is emitted for every systemd-tpm2 token whether or not it is bound, and an
+/// unbound token prints an empty value, so the presence of the line proves nothing and
+/// only the value carries the binding. `tpm2-pubkey-pcrs:` is a different (signed-policy)
+/// binding and must not be mistaken for this one.
+///
+/// `None` = no systemd-tpm2 token; `Some([])` = token present but bound to no PCRs.
+fn luks_token_pcrs(dump: &str) -> Option<Vec<u8>> {
+    let value = dump
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix("tpm2-hash-pcrs:"))?
+        .trim();
+    let mut pcrs: Vec<u8> = value
+        .split('+')
+        .filter_map(|part| part.trim().parse::<u8>().ok())
+        .collect();
+    pcrs.sort_unstable();
+    pcrs.dedup();
+    Some(pcrs)
+}
+
+/// The PCR set `LUKS_TPM2_PCRS` denotes, normalized for comparison.
+fn expected_luks_pcrs() -> Vec<u8> {
+    let mut pcrs: Vec<u8> = LUKS_TPM2_PCRS
+        .split('+')
+        .filter_map(|part| part.parse::<u8>().ok())
+        .collect();
+    pcrs.sort_unstable();
+    pcrs
+}
+
+fn file_exists(path: &str) -> bool {
+    Path::new(path).exists()
+}
+
+fn dir_exists(path: &str) -> bool {
+    Path::new(path).is_dir()
+}
 
 fn read_file(path: &str) -> Result<String, FirstBootError> {
     Ok(fs::read_to_string(path)?)
@@ -360,7 +457,11 @@ fn phase_1_hardware(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
     if selinux_mode == "Enforcing" {
         log_stage("hw/selinux", "OK", "SELinux is enforcing");
     } else {
-        log_stage("hw/selinux", "FAIL", &format!("SELinux not enforcing (mode: {selinux_mode})"));
+        log_stage(
+            "hw/selinux",
+            "FAIL",
+            &format!("SELinux not enforcing (mode: {selinux_mode})"),
+        );
         eprintln!("\nERROR: SELinux must be in enforcing mode before first boot.");
         eprintln!("This is a constitutional requirement (INV-001).");
         return Err(FirstBootError::SelinuxNotEnforcing(selinux_mode));
@@ -410,7 +511,10 @@ fn phase_2_identity(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
     if !file_exists(HOST_KEY_PRIV) {
         fs::create_dir_all(AIOS_RUN)?;
         let tmp_priv = format!("{AIOS_RUN}/host-key-tmp.priv");
-        cmd_output("openssl", &["genpkey", "-algorithm", "ED25519", "-out", &tmp_priv])?;
+        cmd_output(
+            "openssl",
+            &["genpkey", "-algorithm", "ED25519", "-out", &tmp_priv],
+        )?;
         cmd_output(
             "openssl",
             &["pkey", "-in", &tmp_priv, "-pubout", "-out", HOST_KEY_PUB],
@@ -426,13 +530,14 @@ fn phase_2_identity(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
     // Compute fingerprint
     let pub_der = cmd_output(
         "openssl",
-        &[
-            "pkey", "-in", HOST_KEY_PUB, "-pubin", "-outform", "DER",
-        ],
+        &["pkey", "-in", HOST_KEY_PUB, "-pubin", "-outform", "DER"],
     )?;
     let fingerprint = blake3::hash(pub_der.as_bytes());
     ctx.host_key_fingerprint = fingerprint.to_hex().to_string();
-    println!("  Host Key Fingerprint (BLAKE3): {}", ctx.host_key_fingerprint);
+    println!(
+        "  Host Key Fingerprint (BLAKE3): {}",
+        ctx.host_key_fingerprint
+    );
 
     record_evidence(
         ctx,
@@ -455,7 +560,11 @@ fn phase_3_security_profile(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(),
         ctx.security_profile = preset.clone();
     } else if cli.non_interactive {
         ctx.security_profile = "SECURE_DEFAULT".to_string();
-        log_stage("profile", "INFO", "Non-interactive: defaulting to SECURE_DEFAULT");
+        log_stage(
+            "profile",
+            "INFO",
+            "Non-interactive: defaulting to SECURE_DEFAULT",
+        );
     } else {
         println!("Select the initial security profile:");
         println!("  1) DEV_RELAXED      Full access, minimal restrictions");
@@ -464,19 +573,39 @@ fn phase_3_security_profile(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(),
         println!("  4) AIRGAP_HIGH      Maximum security, no external network\n");
         loop {
             let choice = read_line("Profile [2]: ")?;
-            let choice = if choice.is_empty() { "2".to_string() } else { choice };
+            let choice = if choice.is_empty() {
+                "2".to_string()
+            } else {
+                choice
+            };
             match choice.as_str() {
-                "1" => { ctx.security_profile = "DEV_RELAXED".to_string(); break; }
-                "2" => { ctx.security_profile = "SECURE_DEFAULT".to_string(); break; }
-                "3" => { ctx.security_profile = "STIG_ALIGNED".to_string(); break; }
-                "4" => { ctx.security_profile = "AIRGAP_HIGH".to_string(); break; }
+                "1" => {
+                    ctx.security_profile = "DEV_RELAXED".to_string();
+                    break;
+                }
+                "2" => {
+                    ctx.security_profile = "SECURE_DEFAULT".to_string();
+                    break;
+                }
+                "3" => {
+                    ctx.security_profile = "STIG_ALIGNED".to_string();
+                    break;
+                }
+                "4" => {
+                    ctx.security_profile = "AIRGAP_HIGH".to_string();
+                    break;
+                }
                 _ => println!("  Invalid choice. Enter 1-4."),
             }
         }
     }
 
     write_file(SECURITY_PROFILE_FILE, &ctx.security_profile)?;
-    log_stage("profile", "OK", &format!("Security profile: {}", ctx.security_profile));
+    log_stage(
+        "profile",
+        "OK",
+        &format!("Security profile: {}", ctx.security_profile),
+    );
 
     // Set derived settings
     match ctx.security_profile.as_str() {
@@ -520,7 +649,11 @@ fn phase_4_operator(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBo
         ctx.operator_name = sanitize_name(name);
     } else if cli.non_interactive {
         ctx.operator_name = "operator".to_string();
-        log_stage("operator", "INFO", "Non-interactive: defaulting to 'operator'");
+        log_stage(
+            "operator",
+            "INFO",
+            "Non-interactive: defaulting to 'operator'",
+        );
     } else {
         println!("AIOS requires at least one human operator with admin authority.\n");
         loop {
@@ -562,7 +695,11 @@ fn phase_4_operator(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBo
         0o640,
     )?;
 
-    log_stage("operator", "OK", &format!("Operator '{}' created", ctx.operator_canonical));
+    log_stage(
+        "operator",
+        "OK",
+        &format!("Operator '{}' created", ctx.operator_canonical),
+    );
 
     record_evidence(
         ctx,
@@ -595,7 +732,10 @@ fn phase_5_tpm(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBootErr
     println!("  Enrolling TPM 2.0 attestation chain...");
 
     // Evict old persistent handle
-    let _ = cmd_output("tpm2_evictcontrol", &["-C", "o", "-c", TPM_PERSISTENT_HANDLE]);
+    let _ = cmd_output(
+        "tpm2_evictcontrol",
+        &["-C", "o", "-c", TPM_PERSISTENT_HANDLE],
+    );
 
     // Read PCR values
     let mut pcr_values = Vec::new();
@@ -620,9 +760,22 @@ fn phase_5_tpm(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBootErr
     // Create primary under endorsement hierarchy
     match cmd_output(
         "tpm2_createprimary",
-        &["-C", "e", "-g", "sha256", "-G", "ecc", "-c", &tpm_ctx_primary],
+        &[
+            "-C",
+            "e",
+            "-g",
+            "sha256",
+            "-G",
+            "ecc",
+            "-c",
+            &tpm_ctx_primary,
+        ],
     ) {
-        Ok(_) => log_stage("tpm/primary", "OK", "Primary key created under EK hierarchy"),
+        Ok(_) => log_stage(
+            "tpm/primary",
+            "OK",
+            "Primary key created under EK hierarchy",
+        ),
         Err(e) => {
             log_stage("tpm/primary", "FAIL", &format!("{e}"));
             return Err(e);
@@ -634,29 +787,47 @@ fn phase_5_tpm(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBootErr
     let create_result = cmd_output(
         "tpm2_create",
         &[
-            "-C", &tpm_ctx_primary,
-            "-g", "sha256", "-G", "ecc",
-            "-u", &tpm_ctx_ak_pub,
-            "-r", &tpm_ctx_ak_priv,
-            "-a", "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|sign",
-            "-p", &ak_auth,
+            "-C",
+            &tpm_ctx_primary,
+            "-g",
+            "sha256",
+            "-G",
+            "ecc",
+            "-u",
+            &tpm_ctx_ak_pub,
+            "-r",
+            &tpm_ctx_ak_priv,
+            "-a",
+            "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|sign",
+            "-p",
+            &ak_auth,
         ],
     );
     if create_result.is_ok() {
         log_stage("tpm/attestation-key", "OK", "Attestation key created");
     } else {
-        log_stage("tpm/attestation-key", "FAIL", "Attestation key creation failed");
-        return Err(FirstBootError::Tpm("attestation key creation failed".to_string()));
+        log_stage(
+            "tpm/attestation-key",
+            "FAIL",
+            "Attestation key creation failed",
+        );
+        return Err(FirstBootError::Tpm(
+            "attestation key creation failed".to_string(),
+        ));
     }
 
     // Load attestation key
     match cmd_output(
         "tpm2_load",
         &[
-            "-C", &tpm_ctx_primary,
-            "-u", &tpm_ctx_ak_pub,
-            "-r", &tpm_ctx_ak_priv,
-            "-c", &tpm_ctx_ak,
+            "-C",
+            &tpm_ctx_primary,
+            "-u",
+            &tpm_ctx_ak_pub,
+            "-r",
+            &tpm_ctx_ak_priv,
+            "-c",
+            &tpm_ctx_ak,
         ],
     ) {
         Ok(_) => log_stage("tpm/load", "OK", "Attestation key loaded"),
@@ -671,7 +842,11 @@ fn phase_5_tpm(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBootErr
             &["-C", "o", "-c", &tpm_ctx_ak, TPM_PERSISTENT_HANDLE],
         ) {
             Ok(_) => {
-                log_stage("tpm/persist", "OK", &format!("Persisted at {TPM_PERSISTENT_HANDLE}"));
+                log_stage(
+                    "tpm/persist",
+                    "OK",
+                    &format!("Persisted at {TPM_PERSISTENT_HANDLE}"),
+                );
                 ctx.tpm_enrolled = true;
             }
             Err(e) => {
@@ -711,12 +886,136 @@ fn phase_5_tpm(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBootErr
     Ok(())
 }
 
+/// Phase 5.5: Bind the LUKS TPM2 token to this system's real PCRs.
+///
+/// The installer enrols a *bootstrap* TPM2 token with no PCR binding, and it has no
+/// choice: it runs inside the live medium's boot chain, so PCR 0/1/7 as measured there
+/// are not the registers the installed system presents, and a token sealed against them
+/// could never unseal. This phase runs inside the installed system, booted the way every
+/// later boot will boot, so the PCRs here are the real ones.
+///
+/// Until this succeeds the volume is unsealable by any code that can reach the TPM on
+/// this machine — the binding is what ties the key to a known boot state, so a failure
+/// here is fatal rather than a warning.
+fn phase_5_5_luks_pcr_binding(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBootError> {
+    println!("\n--- Phase 5.5: LUKS TPM2 PCR Binding ---\n");
+
+    if cli.skip_tpm || !ctx.tpm_available {
+        log_stage("tpm/pcr-binding", "SKIP", "TPM not available or skipped");
+        return Ok(());
+    }
+
+    // crypttab is the only record of which volume the initramfs unlocks via the TPM.
+    let crypttab = match read_file(CRYPTTAB_PATH) {
+        Ok(contents) => contents,
+        Err(e) => {
+            log_stage(
+                "tpm/pcr-binding",
+                "SKIP",
+                &format!("cannot read {CRYPTTAB_PATH}: {e}"),
+            );
+            return Ok(());
+        }
+    };
+    let Some(device) = crypttab_tpm2_device(&crypttab) else {
+        log_stage(
+            "tpm/pcr-binding",
+            "SKIP",
+            "no TPM2-unlocked volume in /etc/crypttab",
+        );
+        return Ok(());
+    };
+    println!("  LUKS device: {device}");
+
+    // Nothing to re-bind unless the installer's bootstrap enrolment actually landed.
+    let before = cmd_output("cryptsetup", &["luksDump", &device])?;
+    if !before.contains("systemd-tpm2") {
+        log_stage(
+            "tpm/pcr-binding",
+            "WARN",
+            "no systemd-tpm2 token present -- installer enrolment did not happen",
+        );
+        return Ok(());
+    }
+
+    // Unlock through the bootstrap token, re-seal against the real PCRs, and wipe the
+    // unbound slot in the same operation.
+    let pcr_arg = format!("--tpm2-pcrs={LUKS_TPM2_PCRS}");
+    let (enrolled, enroll_log) = cmd_combined(
+        "systemd-cryptenroll",
+        &[
+            &device,
+            "--unlock-tpm2-device=auto",
+            "--tpm2-device=auto",
+            &pcr_arg,
+            "--wipe-slot=tpm2",
+        ],
+    )?;
+    if !enrolled {
+        log_stage(
+            "tpm/pcr-binding",
+            "FAIL",
+            "systemd-cryptenroll re-enrolment failed",
+        );
+        for line in enroll_log.lines().take(12) {
+            eprintln!("    cryptenroll: {line}");
+        }
+        return Err(FirstBootError::Tpm(format!(
+            "LUKS TPM2 re-enrolment against PCRs {LUKS_TPM2_PCRS} failed on {device}"
+        )));
+    }
+
+    // Verify the header rather than trust the exit code. A systemd-tpm2 token can be
+    // present and sealed to nothing at all — that is precisely the bootstrap state this
+    // phase exists to replace, and it dumps a `tpm2-hash-pcrs:` line just like a bound
+    // token does. An empty binding is a FAIL, not a pass.
+    let after = cmd_output("cryptsetup", &["luksDump", &device])?;
+    let Some(bound_pcrs) = luks_token_pcrs(&after) else {
+        return Err(FirstBootError::Tpm(format!(
+            "no systemd-tpm2 token on {device} after re-enrolment reported success"
+        )));
+    };
+    if bound_pcrs.is_empty() {
+        return Err(FirstBootError::Tpm(format!(
+            "systemd-tpm2 token on {device} is bound to no PCRs after re-enrolment \
+             reported success; the volume would unseal under any boot state"
+        )));
+    }
+    let expected = expected_luks_pcrs();
+    if bound_pcrs != expected {
+        return Err(FirstBootError::Tpm(format!(
+            "systemd-tpm2 token on {device} is bound to PCRs {bound_pcrs:?}, expected \
+             {expected:?} ({LUKS_TPM2_PCRS})"
+        )));
+    }
+
+    ctx.tpm_enrolled = true;
+    log_stage(
+        "tpm/pcr-binding",
+        "OK",
+        &format!("LUKS TPM2 token on {device} bound to PCRs {LUKS_TPM2_PCRS}"),
+    );
+
+    record_evidence(
+        ctx,
+        RecordType::FirstBootStageCompleted,
+        serde_json::json!({
+            "luks_device": device,
+            "tpm2_pcrs": LUKS_TPM2_PCRS,
+            "bound_pcrs": bound_pcrs,
+            "bootstrap_slot_wiped": true,
+            "verified_via": "cryptsetup luksDump tpm2-hash-pcrs",
+        }),
+    )?;
+
+    Ok(())
+}
+
 /// Phase 6: dm-verity root hash generation and signing.
 fn phase_6_verity(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
     println!("\n--- Phase 6: Root Integrity ---\n");
 
-    ctx.root_device = cmd_output("findmnt", &["-n", "-o", "SOURCE", "/"])
-        .unwrap_or_default();
+    ctx.root_device = cmd_output("findmnt", &["-n", "-o", "SOURCE", "/"]).unwrap_or_default();
     if ctx.root_device.is_empty() {
         log_stage("verity", "WARN", "Cannot detect root device -- skipping");
         return Ok(());
@@ -735,10 +1034,7 @@ fn phase_6_verity(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
 
     // Format verity hash tree
     let format_log = format!("{VERITY_DIR}/format.log");
-    match cmd_output(
-        "veritysetup",
-        &["format", &ctx.root_device, &hash_device],
-    ) {
+    match cmd_output("veritysetup", &["format", &ctx.root_device, &hash_device]) {
         Ok(output) => {
             write_file(&format_log, &output)?;
             // Extract root hash
@@ -753,7 +1049,11 @@ fn phase_6_verity(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
                 log_stage("verity/hash", "FAIL", "Could not extract root hash");
                 return Ok(());
             }
-            log_stage("verity/hash", "OK", &format!("Root hash: {}", ctx.root_hash));
+            log_stage(
+                "verity/hash",
+                "OK",
+                &format!("Root hash: {}", ctx.root_hash),
+            );
 
             // Sign root hash with host key
             let raw_hash_file = format!("{VERITY_DIR}/roothash.raw");
@@ -762,8 +1062,15 @@ fn phase_6_verity(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
             let _ = cmd_output(
                 "openssl",
                 &[
-                    "pkeyutl", "-sign", "-inkey", HOST_KEY_PRIV,
-                    "-rawin", "-in", &raw_hash_file, "-out", &sig_file,
+                    "pkeyutl",
+                    "-sign",
+                    "-inkey",
+                    HOST_KEY_PRIV,
+                    "-rawin",
+                    "-in",
+                    &raw_hash_file,
+                    "-out",
+                    &sig_file,
                 ],
             );
             log_stage("verity/sign", "OK", "Root hash signed with host key");
@@ -819,15 +1126,19 @@ fn phase_7_backup(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBoot
         if input.is_empty() {
             ctx.backup_targets = vec!["local".to_string()];
         } else {
-            ctx.backup_targets = input.split(',').map(str::trim).map(str::to_string).collect();
+            ctx.backup_targets = input
+                .split(',')
+                .map(str::trim)
+                .map(str::to_string)
+                .collect();
         }
     }
 
     ctx.backup_contract_id = format!("cbc_{}", random_hex(10));
     let contract = ConstitutionalBackupContract::new(
         ctx.host_id.clone(),
-        true,    // per_subject_keys
-        true,    // rollback_anchor
+        true, // per_subject_keys
+        true, // rollback_anchor
         ctx.backup_targets.clone(),
     );
 
@@ -849,13 +1160,19 @@ fn phase_7_backup(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBoot
     )?;
 
     if let Err(e) = contract.validate() {
-        return Err(FirstBootError::Config(format!("backup contract validation failed: {e}")));
+        return Err(FirstBootError::Config(format!(
+            "backup contract validation failed: {e}"
+        )));
     }
 
-    log_stage("backup", "OK", &format!(
-        "Contract '{}' with targets: {:?}",
-        ctx.backup_contract_id, ctx.backup_targets,
-    ));
+    log_stage(
+        "backup",
+        "OK",
+        &format!(
+            "Contract '{}' with targets: {:?}",
+            ctx.backup_contract_id, ctx.backup_targets,
+        ),
+    );
 
     record_evidence(
         ctx,
@@ -889,7 +1206,13 @@ fn phase_7_5_recovery_shards(ctx: &mut FirstBootContext) -> Result<(), FirstBoot
         // Generate master recovery key
         cmd_output(
             "openssl",
-            &["genpkey", "-algorithm", "ED25519", "-out", &recovery_key_file],
+            &[
+                "genpkey",
+                "-algorithm",
+                "ED25519",
+                "-out",
+                &recovery_key_file,
+            ],
         )?;
         let recovery_key = fs::read(&recovery_key_file)?;
         write_file_mode(
@@ -899,10 +1222,7 @@ fn phase_7_5_recovery_shards(ctx: &mut FirstBootContext) -> Result<(), FirstBoot
         )?;
 
         // Extract public key
-        let pub_key = cmd_output(
-            "openssl",
-            &["pkey", "-in", &recovery_key_file, "-pubout"],
-        )?;
+        let pub_key = cmd_output("openssl", &["pkey", "-in", &recovery_key_file, "-pubout"])?;
         fs::create_dir_all(RECOVERY_DIR)?;
         write_file(&format!("{RECOVERY_DIR}/recovery-pubkey.txt"), &pub_key)?;
 
@@ -923,9 +1243,17 @@ fn phase_7_5_recovery_shards(ctx: &mut FirstBootContext) -> Result<(), FirstBoot
             let _ = cmd_output(
                 "openssl",
                 &[
-                    "enc", "-aes-256-cbc", "-pbkdf2", "-iter", "100000",
-                    "-pass", &format!("pass:{}", ctx.host_id),
-                    "-in", &openssl_in, "-out", &shard_file,
+                    "enc",
+                    "-aes-256-cbc",
+                    "-pbkdf2",
+                    "-iter",
+                    "100000",
+                    "-pass",
+                    &format!("pass:{}", ctx.host_id),
+                    "-in",
+                    &openssl_in,
+                    "-out",
+                    &shard_file,
                 ],
             );
             let _ = fs::remove_file(&openssl_in);
@@ -1055,9 +1383,7 @@ fn phase_9_evidence(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
     let records: Vec<serde_json::Value> = record_names
         .iter()
         .enumerate()
-        .map(|(i, name)| {
-            serde_json::json!({ "type": name, "phase": i + 1 })
-        })
+        .map(|(i, name)| serde_json::json!({ "type": name, "phase": i + 1 }))
         .collect();
 
     let genesis = serde_json::json!({
@@ -1072,7 +1398,11 @@ fn phase_9_evidence(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
 
     let gen_file = format!("{EVIDENCE_DIR}/genesis.json");
     write_file_mode(&gen_file, &serde_json::to_string_pretty(&genesis)?, 0o644)?;
-    log_stage("evidence/genesis", "OK", &format!("Genesis block created: {}", ctx.genesis_id));
+    log_stage(
+        "evidence/genesis",
+        "OK",
+        &format!("Genesis block created: {}", ctx.genesis_id),
+    );
 
     Ok(())
 }
@@ -1094,7 +1424,11 @@ fn phase_10_fleet_membership(ctx: &mut FirstBootContext) -> Result<(), FirstBoot
         &serde_json::to_string_pretty(&membership)?,
         0o644,
     )?;
-    log_stage("fleet/membership", "OK", "Standalone fleet membership initialized");
+    log_stage(
+        "fleet/membership",
+        "OK",
+        "Standalone fleet membership initialized",
+    );
 
     record_evidence(
         ctx,
@@ -1125,7 +1459,11 @@ fn phase_11_autonomous_governance(ctx: &mut FirstBootContext) -> Result<(), Firs
         &serde_json::to_string_pretty(&constitution)?,
         0o644,
     )?;
-    log_stage("autonomous/governance", "OK", "Advisory governance initialized");
+    log_stage(
+        "autonomous/governance",
+        "OK",
+        "Advisory governance initialized",
+    );
 
     record_evidence(
         ctx,
@@ -1156,7 +1494,11 @@ fn phase_12_marketplace(ctx: &mut FirstBootContext) -> Result<(), FirstBootError
         &serde_json::to_string_pretty(&index)?,
         0o644,
     )?;
-    log_stage("marketplace/index", "OK", "Empty marketplace index initialized");
+    log_stage(
+        "marketplace/index",
+        "OK",
+        "Empty marketplace index initialized",
+    );
 
     record_evidence(
         ctx,
@@ -1193,7 +1535,11 @@ fn phase_13_container_runtime(ctx: &mut FirstBootContext) -> Result<(), FirstBoo
         &serde_json::to_string_pretty(&config)?,
         0o644,
     )?;
-    log_stage("container/runtime", "OK", &format!("Runtime recorded: {runtime}"));
+    log_stage(
+        "container/runtime",
+        "OK",
+        &format!("Runtime recorded: {runtime}"),
+    );
 
     record_evidence(
         ctx,
@@ -1243,7 +1589,11 @@ fn phase_14_readiness(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> 
         ));
     }
 
-    log_stage("system/readiness", "OK", "Required runtime artifacts present");
+    log_stage(
+        "system/readiness",
+        "OK",
+        "Required runtime artifacts present",
+    );
 
     record_evidence(
         ctx,
@@ -1351,6 +1701,7 @@ fn run_phases(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBootErro
     phase_3_security_profile(ctx, cli)?;
     phase_4_operator(ctx, cli)?;
     phase_5_tpm(ctx, cli)?;
+    phase_5_5_luks_pcr_binding(ctx, cli)?;
     phase_6_verity(ctx)?;
     phase_7_backup(ctx, cli)?;
     phase_7_5_recovery_shards(ctx)?;
@@ -1412,6 +1763,69 @@ mod tests {
         assert!(ctx.host_id.is_empty());
         assert!(!ctx.tpm_available);
         assert!(ctx.evidence_chain.is_empty());
+    }
+
+    /// Verbatim `cryptsetup luksDump` token output for a PCR-bound systemd-tpm2 token.
+    const DUMP_BOUND: &str = "Tokens:\n  0: systemd-tpm2\n\ttpm2-hash-pcrs:   0+1+7\n\ttpm2-pcr-bank:    sha256\n\ttpm2-pubkey:\n\t            (null)\n\ttpm2-pubkey-pcrs: \n\ttpm2-primary-alg: ecc\n\ttpm2-pin:         false\n\tKeyslot:    0\n";
+
+    /// Verbatim dump output for the installer's bootstrap token (`--tpm2-pcrs=`).
+    /// The label is present; the value is empty. This must never read as bound.
+    const DUMP_UNBOUND: &str = "Tokens:\n  0: systemd-tpm2\n\ttpm2-hash-pcrs:   \n\ttpm2-pcr-bank:    sha256\n\ttpm2-pubkey-pcrs: \n\ttpm2-primary-alg: ecc\n\tKeyslot:    0\n";
+
+    #[test]
+    fn luks_token_pcrs_parses_bound_token() {
+        assert_eq!(luks_token_pcrs(DUMP_BOUND), Some(vec![0, 1, 7]));
+    }
+
+    #[test]
+    fn luks_token_pcrs_reports_bootstrap_token_as_unbound() {
+        // Some(empty) — the token exists but seals against nothing. The distinction
+        // between this and DUMP_BOUND is the whole point of the phase.
+        assert_eq!(luks_token_pcrs(DUMP_UNBOUND), Some(vec![]));
+    }
+
+    #[test]
+    fn luks_token_pcrs_ignores_pubkey_pcrs_label() {
+        // tpm2-pubkey-pcrs is a different binding and must not be read as the hash PCRs.
+        let dump = "Tokens:\n  0: systemd-tpm2\n\ttpm2-pubkey-pcrs: 11\n";
+        assert_eq!(luks_token_pcrs(dump), None);
+    }
+
+    #[test]
+    fn luks_token_pcrs_absent_without_token() {
+        assert_eq!(luks_token_pcrs("Tokens:\nDigests:\n"), None);
+    }
+
+    #[test]
+    fn bound_dump_matches_expected_pcr_set() {
+        assert_eq!(luks_token_pcrs(DUMP_BOUND), Some(expected_luks_pcrs()));
+        assert_ne!(luks_token_pcrs(DUMP_UNBOUND), Some(expected_luks_pcrs()));
+    }
+
+    #[test]
+    fn crypttab_tpm2_device_resolves_uuid() {
+        let crypttab =
+            "# comment\naios-cryptroot   UUID=abc-123   none   luks,discard,tpm2-device=auto\n";
+        assert_eq!(
+            crypttab_tpm2_device(crypttab),
+            Some("/dev/disk/by-uuid/abc-123".to_string())
+        );
+    }
+
+    #[test]
+    fn crypttab_tpm2_device_skips_non_tpm2_mappings() {
+        let crypttab = "swap   UUID=dead-beef   /dev/urandom   swap\n\
+                        aios-cryptroot   UUID=abc-123   none   luks,tpm2-device=auto\n";
+        assert_eq!(
+            crypttab_tpm2_device(crypttab),
+            Some("/dev/disk/by-uuid/abc-123".to_string())
+        );
+    }
+
+    #[test]
+    fn crypttab_tpm2_device_none_when_no_tpm2_line() {
+        let crypttab = "aios-cryptroot   UUID=abc-123   none   luks,discard\n";
+        assert_eq!(crypttab_tpm2_device(crypttab), None);
     }
 
     #[test]

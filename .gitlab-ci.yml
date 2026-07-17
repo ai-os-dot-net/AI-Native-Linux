@@ -11,7 +11,7 @@
 #   Gate                        CI carrier job                     blocking?
 #   1 boot (live QEMU)          assemble-iso (--require-health)    YES
 #                               r13-qemu-boot-smoke                manual/see note
-#   2 install (QEMU install)    qemu-install-gate                  NO (allow_failure)
+#   2 install (QEMU install)    qemu-install-gate                  YES
 #   3 update+rollback           release-update-gate                YES (R13.7)
 #   4 security/compliance       distro-shell-tests                 YES (default)
 #      └ test-rev13-compliance.sh, test-rev12-security-baseline.sh
@@ -24,10 +24,11 @@
 #   8 daemon/service contract   distro-shell-tests                 YES (default)
 #      └ test-rev13-daemon.sh
 #
-# Blocking policy: a gate is flipped to allow_failure:false ONLY after a proven
-# green run. Gates 3-8 are green and blocking. Gate 2 (qemu-install-gate) stays
-# allow_failure:true until the autoinstall trigger fix lands and proves green —
-# see the TODO(R13.7) marker on that job.
+# Blocking policy: NO soft gates. allow_failure:true appears nowhere — a gate
+# that cannot pass must red-line the pipeline rather than report a green run
+# over a broken artifact. All 8 gates block. Gate 2 (qemu-install-gate) is
+# therefore red until the unattended-install chain completes end-to-end; that
+# is the intended signal, not a regression to be silenced.
 # ==========================================================================
 
 stages:
@@ -304,6 +305,15 @@ cargo-release:
     expire_in: 1 day
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+    # Also build on MRs that touch the ISO inputs: assemble-iso needs this job,
+    # and the install gate must be provable *before* merge, not after.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
 
 # ==========================================================================
 # STAGE 4B — R13 openSUSE ROOTFS (rootful Docker runner)
@@ -366,9 +376,17 @@ r13-opensuse-rootfs:
         - "Cargo.toml"
         - "Cargo.lock"
         - ".gitlab-ci.yml"
+    # Same chain on MRs touching the ISO inputs — see cargo-release.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
 
 # ==========================================================================
-# STAGE 5 — ASSEMBLE ISO (main push only)
+# STAGE 5 — ASSEMBLE ISO (main push + ISO-touching MRs)
 # ==========================================================================
 assemble-iso:
   stage: assemble
@@ -435,27 +453,33 @@ assemble-iso:
         - "Cargo.toml"
         - "Cargo.lock"
         - ".gitlab-ci.yml"
+    # Same chain on MRs touching the ISO inputs — see cargo-release.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
 
 # ==========================================================================
 # STAGE 6 — VERIFY: QEMU INSTALL GATE (R12.2 acceptance: install to blank
-# virtual disk + boot the installed system). allow_failure until the harness
-# has one proven green run, then flip to blocking.
+# virtual disk + boot the installed system). BLOCKING: no soft gates — a broken
+# installer must red-line the pipeline instead of reporting a green run.
 # ==========================================================================
 qemu-install-gate:
   stage: verify
   image: ${AIOS_RUST_CI_IMAGE}
   timeout: 2h
-  # R13.7 exit-gate 2 (install). Stays non-blocking until PROVEN green once.
-  # The unattended-install chain fix has LANDED on main across a 6-defect
-  # forensic sequence: autoinstall trigger (b6ce143d), squashfs live-media path
-  # + self-mount (71d1cc58/b9fcd8f4), 48G disk (7aee98af), installer tool deps
-  # sgdisk/mkfs/unsquashfs (c9a309e0), device-mapper modules before LUKS
-  # (43aab692). Each was diagnosed from the phase-1 serial log. This run is the
-  # first where all cargo gates pass on the (restarted) runner AND the install
-  # chain is exercised end-to-end.
-  # TODO(R13.7): flip qemu-install-gate + boot-smoke to blocking once this gate
-  # is observed green.
-  allow_failure: true
+  # R13.7 exit-gate 2 (install). BLOCKING — no allow_failure anywhere: an
+  # installer that cannot install must fail the pipeline, not report green.
+  # The unattended-install chain has been fixed across a forensic sequence, each
+  # defect diagnosed from the phase-1 serial log: autoinstall trigger
+  # (b6ce143d), squashfs live-media path + self-mount (71d1cc58/b9fcd8f4), 48G
+  # disk (7aee98af), installer tool deps sgdisk/mkfs/unsquashfs (c9a309e0),
+  # device-mapper modules before LUKS (43aab692), IMA module-signature appraisal
+  # (9ca4fb26, #8), ESP mount-point shadowed by BOOT_PART (#9), and xxd absent
+  # from the live image (#10). The gate is red until the chain completes.
   needs:
     - job: assemble-iso
       artifacts: true
@@ -483,6 +507,16 @@ qemu-install-gate:
     expire_in: 7 days
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+      changes:
+        - "crates/**/*"
+        - "distro/**/*"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - ".gitlab-ci.yml"
+    # The whole point of the MR rules: an installer change must prove itself at
+    # this gate *before* it reaches main — and the gate blocks, so it cannot be
+    # merged on a green-looking pipeline while the installer is broken.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
         - "crates/**/*"
         - "distro/**/*"

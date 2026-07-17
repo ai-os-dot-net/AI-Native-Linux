@@ -30,13 +30,21 @@
 //! a visual/E2E check. See `DESIGN.md`.
 
 pub mod color;
+pub mod elevation;
 pub mod emit;
+pub mod motion;
 pub mod scale;
 pub mod theme;
 pub mod typography;
 
 pub use color::{ColorToken, ColorValue};
-pub use emit::{css_var_color, qml_prop_color, to_css_custom_properties, to_qml_properties};
+pub use elevation::{ElevationToken, ShadowValue};
+pub use emit::{
+    css_var_color, css_var_easing, css_var_elevation, css_var_motion, qml_prop_color,
+    qml_prop_easing, qml_prop_elevation, qml_prop_motion, to_css_custom_properties,
+    to_qml_properties,
+};
+pub use motion::{EasingToken, MotionToken};
 pub use scale::{RadiusToken, SpacingToken};
 pub use theme::{ThemeVariant, TokenSet};
 pub use typography::{FontFamily, TypographyToken, TypographyValue};
