@@ -52,3 +52,6 @@ rust_out
 .gitnexus
 .claude/
 distro/build/aios-rev11-kde*.iso
+
+# Generated compliance audit exports (aios-compliance-export.py)
+distro/compliance/export/
