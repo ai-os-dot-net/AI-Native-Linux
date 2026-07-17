@@ -6,7 +6,7 @@ ConditionPathExists=/etc/aios/first-boot
 
 [Service]
 Type=oneshot
-ExecStart=/usr/lib/aios/aios-first-boot --config /etc/aios/config.toml
+ExecStart=/usr/lib/aios/aios-first-boot --config /etc/aios/config.toml --non-interactive
 RemainAfterExit=no
 SELinuxContext=-system_u:system_r:aios_first_boot_t:s0
 
