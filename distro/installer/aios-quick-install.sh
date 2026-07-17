@@ -1359,6 +1359,55 @@ do_verity() {
 EOF
     chmod 644 "${TARGET_MOUNT}/etc/aios/verity/rootfs-policy.json"
 
+    # SELinux relabel — the LAST content write before the freeze. The root is
+    # about to become a read-only dm-verity volume, so security.selinux xattrs
+    # cannot be fixed at boot (no writable root, and .autorelabel would loop).
+    # They must be correct and frozen INTO the hash now. This runs after every
+    # other root write (deploy, configure, first-boot, the policy json above),
+    # so nothing is left unlabeled.
+    #
+    # CRITICAL: setfiles does NOT cross filesystem boundaries — one pass over the
+    # root labels ONLY the root fs and stops at every mount point. /var, /boot,
+    # /recovery and the rollback volume are separate mounts, so each needs its
+    # OWN pass or its files keep the mkfs/unsquashfs default context. This bit us
+    # exactly here: with a single root pass, /var (dm-mapper aios-var) was left
+    # unlabeled, so its /var/run symlink stayed user_home_t and EVERY service
+    # that reads /var/run was denied under enforcing (systemd, journald, auditd,
+    # dbus, aios-first-boot all failed). /boot/efi is vfat (no xattrs) and
+    # /proc /sys /dev are pseudo-fs, so they are excluded from every pass. /var
+    # et al. are rw and not verity-hashed, but enforcing still needs their labels
+    # right. A mislabeled enforcing root would deny critical boot services, so
+    # when enforcing we fail closed rather than freeze a broken system.
+    if [ "${AIOS_SKIP_SELINUX:-0}" != "1" ] && [ -n "${SELINUX_POLICY_TYPE:-}" ]; then
+        local _fc="${TARGET_MOUNT}/etc/selinux/${SELINUX_POLICY_TYPE}/contexts/files/file_contexts"
+        if command -v setfiles >/dev/null 2>&1 && [ -f "${_fc}" ]; then
+            msg "Relabeling root + writable submounts for SELinux (store: ${SELINUX_POLICY_TYPE}) before verity freeze..."
+            local _rl _relabel_rc=0
+            # "" = the root fs; the rest are the separately mounted writable
+            # volumes. -r keeps each file's logical path correct against the
+            # target's file_contexts regardless of where it is mounted here.
+            for _rl in "" /var /boot /recovery /var/lib/aios/rollback; do
+                [ -d "${TARGET_MOUNT}${_rl}" ] || continue
+                if ! setfiles -r "${TARGET_MOUNT}" \
+                        -e "${TARGET_MOUNT}/boot/efi" \
+                        -e "${TARGET_MOUNT}/proc" \
+                        -e "${TARGET_MOUNT}/sys" \
+                        -e "${TARGET_MOUNT}/dev" \
+                        "${_fc}" "${TARGET_MOUNT}${_rl}"; then
+                    _relabel_rc=1
+                    break
+                fi
+            done
+            if [ "${_relabel_rc}" != "0" ]; then
+                die "SELinux relabel (setfiles) failed before verity freeze (mode ${SELINUX_MODE})" 5
+            fi
+        elif [ "${SELINUX_MODE}" = "enforcing" ]; then
+            die "SELinux enforcing requested but setfiles or file_contexts (${_fc}) is unavailable — refusing to freeze a mislabeled enforcing root" 5
+        else
+            warn "setfiles or file_contexts unavailable; freezing root without an offline relabel (mode ${SELINUX_MODE})."
+        fi
+    fi
+
     # Freeze the root: flush + commit the journal, then make it read-only so the
     # bytes cannot change between hashing here and verification at boot.
     sync
@@ -1428,8 +1477,26 @@ SELINUX=${SELINUX_MODE}
 SELINUXTYPE=${_policy_type}
 EOF
     chmod 644 "${TARGET_MOUNT}/etc/selinux/config"
-    touch "${TARGET_MOUNT}/.autorelabel"
-    msg "SELinux configured (${SELINUX_MODE}); autorelabel set."
+
+    # Publish the resolved store name so do_verity can relabel the root with the
+    # matching file_contexts as the LAST write before it freezes the fs for
+    # hashing (see do_verity). SELINUX_MODE is already global.
+    SELINUX_POLICY_TYPE="${_policy_type}"
+
+    # .autorelabel triggers a full filesystem relabel on the next boot, which
+    # needs a WRITABLE root. That is impossible once the root is a read-only
+    # dm-verity volume: the relabel cannot write security xattrs, and systemd's
+    # autorelabel unit reboots after "relabeling" — on a ro root that loops. So
+    # for a verity root we relabel offline in do_verity (before the freeze) and
+    # must NOT leave .autorelabel behind. Without verity the root is writable, so
+    # keep .autorelabel as the boot-time relabel path.
+    if [ "${VERITY_ENFORCE}" = "1" ]; then
+        rm -f "${TARGET_MOUNT}/.autorelabel"
+        msg "SELinux configured (${SELINUX_MODE}); root will be relabeled offline before the verity freeze."
+    else
+        touch "${TARGET_MOUNT}/.autorelabel"
+        msg "SELinux configured (${SELINUX_MODE}); autorelabel set for first boot."
+    fi
 }
 
 # ── First-boot ────────────────────────────────────────────────────────────────
