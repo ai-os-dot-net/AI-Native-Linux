@@ -440,6 +440,57 @@ else
 fi
 
 printf '\n'
+msg "=== SELinux is labeled offline and enforcing survives the read-only root ==="
+
+# On a read-only dm-verity root, .autorelabel cannot run (no writable root; the
+# autorelabel unit reboots after "relabeling" and loops). The security xattrs
+# must instead be baked in offline before the freeze. Assert the installer runs
+# setfiles in do_verity BEFORE the remount,ro freeze (both strings are unique to
+# do_verity; compare global line numbers).
+_setfiles_ln="$(printf '%s\n' "${_qi_code}" | grep -n 'setfiles -r' | head -1 | cut -d: -f1)"
+if [ -n "${_setfiles_ln}" ] && [ -n "${_remount_ln}" ] && [ "${_setfiles_ln}" -lt "${_remount_ln}" ]; then
+    pass "do_verity relabels the root (setfiles) BEFORE the read-only freeze"
+else
+    fail "do_verity must run setfiles before remount,ro (else the frozen verity root ships mislabeled)"
+fi
+
+# setfiles does not cross filesystem boundaries: a single root pass leaves the
+# separate /var volume unlabeled, so /var/run stays user_home_t and every
+# service reading it is denied under enforcing (auditd, first-boot fail). The
+# relabel must loop over the writable submounts, /var included.
+if printf '%s' "${_qi_code}" | grep -qE 'for _rl in "" /var'; then
+    pass "do_verity relabels each writable submount (/var included), not just the root fs"
+else
+    fail "do_verity must relabel /var separately (setfiles does not cross mounts; /var/run would stay user_home_t)"
+fi
+
+# Under verity the installer must NOT leave .autorelabel behind (it would loop on
+# the ro root); without verity it should keep it. Assert the removal is gated on
+# VERITY_ENFORCE.
+if printf '%s' "${_qi_code}" | grep -qF 'rm -f "${TARGET_MOUNT}/.autorelabel"'; then
+    pass "Installer removes .autorelabel on the verity path (offline relabel replaces it)"
+else
+    fail "Installer must drop .autorelabel under verity (a ro root cannot honor a boot-time relabel)"
+fi
+
+# Enforcing must fail closed: if setfiles or the policy file_contexts is missing,
+# the installer must refuse to freeze rather than ship a mislabeled enforcing
+# root that denies critical boot services.
+if printf '%s' "${_verity_body}" | grep -q 'refusing to freeze a mislabeled enforcing root'; then
+    pass "do_verity fails closed when enforcing is requested but relabel is impossible"
+else
+    fail "do_verity must die when enforcing is requested and setfiles/file_contexts are unavailable"
+fi
+
+# do_selinux must publish the resolved store so do_verity relabels with the
+# matching file_contexts.
+if printf '%s' "${_qi_code}" | grep -qF 'SELINUX_POLICY_TYPE="${_policy_type}"'; then
+    pass "do_selinux publishes SELINUX_POLICY_TYPE for the offline relabel"
+else
+    fail "do_selinux must publish SELINUX_POLICY_TYPE so do_verity picks the right file_contexts"
+fi
+
+printf '\n'
 msg "=== The image must ship the mount points a read-only root cannot create ==="
 
 # mksquashfs excluded `run`, `proc`, `sys`, `dev`, `tmp` and `mnt` as bare names,

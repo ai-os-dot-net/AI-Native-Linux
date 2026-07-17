@@ -32,7 +32,7 @@
 
 use std::fmt::Write as FmtWrite;
 use std::fs;
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, BufRead, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -509,8 +509,13 @@ fn phase_2_identity(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
 
     // Generate Ed25519 host keypair
     if !file_exists(HOST_KEY_PRIV) {
-        fs::create_dir_all(AIOS_RUN)?;
-        let tmp_priv = format!("{AIOS_RUN}/host-key-tmp.priv");
+        // The temp key must be created on the SAME filesystem as HOST_KEY_PRIV
+        // (both under AIOS_VAR = /var/lib/aios). fs::rename cannot cross a mount
+        // boundary: a tmp under AIOS_RUN (/run, a tmpfs) renamed onto /var (a
+        // separate disk volume) fails with EXDEV ("Invalid cross-device link",
+        // os error 18), which aborted the whole first-boot wizard.
+        fs::create_dir_all(AIOS_VAR)?;
+        let tmp_priv = format!("{AIOS_VAR}/host-key-tmp.priv");
         cmd_output(
             "openssl",
             &["genpkey", "-algorithm", "ED25519", "-out", &tmp_priv],
@@ -1668,7 +1673,17 @@ fn sanitize_name(raw: &str) -> String {
 // ─── Main ──────────────────────────────────────────────────────────────────
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+
+    // A boot-time systemd unit has no interactive console. If stdin is not a
+    // terminal, force non-interactive so the wizard uses configured defaults
+    // instead of blocking forever on read_line() — an unattended boot otherwise
+    // hangs before multi-user.target (the aios-first-boot.service unit also
+    // passes --non-interactive; this is defense-in-depth for any other
+    // invocation such as cloud-init or the recovery path).
+    if !cli.non_interactive && !io::stdin().is_terminal() {
+        cli.non_interactive = true;
+    }
 
     // Guard: check first-boot flag exists
     if !file_exists(FIRST_BOOT_FLAG) {
