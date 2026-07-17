@@ -134,6 +134,10 @@ struct FirstBootContext {
     verity_created: bool,
     root_hash: String,
     root_device: String,
+    // Boot-integrity evidence: the two fields that complete the five-field
+    // record alongside tpm_enrolled, verity_created and the SELinux mode.
+    secure_boot_state: String,
+    kernel_lockdown: String,
     backup_contract_id: String,
     backup_targets: Vec<String>,
     pairing_nonce: String,
@@ -415,6 +419,50 @@ fn record_evidence(
 // ─── Phase Implementations ─────────────────────────────────────────────────
 
 /// Phase 1: Verify hardware prerequisites.
+/// Extract the active value from the contents of
+/// `/sys/kernel/security/lockdown`, e.g. `none [integrity] confidentiality`
+/// -> `integrity`. The kernel brackets exactly the active mode.
+fn parse_lockdown(content: &str) -> String {
+    content
+        .split_whitespace()
+        .find_map(|tok| tok.strip_prefix('[').and_then(|t| t.strip_suffix(']')))
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+/// The UEFI `SecureBoot` variable is a little-endian EFI variable file: four
+/// attribute bytes followed by the boolean state (1 = enabled, 0 = disabled).
+fn parse_secure_boot(bytes: &[u8]) -> &'static str {
+    if bytes.len() < 5 {
+        return "unavailable";
+    }
+    match bytes[bytes.len() - 1] {
+        1 => "enabled",
+        0 => "disabled",
+        _ => "unavailable",
+    }
+}
+
+/// Kernel lockdown mode from securityfs, or "unavailable" if the file is absent
+/// (lockdown not compiled in / securityfs not mounted).
+fn read_kernel_lockdown() -> String {
+    match fs::read_to_string("/sys/kernel/security/lockdown") {
+        Ok(content) => parse_lockdown(&content),
+        Err(_) => "unavailable".to_string(),
+    }
+}
+
+/// Secure Boot state from the firmware's `SecureBoot` EFI variable (its GUID is
+/// fixed by the UEFI spec), or "unavailable" on legacy BIOS / no efivarfs.
+fn read_secure_boot() -> String {
+    const SECURE_BOOT_VAR: &str =
+        "/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c";
+    match fs::read(SECURE_BOOT_VAR) {
+        Ok(bytes) => parse_secure_boot(&bytes).to_string(),
+        Err(_) => "unavailable".to_string(),
+    }
+}
+
 fn phase_1_hardware(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
     println!("--- Phase 1: Hardware Verification ---\n");
 
@@ -476,6 +524,26 @@ fn phase_1_hardware(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
         ));
     }
 
+    // Boot-integrity evidence: Secure Boot + kernel lockdown complete the
+    // five-field record (with TPM enrolment, dm-verity and the SELinux mode).
+    // These are observations, not gates — recorded truthfully whatever they are.
+    ctx.secure_boot_state = read_secure_boot();
+    ctx.kernel_lockdown = read_kernel_lockdown();
+    log_stage(
+        "hw/secureboot",
+        if ctx.secure_boot_state == "enabled" {
+            "OK"
+        } else {
+            "INFO"
+        },
+        &format!("Secure Boot: {}", ctx.secure_boot_state),
+    );
+    log_stage(
+        "hw/lockdown",
+        "INFO",
+        &format!("Kernel lockdown: {}", ctx.kernel_lockdown),
+    );
+
     record_evidence(
         ctx,
         RecordType::FirstBootStarted,
@@ -483,6 +551,8 @@ fn phase_1_hardware(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
             "tpm_available": ctx.tpm_available,
             "uefi_available": ctx.uefi_available,
             "selinux_enforcing": true,
+            "secure_boot": ctx.secure_boot_state,
+            "kernel_lockdown": ctx.kernel_lockdown,
             "tpm_manufacturer": ctx.tpm_manufacturer,
         }),
     )?;
@@ -1678,6 +1748,8 @@ fn phase_10_complete(ctx: &FirstBootContext) -> Result<(), FirstBootError> {
         "operator": ctx.operator_canonical,
         "tpm_enrolled": ctx.tpm_enrolled,
         "verity_created": ctx.verity_created,
+        "secure_boot": ctx.secure_boot_state,
+        "kernel_lockdown": ctx.kernel_lockdown,
         "backup_contract_id": ctx.backup_contract_id,
         "ai_provider_mode": ctx.ai_provider_mode,
         "firewall_posture": ctx.firewall_posture,
@@ -1915,5 +1987,32 @@ mod tests {
         // Interactive installs keep the hard requirement (operator is present).
         assert!(!backup_offhost_deferrable("SECURE_DEFAULT", false));
         assert!(!backup_offhost_deferrable("STIG_ALIGNED", false));
+    }
+
+    #[test]
+    fn parse_lockdown_extracts_the_bracketed_mode() {
+        assert_eq!(
+            parse_lockdown("none [integrity] confidentiality\n"),
+            "integrity"
+        );
+        assert_eq!(parse_lockdown("[none] integrity confidentiality"), "none");
+        assert_eq!(
+            parse_lockdown("none integrity [confidentiality]"),
+            "confidentiality"
+        );
+        // No bracketed token (e.g. an empty or malformed file) -> "unknown".
+        assert_eq!(parse_lockdown("none integrity confidentiality"), "unknown");
+        assert_eq!(parse_lockdown(""), "unknown");
+    }
+
+    #[test]
+    fn parse_secure_boot_reads_the_trailing_state_byte() {
+        // 4 attribute bytes + state byte.
+        assert_eq!(parse_secure_boot(&[6, 0, 0, 0, 1]), "enabled");
+        assert_eq!(parse_secure_boot(&[6, 0, 0, 0, 0]), "disabled");
+        // Anything but 0/1 in a well-formed var, or a short/empty read.
+        assert_eq!(parse_secure_boot(&[6, 0, 0, 0, 2]), "unavailable");
+        assert_eq!(parse_secure_boot(&[1]), "unavailable");
+        assert_eq!(parse_secure_boot(&[]), "unavailable");
     }
 }
