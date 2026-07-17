@@ -25,7 +25,7 @@ set -euo pipefail
 #   9.  TPM2 sealing — systemd-cryptenroll with PCRs 0+1+7
 #   10. Recovery key — generate + display (mandatory user record)
 #   11. SELinux — policy load, relabel, enforcing
-#   12. First-boot flag — /etc/aios/first-boot
+#   12. First-boot flag — /var/lib/aios/first-boot
 #   13. Unmount + completion
 #
 # USAGE:
@@ -914,11 +914,16 @@ EOF
 set_first_boot_flag() {
     banner "Phase 13 — First Boot Flag"
 
-    mkdir -p "${TARGET_MOUNT}/etc/aios"
-    touch "${TARGET_MOUNT}/etc/aios/first-boot"
-    chmod 644 "${TARGET_MOUNT}/etc/aios/first-boot"
+    # The first-boot flag lives on the writable encrypted /var, not the
+    # read-only verity root — the wizard removes it as its final act, and a
+    # remove off the frozen /etc-overlay lower layer needs a whiteout that
+    # SELinux enforcing denies (EACCES). Kept in sync with FIRST_BOOT_FLAG in
+    # the first-boot binary and ConditionPathExists in aios-first-boot.service.
+    mkdir -p "${TARGET_MOUNT}/var/lib/aios"
+    touch "${TARGET_MOUNT}/var/lib/aios/first-boot"
+    chmod 644 "${TARGET_MOUNT}/var/lib/aios/first-boot"
 
-    msg "First-boot flag set: /etc/aios/first-boot"
+    msg "First-boot flag set: /var/lib/aios/first-boot"
     msg "The first-boot wizard will run on next boot."
 }
 
