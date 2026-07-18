@@ -1503,8 +1503,15 @@ EOF
 
 do_first_boot() {
     mkdir -p "${TARGET_MOUNT}/etc/aios"
-    touch "${TARGET_MOUNT}/etc/aios/first-boot"
-    chmod 644 "${TARGET_MOUNT}/etc/aios/first-boot"
+    # The first-boot flag lives on the writable encrypted /var, not on the
+    # read-only verity root: the wizard removes it as its last act, and removing
+    # a file off the frozen /etc-overlay lower layer needs a whiteout that
+    # SELinux enforcing denies (EACCES). On /var it is a plain rw file. The
+    # first-boot binary (FIRST_BOOT_FLAG) and the service ConditionPathExists
+    # agree on this path.
+    mkdir -p "${TARGET_MOUNT}/var/lib/aios"
+    touch "${TARGET_MOUNT}/var/lib/aios/first-boot"
+    chmod 644 "${TARGET_MOUNT}/var/lib/aios/first-boot"
 
     # Write recovery key (hex) AND enrol it into the LUKS2 header.
     #
