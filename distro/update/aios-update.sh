@@ -42,10 +42,13 @@ REQUIRE_SIGNATURE="${AIOS_UPDATE_REQUIRE_SIGNATURE:-1}"
 HEALTH_COMMAND="${AIOS_UPDATE_HEALTH_COMMAND:-true}"
 BOOT_DEADLINE_SECONDS="${AIOS_UPDATE_BOOT_DEADLINE_SECONDS:-300}"
 ALLOW_RECOVERY_CHANNEL="${AIOS_ALLOW_RECOVERY_CHANNEL:-0}"
+ALLOW_AIRGAP_CHANNEL="${AIOS_ALLOW_AIRGAP_CHANNEL:-0}"
 
 # Closed set of valid enterprise channels (REV13-ENTERPRISE-SPEC.md §8). The
-# recovery channel is fail-closed: consuming it requires --allow-recovery-channel.
-CHANNEL_SET="release security staging recovery"
+# recovery and airgap channels are fail-closed: consuming them requires an
+# explicit --allow-recovery-channel / --allow-airgap-channel opt-in, because both
+# deliberately step outside the normal signed-online-repo trust assumptions.
+CHANNEL_SET="release security staging recovery airgap"
 
 VERIFIED_RELEASE_DIR=""
 VERIFIED_METADATA_JSON=""
@@ -70,9 +73,10 @@ Commands:
 
 Options:
   --repo DIR|file://DIR         Local repository root for verify/stage
-  --channel NAME                Channel: release|security|staging|recovery
+  --channel NAME                Channel: release|security|staging|recovery|airgap
                                 (default: release)
   --allow-recovery-channel      Permit --channel recovery (fail-closed otherwise)
+  --allow-airgap-channel        Permit --channel airgap (fail-closed otherwise)
   --trusted-key FILE            OpenSSL public key for detached signature checks
   --state-dir DIR               Update state directory (default: /var/lib/aios/update)
   --rollback-dir DIR            Rollback directory (default: /var/lib/aios/rollback)
@@ -91,6 +95,9 @@ validate_channel() {
         if [ "${channel}" = "${valid}" ]; then
             if [ "${channel}" = "recovery" ] && [ "${ALLOW_RECOVERY_CHANNEL}" != "1" ]; then
                 die "recovery channel requires --allow-recovery-channel (fail-closed)"
+            fi
+            if [ "${channel}" = "airgap" ] && [ "${ALLOW_AIRGAP_CHANNEL}" != "1" ]; then
+                die "airgap channel requires --allow-airgap-channel (fail-closed)"
             fi
             return 0
         fi
@@ -213,9 +220,22 @@ verify_release() {
     [ "${metadata_sha_actual}" = "${metadata_sha_expected}" ] \
         || die "release metadata hash mismatch"
 
-    jq -e --arg channel "${CHANNEL}" \
-        '.schema == "aios.release_repository_metadata.v1" and .channel == $channel and (.artifacts | length > 0)' \
-        "${VERIFIED_METADATA_JSON}" >/dev/null || die "invalid release metadata schema"
+    if [ "${CHANNEL}" = "airgap" ]; then
+        # An airgap bundle transports a release originally built for a publishable
+        # channel; its signed metadata retains that ORIGIN channel (re-signing it
+        # to say "airgap" would break the publisher's signature). Require only that
+        # the origin channel is a valid publishable channel.
+        jq -e '.schema == "aios.release_repository_metadata.v1"
+               and (.channel == "release" or .channel == "security"
+                    or .channel == "staging" or .channel == "recovery")
+               and (.artifacts | length > 0)' \
+            "${VERIFIED_METADATA_JSON}" >/dev/null \
+            || die "invalid airgap release metadata (schema/origin-channel/artifacts)"
+    else
+        jq -e --arg channel "${CHANNEL}" \
+            '.schema == "aios.release_repository_metadata.v1" and .channel == $channel and (.artifacts | length > 0)' \
+            "${VERIFIED_METADATA_JSON}" >/dev/null || die "invalid release metadata schema"
+    fi
 
     VERIFIED_RELEASE_ID="$(jq -r '.release_id' "${VERIFIED_METADATA_JSON}")"
     VERIFIED_VERSION="$(jq -r '.version' "${VERIFIED_METADATA_JSON}")"
@@ -513,6 +533,7 @@ while [ $# -gt 0 ]; do
         --repo)           REPO="$2"; shift 2 ;;
         --channel)        CHANNEL="$2"; shift 2 ;;
         --allow-recovery-channel) ALLOW_RECOVERY_CHANNEL=1; shift ;;
+        --allow-airgap-channel) ALLOW_AIRGAP_CHANNEL=1; shift ;;
         --trusted-key)    TRUSTED_KEY="$2"; shift 2 ;;
         --state-dir)      STATE_DIR="$2"; shift 2 ;;
         --rollback-dir)   ROLLBACK_DIR="$2"; shift 2 ;;
