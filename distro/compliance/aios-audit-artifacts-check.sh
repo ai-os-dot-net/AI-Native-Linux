@@ -20,7 +20,7 @@
 set -u
 
 DIR=""
-REQUIRE="compliance-report.json,control-matrix.csv,exception-register.json"
+REQUIRE="compliance-report.json,control-matrix.csv,exception-register.json,compliance-report.md"
 
 die() { printf '[audit-check] ERROR: %s\n' "$*" >&2; exit 2; }
 
