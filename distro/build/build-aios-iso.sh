@@ -798,6 +798,19 @@ if [ -f "${SYSTEMD_DST}/${svc}" ]; then
     info "Enabled: ${svc}"
 fi
 
+# Enable the update boot-outcome contract so it actually runs at boot, not just
+# from the CLI: aios-update-boot-check rolls back an unconfirmed, past-deadline
+# deployment early on the next boot, and aios-update-confirm marks a pending
+# deployment healthy once it reaches multi-user. Both are gated by
+# ConditionPathExists=/var/lib/aios/update/pending-boot.json, so they no-op unless
+# an update is in flight.
+for svc in aios-update-boot-check.service aios-update-confirm.service; do
+    if [ -f "${SYSTEMD_DST}/${svc}" ]; then
+        ln -sf "../${svc}" "${ROOTFS_DIR}/etc/systemd/system/multi-user.target.wants/${svc}"
+        info "Enabled: ${svc}"
+    fi
+done
+
 # Enable the LIVE autoinstall trigger. Pulled into every live boot but gated by
 # ConditionKernelCommandLine=aios.autoinstall — it only RUNS when the install
 # gate injects that flag; a normal live boot skips it and reaches the login

@@ -1,0 +1,21 @@
+[Unit]
+Description=AI-OS.NET Update Boot-Deadline Rollback Check
+Documentation=https://ai-os.net/docs/update
+# Runs early — after the encrypted /var (update state dir) is mounted, before the
+# system reaches multi-user — so an unconfirmed, past-deadline deployment is
+# rolled back before the app services that failed to confirm it get another
+# chance to wedge the boot. Gated on the pending marker, so it is a no-op within
+# the confirmation window or when no update is in flight. This is the boot-time
+# trigger for the "failed boot / failed service-health -> rollback" contract;
+# aios-update-confirm.service is the success-path counterpart at multi-user.
+After=local-fs.target
+Before=multi-user.target aios.target
+ConditionPathExists=/var/lib/aios/update/pending-boot.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/aios/update/aios-update.sh boot-check
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
