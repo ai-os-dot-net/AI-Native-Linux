@@ -215,6 +215,8 @@ distro-shell-tests:
       distro/secureboot/sign-boot-artifacts.sh
       distro/secureboot/tpm-expected-pcrs.sh
       distro/compliance/aios-audit-artifacts-check.sh
+      distro/compliance/aios-waiver-verify.sh
+      distro/build/tests/test-rev13-gate-waiver.sh
       distro/build/tests/test-rev13-compliance-export.sh
       distro/build/tests/test-rev13-audit-artifacts-present.sh
     - bash distro/build/tests/test-rev11-build.sh
@@ -241,6 +243,7 @@ distro-shell-tests:
     - bash distro/build/tests/test-rev13-daemon.sh
     - bash distro/build/tests/test-rev13-answer-file-signature.sh
     - bash distro/build/tests/test-rev13-recovery.sh
+    - bash distro/build/tests/test-rev13-gate-waiver.sh
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
