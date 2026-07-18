@@ -76,6 +76,15 @@ struct Cli {
     /// Preset backup targets (comma-separated).
     #[arg(long)]
     backup_targets: Option<String>,
+
+    /// Enroll this host into a fleet/organization identity WHERE PROVIDED
+    /// (REV13-ENTERPRISE-SPEC §9). Organization identifier; absent -> standalone.
+    #[arg(long)]
+    org_id: Option<String>,
+
+    /// Fleet/cluster identifier to enroll into; absent -> standalone (aios-default).
+    #[arg(long)]
+    fleet_id: Option<String>,
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────
@@ -356,6 +365,41 @@ fn file_exists(path: &str) -> bool {
 
 fn dir_exists(path: &str) -> bool {
     Path::new(path).is_dir()
+}
+
+/// Enterprise profiles that enforce the strictest readiness (services must be
+/// enabled, `SELinux` enforcing, etc.).
+fn is_enterprise_profile(profile: &str) -> bool {
+    matches!(profile, "STIG_ALIGNED" | "AIRGAP_HIGH")
+}
+
+/// Whether a systemd unit is enabled — i.e. it will be brought up on boot. A unit
+/// FILE existing is not proof it will run. `enabled`/`static`/`indirect`/`alias`
+/// all mean "will start". `AIOS_SYSTEMCTL` overrides the binary for tests; any error
+/// or unknown state reads as not-enabled (fail closed).
+fn unit_enabled(name: &str) -> bool {
+    let systemctl = std::env::var("AIOS_SYSTEMCTL").unwrap_or_else(|_| "systemctl".to_string());
+    match std::process::Command::new(&systemctl)
+        .arg("is-enabled")
+        .arg(name)
+        .output()
+    {
+        Ok(out) => matches!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            "enabled" | "enabled-runtime" | "static" | "indirect" | "alias"
+        ),
+        Err(_) => false,
+    }
+}
+
+/// Pure: the subset of `units` for which `check` reports not-enabled. Split out so
+/// the readiness logic is unit-tested without a real systemctl.
+fn units_not_enabled(check: impl Fn(&str) -> bool, units: &[&str]) -> Vec<String> {
+    units
+        .iter()
+        .filter(|u| !check(u))
+        .map(|u| (*u).to_string())
+        .collect()
 }
 
 fn read_file(path: &str) -> Result<String, FirstBootError> {
@@ -1542,14 +1586,38 @@ fn phase_9_evidence(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
 }
 
 /// Phase 10: Initialize local fleet membership in standalone mode.
-fn phase_10_fleet_membership(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
+/// Resolve the fleet membership from the provided --org-id / --fleet-id. When
+/// either is given the host is enrolled into that identity (mode "fleet");
+/// otherwise it stays standalone. Identifiers are sanitized like host names so a
+/// provided value cannot inject unexpected content. Pure — no IO.
+fn resolve_fleet_membership(
+    org_id: Option<&str>,
+    fleet_id: Option<&str>,
+) -> (String, String, String) {
+    let org = org_id.map(sanitize_name).unwrap_or_default();
+    let fleet = fleet_id.map(sanitize_name).unwrap_or_default();
+    let enrolled = !org.is_empty() || !fleet.is_empty();
+    let mode = if enrolled { "fleet" } else { "standalone" }.to_string();
+    let cluster = if fleet.is_empty() {
+        "aios-default".to_string()
+    } else {
+        fleet.clone()
+    };
+    (mode, cluster, org)
+}
+
+fn phase_10_fleet_membership(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBootError> {
     println!("\n--- Phase 10: Fleet Membership ---\n");
+
+    let (mode, cluster_name, org_id) =
+        resolve_fleet_membership(cli.org_id.as_deref(), cli.fleet_id.as_deref());
 
     fs::create_dir_all(FLEET_DIR)?;
     let membership = serde_json::json!({
         "host_id": ctx.host_id,
-        "mode": "standalone",
-        "cluster_name": "aios-default",
+        "mode": mode,
+        "org_id": org_id,
+        "cluster_name": cluster_name,
         "joined_at": now_rfc3339(),
         "operator": ctx.operator_canonical,
     });
@@ -1561,15 +1629,16 @@ fn phase_10_fleet_membership(ctx: &mut FirstBootContext) -> Result<(), FirstBoot
     log_stage(
         "fleet/membership",
         "OK",
-        "Standalone fleet membership initialized",
+        &format!("Fleet membership initialized (mode={mode}, cluster={cluster_name})"),
     );
 
     record_evidence(
         ctx,
         RecordType::FirstBootStageCompleted,
         serde_json::json!({
-            "fleet_mode": "standalone",
-            "cluster_name": "aios-default",
+            "fleet_mode": mode,
+            "org_id": org_id,
+            "cluster_name": cluster_name,
         }),
     )?;
 
@@ -1702,13 +1771,28 @@ fn phase_14_readiness(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> 
         .copied()
         .filter(|path| !file_exists(path))
         .collect();
-    let ready = missing.is_empty();
+    let files_ok = missing.is_empty();
+
+    // Validate required SERVICES (spec §9): the AIOS service target must be ENABLED
+    // — it brings the AIOS service tree up on boot. A unit file existing (checked
+    // above) is not proof it will run. Enterprise profiles hard-fail on a
+    // not-enabled service; non-strict/CI-bare profiles record it advisorily (a
+    // scaffold boot may not have the wants symlinks yet).
+    let required_units = ["aios.target"];
+    let units_missing = units_not_enabled(unit_enabled, &required_units);
+    let services_ok = units_missing.is_empty();
+    let enterprise = is_enterprise_profile(&ctx.security_profile);
+    let ready = files_ok && (services_ok || !enterprise);
 
     fs::create_dir_all(AIOS_VAR)?;
     let readiness = serde_json::json!({
         "host_id": ctx.host_id,
         "ready": ready,
+        "profile": ctx.security_profile,
         "missing": missing,
+        "services_enabled": services_ok,
+        "services_not_enabled": units_missing,
+        "services_enforced": enterprise,
         "checked_at": now_rfc3339(),
     });
     write_file_mode(
@@ -1717,16 +1801,25 @@ fn phase_14_readiness(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> 
         0o644,
     )?;
 
-    if !ready {
+    if !files_ok {
         return Err(FirstBootError::Config(
             "system readiness check failed; required runtime artifacts are missing".to_string(),
         ));
+    }
+    if !services_ok && enterprise {
+        return Err(FirstBootError::Config(format!(
+            "system readiness check failed on the {} profile; required services not enabled: {}",
+            ctx.security_profile,
+            units_missing.join(", ")
+        )));
     }
 
     log_stage(
         "system/readiness",
         "OK",
-        "Required runtime artifacts present",
+        &format!(
+            "Required artifacts present; services_enabled={services_ok} (enforced={enterprise})"
+        ),
     );
 
     record_evidence(
@@ -1735,6 +1828,8 @@ fn phase_14_readiness(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> 
         serde_json::json!({
             "ready": true,
             "checked_artifacts": required.len(),
+            "services_enabled": services_ok,
+            "services_enforced": enterprise,
         }),
     )?;
 
@@ -1853,7 +1948,7 @@ fn run_phases(ctx: &mut FirstBootContext, cli: &Cli) -> Result<(), FirstBootErro
     phase_7_5_recovery_shards(ctx)?;
     phase_8_mobile_pairing(ctx)?;
     phase_9_evidence(ctx)?;
-    phase_10_fleet_membership(ctx)?;
+    phase_10_fleet_membership(ctx, cli)?;
     phase_11_autonomous_governance(ctx)?;
     phase_12_marketplace(ctx)?;
     phase_13_container_runtime(ctx)?;
@@ -1909,6 +2004,59 @@ mod tests {
         assert!(ctx.host_id.is_empty());
         assert!(!ctx.tpm_available);
         assert!(ctx.evidence_chain.is_empty());
+    }
+
+    #[test]
+    fn fleet_membership_defaults_to_standalone() {
+        let (mode, cluster, org) = resolve_fleet_membership(None, None);
+        assert_eq!(mode, "standalone");
+        assert_eq!(cluster, "aios-default");
+        assert_eq!(org, "");
+    }
+
+    #[test]
+    fn fleet_membership_enrolls_when_provided() {
+        let (mode, cluster, org) =
+            resolve_fleet_membership(Some("acme-corp"), Some("edge-fleet-01"));
+        assert_eq!(mode, "fleet");
+        assert_eq!(cluster, "edge-fleet-01");
+        assert_eq!(org, "acme-corp");
+
+        // org only (no fleet) still enrolls, keeping the default cluster.
+        let (mode2, cluster2, org2) = resolve_fleet_membership(Some("acme"), None);
+        assert_eq!(mode2, "fleet");
+        assert_eq!(cluster2, "aios-default");
+        assert_eq!(org2, "acme");
+    }
+
+    #[test]
+    fn fleet_membership_sanitizes_identifiers() {
+        // Injection-y input is reduced to the safe [A-Za-z0-9_-] alphabet.
+        let (mode, cluster, org) = resolve_fleet_membership(Some("a/b; rm -rf"), Some("fleet$(x)"));
+        assert_eq!(mode, "fleet");
+        assert!(!cluster.contains('$') && !cluster.contains('('));
+        assert!(!org.contains('/') && !org.contains(';') && !org.contains(' '));
+    }
+
+    #[test]
+    fn enterprise_profiles_are_identified() {
+        assert!(is_enterprise_profile("STIG_ALIGNED"));
+        assert!(is_enterprise_profile("AIRGAP_HIGH"));
+        assert!(!is_enterprise_profile("SECURE_DEFAULT"));
+        assert!(!is_enterprise_profile("DEV_RELAXED"));
+        assert!(!is_enterprise_profile(""));
+    }
+
+    #[test]
+    fn units_not_enabled_reports_only_disabled() {
+        let enabled = |u: &str| u == "aios.target" || u == "aios-health-report.service";
+        let missing = units_not_enabled(enabled, &["aios.target", "aios-missing.service"]);
+        assert_eq!(missing, vec!["aios-missing.service".to_string()]);
+        let none = units_not_enabled(enabled, &["aios.target"]);
+        assert!(none.is_empty());
+        // a check that reports everything disabled flags all of them
+        let all = units_not_enabled(|_| false, &["a.service", "b.target"]);
+        assert_eq!(all.len(), 2);
     }
 
     /// Verbatim `cryptsetup luksDump` token output for a PCR-bound systemd-tpm2 token.
