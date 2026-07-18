@@ -177,12 +177,18 @@ find_ovmf() {
     local kind="$1"
     local candidate
     local code_list vars_list
+    # NOTE: the openSUSE names (ovmf-x86_64-4m-{code,vars}.bin) are the NON-SMM
+    # firmware and MUST be listed — the *-smm-* build does not hand off the
+    # installed disk's bootloader to the serial console (an SMM phase-2 boot
+    # yields a 0-byte serial log; the non-SMM build boots it fine). Do NOT add the
+    # smm variant here; Secure-Boot enforcement is proved separately by
+    # distro/build/sb-boot-proof.sh, not by this install-boot gate.
     code_list="/usr/share/OVMF/OVMF_CODE.fd /usr/share/ovmf/OVMF_CODE.fd \
         /usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
-        /usr/share/qemu/OVMF_CODE.fd"
+        /usr/share/qemu/OVMF_CODE.fd /usr/share/qemu/ovmf-x86_64-4m-code.bin"
     vars_list="/usr/share/OVMF/OVMF_VARS.fd /usr/share/ovmf/OVMF_VARS.fd \
         /usr/share/edk2/ovmf/OVMF_VARS.fd /usr/share/edk2-ovmf/x64/OVMF_VARS.fd \
-        /usr/share/qemu/OVMF_VARS.fd"
+        /usr/share/qemu/OVMF_VARS.fd /usr/share/qemu/ovmf-x86_64-4m-vars.bin"
     if [ "${kind}" = "VARS" ]; then
         for candidate in ${vars_list}; do
             [ -f "${candidate}" ] && { printf '%s\n' "${candidate}"; return 0; }
