@@ -2317,6 +2317,12 @@ if ${VERIFY_OK}; then
     printf '%s%s  STATUS: ALL CHECKS PASSED%s\n' "${BOLD}" "${GREEN}" "${RESET}"
     exit 0
 else
-    printf '%s%s  STATUS: COMPLETED WITH WARNINGS%s\n' "${BOLD}" "${YELLOW}" "${RESET}"
-    exit 0
+    # FAIL CLOSED. A missing mandatory ISO item (squashfs, kernel, SBOM,
+    # provenance, signatures, security/boot-chain metadata, verity policy, ...)
+    # set VERIFY_OK=false above; the build must red-line rather than exit 0 with
+    # a yellow "warning". Exiting 0 here was a false green: the assemble-iso CI
+    # gate would pass over a structurally broken ISO, in direct violation of the
+    # pipeline's own "NO soft gates" policy (.gitlab-ci.yml).
+    printf '%s%s  STATUS: FAILED — mandatory ISO checks did not pass%s\n' "${BOLD}" "${RED}" "${RESET}"
+    exit 1
 fi
