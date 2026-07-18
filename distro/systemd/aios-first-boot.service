@@ -2,7 +2,7 @@
 Description=AI-OS.NET First Boot Wizard
 Documentation=https://ai-os.net/docs/first-boot
 After=aios-capability-runtime.service
-ConditionPathExists=/etc/aios/first-boot
+ConditionPathExists=/var/lib/aios/first-boot
 
 [Service]
 Type=oneshot

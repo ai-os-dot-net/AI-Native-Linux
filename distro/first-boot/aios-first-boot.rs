@@ -83,7 +83,14 @@ struct Cli {
 const AIOS_ETC: &str = "/etc/aios";
 const AIOS_VAR: &str = "/var/lib/aios";
 const AIOS_RUN: &str = "/run/aios";
-const FIRST_BOOT_FLAG: &str = "/etc/aios/first-boot";
+// The first-boot flag lives on the writable encrypted /var, NOT on the
+// read-only dm-verity root. The installer creates it at install time and the
+// wizard removes it as its final act. On the ro root it would sit on the frozen
+// lower layer of the /etc overlay, and removing it needs an overlay whiteout,
+// which SELinux enforcing denies (EACCES) — that failed phase 10. On /var the
+// create/remove are ordinary read-write operations. The service's
+// ConditionPathExists and the installer's touch point here too.
+const FIRST_BOOT_FLAG: &str = "/var/lib/aios/first-boot";
 // Host identity keypair and host-id live on the encrypted /var, NOT on the root.
 // The root is now a read-only dm-verity volume with a writable /etc overlay whose
 // upper layer sits on /var; writing the private host key through that overlay
