@@ -211,6 +211,9 @@ distro-shell-tests:
       distro/secureboot/generate-sb-keys.sh
       distro/secureboot/sign-boot-artifacts.sh
       distro/secureboot/tpm-expected-pcrs.sh
+      distro/compliance/aios-audit-artifacts-check.sh
+      distro/build/tests/test-rev13-compliance-export.sh
+      distro/build/tests/test-rev13-audit-artifacts-present.sh
     - bash distro/build/tests/test-rev11-build.sh
     - bash distro/build/tests/test-rev12-uefi-boot-gate.sh
     - bash distro/build/tests/test-rev12-install-gate.sh
@@ -228,6 +231,8 @@ distro-shell-tests:
     - bash distro/build/tests/test-rev13-opensuse-base.sh
     - bash distro/build/tests/test-rev13-cve-process.sh
     - bash distro/build/tests/test-rev13-compliance.sh
+    - bash distro/build/tests/test-rev13-compliance-export.sh
+    - bash distro/build/tests/test-rev13-audit-artifacts-present.sh
     - bash distro/build/tests/test-rev13-hermetic.sh
     - bash distro/build/tests/test-rev13-secureboot.sh
     - bash distro/build/tests/test-rev13-daemon.sh
