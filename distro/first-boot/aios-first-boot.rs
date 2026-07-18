@@ -1750,6 +1750,13 @@ fn etc_dir() -> String {
     std::env::var("AIOS_ETC_DIR").unwrap_or_else(|_| AIOS_ETC.to_string())
 }
 
+/// `/var/lib/aios` — the WRITABLE persistent volume, overridable (`AIOS_VAR_DIR`)
+/// for tests. Runtime state that must survive an immutable/verity-frozen `/etc`
+/// belongs here (the first-boot flag and the evidence log already live under it).
+fn var_dir() -> String {
+    std::env::var("AIOS_VAR_DIR").unwrap_or_else(|_| AIOS_VAR.to_string())
+}
+
 /// The first-boot flag path, overridable (`AIOS_FIRST_BOOT_FLAG`) for tests.
 fn first_boot_flag_path() -> String {
     std::env::var("AIOS_FIRST_BOOT_FLAG").unwrap_or_else(|_| FIRST_BOOT_FLAG.to_string())
@@ -1787,7 +1794,14 @@ fn phase_10_complete(ctx: &mut FirstBootContext) -> Result<(), FirstBootError> {
 
     let completion = completion_payload(ctx);
 
-    let completion_file = format!("{}/first-boot-complete.json", etc_dir());
+    // The completion marker goes on the WRITABLE /var, not /etc: by this final
+    // phase the immutable root's /etc has been frozen (dm-verity / first-boot
+    // relocation), so a write to /etc/aios/first-boot-complete.json fails with
+    // EACCES ("os error 13") right after the "First Boot Complete!" banner and
+    // aborts the wizard (status=1), which is exactly the observed installed-system
+    // failure. /var is the persistent writable LUKS volume where the first-boot
+    // flag and the evidence log already live.
+    let completion_file = format!("{}/first-boot-complete.json", var_dir());
     write_file_mode(
         &completion_file,
         &serde_json::to_string_pretty(&completion)?,
@@ -1965,6 +1979,7 @@ mod tests {
 
     #[test]
     fn phase_10_complete_seals_firstbootcomplete_and_clears_flag() {
+        use std::os::unix::fs::PermissionsExt;
         // Sandbox every path phase_10_complete touches — no /etc, /var, /run, no root.
         let base = format!(
             "{}/aios-fbtest-{}-p10",
@@ -1973,13 +1988,20 @@ mod tests {
         );
         let _ = fs::remove_dir_all(&base);
         let etc = format!("{base}/etc");
-        let ev = format!("{base}/ev");
+        let var = format!("{base}/var");
+        let ev = format!("{base}/var/evidence");
         let run = format!("{base}/run");
-        let flag = format!("{base}/first-boot");
+        let flag = format!("{base}/var/first-boot");
         fs::create_dir_all(&etc).unwrap();
+        fs::create_dir_all(&var).unwrap();
         fs::create_dir_all(&ev).unwrap();
         fs::write(&flag, b"1").unwrap(); // the flag exists before completion
+                                         // Freeze /etc read-only to reproduce the immutable/verity-frozen root the
+                                         // installed system hits by this phase: the completion write must NOT go
+                                         // there. 0o555 = no write bit even for the owner (non-root cannot create).
+        fs::set_permissions(&etc, std::fs::Permissions::from_mode(0o555)).unwrap();
         std::env::set_var("AIOS_ETC_DIR", &etc);
+        std::env::set_var("AIOS_VAR_DIR", &var);
         std::env::set_var("AIOS_EVIDENCE_DIR", &ev);
         std::env::set_var("AIOS_RUN_DIR", &run);
         std::env::set_var("AIOS_FIRST_BOOT_FLAG", &flag);
@@ -1988,23 +2010,32 @@ mod tests {
         ctx.host_id = "h1".to_string();
         assert!(ctx.evidence_chain.is_empty());
 
-        phase_10_complete(&mut ctx).expect("phase_10_complete should succeed");
+        // Must succeed even though /etc is frozen read-only (the EACCES bug).
+        phase_10_complete(&mut ctx)
+            .expect("phase_10_complete should succeed with a read-only /etc");
 
-        // The bug this covers: the terminal FirstBootComplete evidence used to be
-        // never emitted (a plain JSON file was written instead). It must now be
-        // sealed into the chain and persisted to the genesis log.
+        // FirstBootComplete evidence is sealed into the chain + genesis log.
         assert_eq!(ctx.evidence_chain.len(), 1, "FirstBootComplete not sealed");
         let log = fs::read_to_string(format!("{ev}/genesis.log")).expect("genesis.log written");
         assert!(
             log.contains("FIRST_BOOT_COMPLETE") || log.contains("FirstBootComplete"),
             "genesis log missing FirstBootComplete: {log}"
         );
-        // Completion file written and the first-boot flag cleared (final action).
-        assert!(Path::new(&format!("{etc}/first-boot-complete.json")).exists());
+        // The completion marker lands on the WRITABLE /var, NOT the frozen /etc.
+        assert!(
+            Path::new(&format!("{var}/first-boot-complete.json")).exists(),
+            "completion marker not written to /var"
+        );
+        assert!(
+            !Path::new(&format!("{etc}/first-boot-complete.json")).exists(),
+            "completion marker must not be on the frozen /etc"
+        );
         assert!(!Path::new(&flag).exists(), "first-boot flag not cleared");
 
+        let _ = fs::set_permissions(&etc, std::fs::Permissions::from_mode(0o755));
         for k in [
             "AIOS_ETC_DIR",
+            "AIOS_VAR_DIR",
             "AIOS_EVIDENCE_DIR",
             "AIOS_RUN_DIR",
             "AIOS_FIRST_BOOT_FLAG",
