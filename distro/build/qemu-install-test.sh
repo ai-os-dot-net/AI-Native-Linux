@@ -492,6 +492,21 @@ if ! log_contains_any "${BOOT_LOG}" "${BOOT_SUCCESS_MARKERS[@]}"; then
 fi
 info "PASS phase 2: installed-boot marker found: ${MATCHED_MARKER}"
 
+# --- Phase 2b: SELinux enforcing at RUNTIME (opt-in, enterprise profiles) ------
+# The spec requires SELinux to be enforcing for STIG_ALIGNED / AIRGAP_HIGH
+# profiles (REV13 §10, §12). When AIOS_REQUIRE_SELINUX_ENFORCING=1, assert the
+# installed system's health reporter emitted `AIOS-HEALTH-SELINUX: enforcing` on
+# the phase-2 console — a RUNTIME getenforce result, not a build-script grep.
+# Left off by default so the CI_BARE install gate (permissive) is unaffected.
+if [ "${AIOS_REQUIRE_SELINUX_ENFORCING:-0}" = "1" ]; then
+    if grep -E -q -- 'AIOS-HEALTH-SELINUX:[[:space:]]*enforcing' "${BOOT_LOG}" 2>/dev/null; then
+        info "PASS phase 2b: SELinux is enforcing at runtime (AIOS-HEALTH-SELINUX: enforcing)"
+    else
+        _sel="$(grep -oE 'AIOS-HEALTH-SELINUX:[^\n]*' "${BOOT_LOG}" 2>/dev/null | head -1)"
+        die "SELinux NOT enforcing at runtime (enterprise profile requires it); saw '${_sel:-<no AIOS-HEALTH-SELINUX marker>}' in ${BOOT_LOG}"
+    fi
+fi
+
 # --- Phase 3: dm-verity tamper acceptance (opt-in) ----------------------------
 # Corrupt the dm-verity HASH TREE (the AIOS_HASH partition, p5) and boot again.
 # p5 is read by NOTHING but the kernel dm-verity target: at open, veritysetup

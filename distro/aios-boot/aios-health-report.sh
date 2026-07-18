@@ -8,6 +8,10 @@
 #   AIOS-HEALTH: RUNNING
 #   AIOS-HEALTH: DEGRADED failed=<comma-separated unit names>
 #
+# It also emits the runtime SELinux enforcement mode (always, before the verdict):
+#
+#   AIOS-HEALTH-SELINUX: enforcing | permissive | disabled | unavailable
+#
 # Staged to /usr/lib/aios/aios-health-report.sh and driven by
 # aios-health-report.service (oneshot, after aios.target + multi-user.target).
 #
@@ -27,6 +31,18 @@ emit() {
         printf '%s\n' "$*"
     fi
 }
+
+# Report the SELinux enforcement mode so a serial-log-only gate (QEMU CI) can
+# assert enforcing for enterprise profiles (STIG_ALIGNED / AIRGAP_HIGH) at RUNTIME
+# — not just by grepping the build scripts. Always emitted, never fails the boot:
+# "enforcing" / "permissive" / "disabled" from getenforce, or "unavailable".
+if command -v getenforce >/dev/null 2>&1; then
+    _selinux_mode="$(getenforce 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+    [ -n "${_selinux_mode}" ] || _selinux_mode="unknown"
+    emit "AIOS-HEALTH-SELINUX: ${_selinux_mode}"
+else
+    emit "AIOS-HEALTH-SELINUX: unavailable"
+fi
 
 # No systemctl (scaffold / minimal rootfs): report degraded with an explicit
 # reason rather than pretending the system is healthy.
