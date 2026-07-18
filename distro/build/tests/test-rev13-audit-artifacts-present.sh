@@ -44,7 +44,7 @@ if python3 "${EXPORTER}" --controls "${CONTROLS}" --out-dir "${EXPORT}" >/dev/nu
 else
     fail "aios-compliance-export.py failed"
 fi
-for f in compliance-report.json control-matrix.csv exception-register.json; do
+for f in compliance-report.json control-matrix.csv exception-register.json compliance-report.md; do
     [ -s "${EXPORT}/${f}" ] && pass "produced non-empty ${f}" || fail "missing/empty ${f}"
 done
 
@@ -58,7 +58,7 @@ fi
 
 # ── checker FAILS CLOSED on each missing artifact ─────────────────────────────
 msg "3. checker fails closed on missing / empty / malformed artifacts"
-for f in compliance-report.json control-matrix.csv exception-register.json; do
+for f in compliance-report.json control-matrix.csv exception-register.json compliance-report.md; do
     d="${WORK}/miss-${f}"; cp -r "${EXPORT}" "${d}"; rm -f "${d}/${f}"
     if bash "${CHECKER}" --dir "${d}" >/dev/null 2>&1; then
         fail "checker PASSED despite missing ${f} (should fail closed)"

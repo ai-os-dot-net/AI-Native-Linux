@@ -41,9 +41,25 @@ else
     fail "exporter failed on the real control map"
 fi
 
-for f in compliance-report.json control-matrix.csv exception-register.json; do
+for f in compliance-report.json control-matrix.csv exception-register.json compliance-report.md; do
     [ -s "${OUT}/${f}" ] && pass "emitted ${f}" || fail "missing/empty ${f}"
 done
+
+# operator-readable Markdown (R13.8) is faithful to the JSON report: same title,
+# tables present, and one controls-table row per control in the JSON.
+python3 - "${OUT}/compliance-report.md" "${OUT}/compliance-report.json" <<'PY' \
+    && pass "compliance-report.md is faithful to the JSON (row-per-control)" \
+    || fail "compliance-report.md missing/inconsistent"
+import json, sys
+md = open(sys.argv[1], encoding="utf-8").read()
+rep = json.load(open(sys.argv[2]))
+assert md.startswith("# AI-OS.NET Compliance Report"), "no title"
+assert "## Controls" in md and "## Exceptions" in md, "missing sections"
+assert rep["generated_at"] in md, "stamp not carried into markdown"
+ids = [c["control_id"] for c in rep["controls"]]
+missing = [i for i in ids if f"| {i} |" not in md]
+assert not missing, f"controls absent from markdown table: {missing[:5]}"
+PY
 
 # report is valid JSON with the expected schema + stamp
 python3 - "${OUT}/compliance-report.json" "${STAMP}" <<'PY' && pass "compliance-report.json is well-formed (schema + fixed stamp)" || fail "compliance-report.json malformed"

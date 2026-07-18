@@ -147,6 +147,72 @@ def write_matrix_csv(controls: list[dict], path: Path) -> None:
             writer.writerow({k: ctrl.get(k, "") for k in fields})
 
 
+def _md_cell(value: object) -> str:
+    """Escape a value for a GitHub-flavoured Markdown table cell."""
+    return str(value).replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
+
+
+def write_markdown_report(report: dict, register: dict, path: Path) -> None:
+    """Operator-readable Markdown rendering of the same validated data (R13.8
+    'Operator-readable Markdown or HTML report'). Derived entirely from `report`
+    and `register` — invents nothing the JSON exports do not already contain."""
+    s = report["summary"]
+    lines: list[str] = []
+    lines.append("# AI-OS.NET Compliance Report")
+    lines.append("")
+    lines.append(f"- Generated: `{report['generated_at']}`")
+    lines.append(
+        f"- Source: `{report.get('source_schema')}` "
+        f"revision `{report.get('source_revision')}`"
+    )
+    lines.append(f"- Total controls: **{s['total']}**")
+    lines.append(f"- Enforced ratio: **{s['enforced_ratio']}**")
+    lines.append("")
+    lines.append("## Summary")
+    lines.append("")
+    lines.append("| Dimension | Breakdown |")
+    lines.append("|-----------|-----------|")
+    for dim in ("by_status", "by_baseline", "by_mechanism"):
+        parts = ", ".join(f"{k}={v}" for k, v in s[dim].items())
+        lines.append(f"| {dim} | {_md_cell(parts)} |")
+    lines.append("")
+    lines.append("## Controls")
+    lines.append("")
+    lines.append("| ID | Baseline | Status | Mechanism | Title | Enforcement ref |")
+    lines.append("|----|----------|--------|-----------|-------|-----------------|")
+    for c in sorted(report["controls"], key=lambda x: x["control_id"]):
+        lines.append(
+            "| {id} | {bl} | {st} | {mech} | {title} | `{ref}` |".format(
+                id=_md_cell(c["control_id"]),
+                bl=_md_cell(c["baseline"]),
+                st=_md_cell(c["status"]),
+                mech=_md_cell(c["aios_mechanism"]),
+                title=_md_cell(c["title"]),
+                ref=_md_cell(c["enforcement_ref"]),
+            )
+        )
+    lines.append("")
+    lines.append(f"## Exceptions ({register['count']} not fully enforced)")
+    lines.append("")
+    if register["count"] == 0:
+        lines.append("None — every control is fully enforced.")
+    else:
+        lines.append("| ID | Baseline | Status | Mechanism | Enforcement ref |")
+        lines.append("|----|----------|--------|-----------|-----------------|")
+        for e in register["exceptions"]:
+            lines.append(
+                "| {id} | {bl} | {st} | {mech} | `{ref}` |".format(
+                    id=_md_cell(e["control_id"]),
+                    bl=_md_cell(e["baseline"]),
+                    st=_md_cell(e["status"]),
+                    mech=_md_cell(e["aios_mechanism"]),
+                    ref=_md_cell(e["enforcement_ref"]),
+                )
+            )
+    lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     here = Path(__file__).resolve().parent
@@ -181,13 +247,17 @@ def main() -> int:
         json.dumps(register, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     write_matrix_csv(controls, args.out_dir / "control-matrix.csv")
+    write_markdown_report(report, register, args.out_dir / "compliance-report.md")
 
     s = report["summary"]
     print(f"AIOS compliance export -> {args.out_dir}")
     print(f"  controls:   {s['total']}")
     print(f"  by status:  {s['by_status']}")
     print(f"  exceptions: {register['count']} (not fully enforced)")
-    print("  files:      compliance-report.json, control-matrix.csv, exception-register.json")
+    print(
+        "  files:      compliance-report.json, control-matrix.csv, "
+        "exception-register.json, compliance-report.md"
+    )
     return 0
 
 
