@@ -25,10 +25,20 @@ RETAIN="${AIOS_RETAIN:-}"      # keep newest N releases in a channel (empty = ke
 UPDATE_STATE_FILE="${AIOS_UPDATE_STATE_FILE:-}"   # client current.json (active release)
 ROLLBACK_STATE_FILE="${AIOS_ROLLBACK_STATE_FILE:-}"  # client previous.json (rollback target)
 
-# The closed set of valid enterprise channels (REV13-ENTERPRISE-SPEC.md §8).
-# `airgap` (offline import/export) is specified but out of scope for R13.5 and is
-# intentionally NOT accepted here; publishing to it must be added deliberately.
+# The closed set of PUBLISHABLE enterprise channels (REV13-ENTERPRISE-SPEC.md §8).
+# `airgap` is deliberately NOT here: it is an offline import/export channel and is
+# populated ONLY by `import` of a signed bundle, never by direct publish/promote.
 CHANNEL_SET="release security staging recovery"
+# The full channel set, including airgap, used where every channel head must be
+# accounted for (e.g. prune protection). airgap heads must never be pruned by a
+# retention pass on another channel.
+ALL_CHANNELS="release security staging recovery airgap"
+
+# airgap bundle transport (export/import).
+BUNDLE_OUT="${AIOS_BUNDLE_OUT:-}"       # export: output bundle path
+BUNDLE_IN="${AIOS_BUNDLE_IN:-}"         # import: input bundle path
+VERIFY_KEY="${AIOS_VERIFY_KEY:-}"       # import: trusted PUBLIC key for bundle verification
+ALLOW_UNSIGNED_BUNDLE="${AIOS_ALLOW_UNSIGNED_BUNDLE:-0}"  # lab-only import escape hatch
 
 usage() {
     cat <<'EOF'
@@ -38,6 +48,10 @@ Usage:
   aios-repo-publish.sh promote --repo-dir DIR --promote-from SRC --channel DST \
       --signing-key KEY [--release-id NEW_ID] [OPTIONS]
   aios-repo-publish.sh prune --repo-dir DIR --channel NAME --retain N [OPTIONS]
+  aios-repo-publish.sh export --repo-dir DIR --channel SRC --out BUNDLE \
+      --signing-key KEY [--release-id ID]
+  aios-repo-publish.sh import --repo-dir DIR --bundle BUNDLE --verify-key PUBKEY \
+      --signing-key KEY [--allow-unsigned-bundle]
 
 Commands:
   publish (default)      Publish a freshly built release into a signed channel.
@@ -47,8 +61,15 @@ Commands:
   prune                  Apply --retain N retention to a channel, deleting the
                          oldest superseded releases. Never prunes the active or
                          previous (rollback-target) release.
+  export                 Package a signed release from a publishable --channel into
+                         a single self-contained, signed bundle for offline (airgap)
+                         transport.
+  import                 Verify a signed airgap bundle end to end and materialize it
+                         into the dest repo's `airgap` channel. Fails closed before
+                         writing any repo state on any signature/hash mismatch.
 
-Channels (closed set): release, security, staging, recovery
+Publishable channels (closed set): release, security, staging, recovery
+airgap channel: populated ONLY via `import` of a signed bundle.
 
 Options:
   --channel NAME          Repository channel (default: release)
@@ -66,6 +87,10 @@ Options:
   --allow-unsigned        Lab-only mode; do not use for promoted releases
   --skip-linkage-check    Do NOT cross-check manifest artifact hashes against the
                           resolvable payload files (lab-only; prints a warning)
+  --out BUNDLE            (export) output airgap bundle path (.tar.gz)
+  --bundle BUNDLE         (import) input airgap bundle path to verify + materialize
+  --verify-key PUBKEY     (import) trusted PUBLIC key that must have signed the bundle
+  --allow-unsigned-bundle (import) lab-only; accept a bundle exported --allow-unsigned
 EOF
 }
 
@@ -268,7 +293,7 @@ info() {
 cleanup() {
     if [ -n "${TMP_DIR}" ] && [ -d "${TMP_DIR}" ]; then
         case "${TMP_DIR}" in
-            /tmp/aios-repo-publish.*|*/.tmp.*) rm -rf "${TMP_DIR}" ;;
+            /tmp/aios-repo-publish.*|/tmp/aios-airgap-*|*/.tmp.*) rm -rf "${TMP_DIR}" ;;
         esac
     fi
 }
@@ -318,6 +343,15 @@ sign_file() {
     sig_name="$(basename "${input}").sig"
     openssl dgst -sha256 -sign "${SIGNING_KEY}" -out "${sig_dir}/${sig_name}" "${input}"
     chmod 644 "${sig_dir}/${sig_name}"
+}
+
+# Verify a detached OpenSSL sha256 signature of FILE using a trusted PUBLIC key.
+# Returns non-zero (does NOT die) so callers can fail closed with their own message.
+verify_detached_sig() {
+    local file="$1" sig="$2" pubkey="$3"
+    command -v openssl >/dev/null 2>&1 || die "openssl is required for verification"
+    [ -f "${file}" ] && [ -f "${sig}" ] && [ -f "${pubkey}" ] || return 1
+    openssl dgst -sha256 -verify "${pubkey}" -signature "${sig}" "${file}" >/dev/null 2>&1
 }
 
 # Cross-check payload <-> metadata linkage: the release manifest must be valid
@@ -545,7 +579,7 @@ prune_channel() {
     # previous head, and any release_id from supplied client update state.
     local protected=()
     local ch head prev
-    for ch in ${CHANNEL_SET}; do
+    for ch in ${ALL_CHANNELS}; do
         head="${REPO_DIR}/channels/${ch}/current.json"
         if [ -f "${head}" ]; then
             protected+=("$(json_get "${head}" release_id)")
@@ -632,6 +666,148 @@ do_prune() {
     info "Retention applied to ${CHANNEL} in ${REPO_DIR}"
 }
 
+# export: package an already-published, signed release from a publishable channel
+# into a single self-contained, signed bundle (tar.gz) for offline transport. The
+# release's own per-file signatures travel with it; a top-level airgap-bundle.json
+# (itself signed) binds the release's signed SHA256SUMS by hash so the whole bundle
+# is tamper-evident as a unit.
+do_export() {
+    [ -n "${REPO_DIR}" ] || die "--repo-dir is required"
+    [ -n "${BUNDLE_OUT}" ] || die "--out BUNDLE is required for export"
+    validate_channel_name "${CHANNEL}"   # SOURCE channel must be a publishable channel
+    require_cmd sha256sum
+    require_cmd tar
+
+    local release_id="${RELEASE_ID}"
+    if [ -z "${release_id}" ]; then
+        require_file "source channel head" "${REPO_DIR}/channels/${CHANNEL}/current.json"
+        release_id="$(json_get "${REPO_DIR}/channels/${CHANNEL}/current.json" release_id)" \
+            || die "cannot read source channel head"
+    fi
+    [ -n "${release_id}" ] || die "could not resolve a release to export"
+
+    local release_dir="${REPO_DIR}/releases/${release_id}"
+    require_file "source release metadata" "${release_dir}/metadata.json"
+    require_file "source release checksums" "${release_dir}/SHA256SUMS"
+    [ ! -e "${release_dir}/signatures/UNSIGNED" ] || die "refusing to export an unsigned lab release: ${release_id}"
+
+    if [ "${ALLOW_UNSIGNED}" != "1" ]; then
+        require_file "signing key" "${SIGNING_KEY}"
+    fi
+
+    local version arch sums_sha
+    version="$(json_get "${release_dir}/metadata.json" version)"
+    arch="$(json_get "${release_dir}/metadata.json" architecture)"
+    sums_sha="$(file_sha256 "${release_dir}/SHA256SUMS")"
+
+    TMP_DIR="$(mktemp -d "/tmp/aios-airgap-export.XXXXXX")"
+    mkdir -p "${TMP_DIR}/release"
+    cp -a "${release_dir}/." "${TMP_DIR}/release/"
+
+    cat > "${TMP_DIR}/airgap-bundle.json" <<EOF
+{
+  "schema": "aios.airgap_bundle.v1",
+  "release_id": "$(json_escape "${release_id}")",
+  "version": "$(json_escape "${version}")",
+  "architecture": "$(json_escape "${arch}")",
+  "source_channel": "$(json_escape "${CHANNEL}")",
+  "release_sha256sums_sha256": "${sums_sha}",
+  "exported_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
+    chmod 644 "${TMP_DIR}/airgap-bundle.json"
+
+    if [ "${ALLOW_UNSIGNED}" != "1" ]; then
+        openssl dgst -sha256 -sign "${SIGNING_KEY}" \
+            -out "${TMP_DIR}/airgap-bundle.json.sig" "${TMP_DIR}/airgap-bundle.json"
+        chmod 644 "${TMP_DIR}/airgap-bundle.json.sig"
+    else
+        printf 'exported with --allow-unsigned; not for production import\n' > "${TMP_DIR}/UNSIGNED"
+    fi
+
+    tar -C "${TMP_DIR}" -czf "${BUNDLE_OUT}" .
+    rm -rf "${TMP_DIR}"; TMP_DIR=""
+
+    append_repo_evidence "export" "airgap" "${release_id}" "OK" \
+        "exported ${CHANNEL} release to airgap bundle ${BUNDLE_OUT}"
+    info "Exported ${release_id} (${CHANNEL}) -> ${BUNDLE_OUT}"
+}
+
+# import: verify a signed airgap bundle end to end, then materialize it into the
+# dest repository's `airgap` channel. FAILS CLOSED before writing ANY repo state
+# if the bundle manifest signature, any release file signature, the SHA256SUMS
+# binding, or the checksum verification does not hold.
+do_import() {
+    [ -n "${REPO_DIR}" ] || die "--repo-dir is required"
+    [ -n "${BUNDLE_IN}" ] || die "--bundle FILE is required for import"
+    require_file "bundle" "${BUNDLE_IN}"
+    require_cmd sha256sum
+    require_cmd tar
+
+    local unpack; unpack="$(mktemp -d "/tmp/aios-airgap-import.XXXXXX")"
+    TMP_DIR="${unpack}"
+    tar -C "${unpack}" -xzf "${BUNDLE_IN}" || die "cannot extract bundle: ${BUNDLE_IN}"
+
+    local bmani="${unpack}/airgap-bundle.json"
+    local rdir="${unpack}/release"
+    [ -f "${bmani}" ] || die "bundle manifest missing (not an airgap bundle): ${BUNDLE_IN}"
+    [ -d "${rdir}" ] || die "bundle release directory missing: ${BUNDLE_IN}"
+    [ ! -e "${unpack}/UNSIGNED" ] || [ "${ALLOW_UNSIGNED_BUNDLE}" = "1" ] \
+        || die "refusing to import an --allow-unsigned bundle without --allow-unsigned-bundle"
+
+    if [ "${ALLOW_UNSIGNED_BUNDLE}" != "1" ]; then
+        require_file "verify key" "${VERIFY_KEY}"
+        [ -f "${bmani}.sig" ] || die "bundle manifest signature missing"
+        verify_detached_sig "${bmani}" "${bmani}.sig" "${VERIFY_KEY}" \
+            || die "bundle manifest signature INVALID (tamper or wrong key)"
+    fi
+
+    local release_id version arch sums_expected sums_actual
+    release_id="$(json_get "${bmani}" release_id)"
+    version="$(json_get "${bmani}" version)"
+    arch="$(json_get "${bmani}" architecture)"
+    sums_expected="$(json_get "${bmani}" release_sha256sums_sha256)"
+    [ -n "${release_id}" ] || die "bundle manifest has no release_id"
+
+    require_file "release checksums" "${rdir}/SHA256SUMS"
+    sums_actual="$(file_sha256 "${rdir}/SHA256SUMS")"
+    [ "${sums_actual}" = "${sums_expected}" ] \
+        || die "bundle manifest SHA256SUMS binding mismatch (tamper): expected ${sums_expected} got ${sums_actual}"
+
+    if [ "${ALLOW_UNSIGNED_BUNDLE}" != "1" ]; then
+        local f base
+        for f in metadata.json SHA256SUMS manifest.json sbom.cdx.json provenance.json; do
+            require_file "release ${f}" "${rdir}/${f}"
+            verify_detached_sig "${rdir}/${f}" "${rdir}/signatures/${f}.sig" "${VERIFY_KEY}" \
+                || die "release signature INVALID or missing for ${f}"
+        done
+        for f in "${rdir}/artifacts/"*; do
+            [ -f "${f}" ] || continue
+            base="$(basename "${f}")"
+            verify_detached_sig "${f}" "${rdir}/signatures/${base}.sig" "${VERIFY_KEY}" \
+                || die "release signature INVALID or missing for artifact ${base}"
+        done
+    fi
+
+    ( cd "${rdir}" && sha256sum -c SHA256SUMS >/dev/null 2>&1 ) \
+        || die "SHA256SUMS content verification failed (tamper)"
+
+    # All checks passed. Sign the dest airgap channel head with the local key.
+    if [ "${ALLOW_UNSIGNED}" != "1" ]; then
+        require_file "signing key" "${SIGNING_KEY}"
+    fi
+    local dest_release="${REPO_DIR}/releases/${release_id}"
+    [ ! -e "${dest_release}" ] || die "release already present in dest repo: ${release_id}"
+    mkdir -p "${REPO_DIR}/releases" "${REPO_DIR}/channels/airgap"
+    cp -a "${rdir}" "${dest_release}"
+    rm -rf "${unpack}"; TMP_DIR=""
+
+    write_channel_head "${dest_release}" "${release_id}" "${version}" "${arch}" "airgap"
+    append_channel_history "airgap" "${release_id}" "${version}"
+    append_repo_evidence "import" "airgap" "${release_id}" "OK" "imported airgap bundle ${BUNDLE_IN}"
+    info "Imported ${release_id} -> airgap channel in ${REPO_DIR}"
+}
+
 # ---------------------------------------------------------------------------
 # Argument parsing (optional leading subcommand: publish | promote | prune)
 # ---------------------------------------------------------------------------
@@ -640,7 +816,7 @@ VERSION_SET=""
 ARCH_SET=""
 
 case "${1:-}" in
-    publish|promote|prune) COMMAND="$1"; shift ;;
+    publish|promote|prune|export|import) COMMAND="$1"; shift ;;
     ""|--*|-h) COMMAND="publish" ;;
     *) COMMAND="publish" ;;
 esac
@@ -660,6 +836,10 @@ while [ $# -gt 0 ]; do
         --retain)             RETAIN="$2"; shift 2 ;;
         --update-state-file)  UPDATE_STATE_FILE="$2"; shift 2 ;;
         --rollback-state-file) ROLLBACK_STATE_FILE="$2"; shift 2 ;;
+        --out)                BUNDLE_OUT="$2"; shift 2 ;;
+        --bundle)             BUNDLE_IN="$2"; shift 2 ;;
+        --verify-key)         VERIFY_KEY="$2"; shift 2 ;;
+        --allow-unsigned-bundle) ALLOW_UNSIGNED_BUNDLE=1; shift ;;
         --signing-key)        SIGNING_KEY="$2"; shift 2 ;;
         --signing-key-id)     SIGNING_KEY_ID="$2"; shift 2 ;;
         --allow-unsigned)     ALLOW_UNSIGNED=1; shift ;;
@@ -673,5 +853,7 @@ case "${COMMAND}" in
     publish) do_publish ;;
     promote) do_promote ;;
     prune)   do_prune ;;
+    export)  do_export ;;
+    import)  do_import ;;
     *) die "unknown command: ${COMMAND}" ;;
 esac
