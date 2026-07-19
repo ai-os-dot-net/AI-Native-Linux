@@ -14,6 +14,7 @@ pub mod evidence;
 pub mod integration;
 pub mod kwin_script;
 pub mod node_kind;
+pub mod plasma_theme;
 pub mod recovery_shell;
 pub mod renderer;
 pub mod service;

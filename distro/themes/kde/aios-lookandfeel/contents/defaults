@@ -1,0 +1,18 @@
+; AI-OS.NET Look-and-Feel defaults.
+; A KDE Plasma Look-and-Feel package points the desktop at a color scheme (and,
+; optionally, a Plasma desktop theme / widget style / icon set). The AIOS
+; identity binds the token-derived color scheme generated from
+; aios-design-tokens. The scheme is referenced by its internal ColorScheme id
+; (AiosDark), which lives in ../../aios-dark.colors — NOT by file name.
+
+[kdeglobals][General]
+ColorScheme=AiosDark
+
+[kdeglobals][KDE]
+widgetStyle=Breeze
+
+[plasmarc][Theme]
+name=default
+
+[Icons]
+Theme=breeze-dark

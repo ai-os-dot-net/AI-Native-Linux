@@ -1,0 +1,20 @@
+{
+  "KPlugin": {
+    "Id": "net.ai-os.lookandfeel.aios",
+    "Name": "AI-OS.NET",
+    "Name[bg]": "AI-OS.NET",
+    "Description": "AI-native desktop identity. Applies the token-derived AIOS Plasma color scheme (generated from aios-design-tokens; raspberry accent #ce2867).",
+    "Description[bg]": "AI-native идентичност на работния плот. Прилага цветовата схема на AIOS, генерирана от aios-design-tokens (акцент малина #ce2867).",
+    "Authors": [
+      {
+        "Name": "AI-OS.NET Project",
+        "Email": "security@ai-os.net"
+      }
+    ],
+    "Category": "",
+    "License": "Apache-2.0",
+    "Version": "0.1.0",
+    "Website": "https://ai-os.net"
+  },
+  "KPackageStructure": "Plasma/LookAndFeel"
+}

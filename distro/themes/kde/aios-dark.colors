@@ -1,0 +1,124 @@
+# AI-OS.NET Plasma color scheme — GENERATED from aios-design-tokens (theme: dark).
+# Do NOT edit by hand. Source of truth: crates/aios-design-tokens (ColorToken).
+# Regenerate: cargo run -p aios-renderer-kde --bin gen-plasma-theme -- distro/themes/kde
+# Full ColorToken dump (role=R,G,B) — includes tokens with no Plasma slot:
+#   surface=22,25,29
+#   surface-variant=33,38,45
+#   text-primary=236,239,243
+#   text-secondary=154,164,177
+#   accent=206,40,103
+#   success=63,185,104
+#   warning=224,163,58
+#   danger=240,86,75
+#   border=45,51,59
+
+[General]
+Name=AI-OS.NET Dark
+ColorScheme=AiosDark
+shadeSortColumn=true
+
+[Colors:View]
+BackgroundNormal=22,25,29
+BackgroundAlternate=33,38,45
+ForegroundNormal=236,239,243
+ForegroundInactive=154,164,177
+ForegroundActive=206,40,103
+ForegroundLink=206,40,103
+ForegroundVisited=206,40,103
+ForegroundNegative=240,86,75
+ForegroundNeutral=224,163,58
+ForegroundPositive=63,185,104
+DecorationFocus=206,40,103
+DecorationHover=206,40,103
+
+[Colors:Window]
+BackgroundNormal=22,25,29
+BackgroundAlternate=33,38,45
+ForegroundNormal=236,239,243
+ForegroundInactive=154,164,177
+ForegroundActive=206,40,103
+ForegroundLink=206,40,103
+ForegroundVisited=206,40,103
+ForegroundNegative=240,86,75
+ForegroundNeutral=224,163,58
+ForegroundPositive=63,185,104
+DecorationFocus=206,40,103
+DecorationHover=206,40,103
+
+[Colors:Button]
+BackgroundNormal=33,38,45
+BackgroundAlternate=22,25,29
+ForegroundNormal=236,239,243
+ForegroundInactive=154,164,177
+ForegroundActive=206,40,103
+ForegroundLink=206,40,103
+ForegroundVisited=206,40,103
+ForegroundNegative=240,86,75
+ForegroundNeutral=224,163,58
+ForegroundPositive=63,185,104
+DecorationFocus=206,40,103
+DecorationHover=206,40,103
+
+[Colors:Tooltip]
+BackgroundNormal=33,38,45
+BackgroundAlternate=22,25,29
+ForegroundNormal=236,239,243
+ForegroundInactive=154,164,177
+ForegroundActive=206,40,103
+ForegroundLink=206,40,103
+ForegroundVisited=206,40,103
+ForegroundNegative=240,86,75
+ForegroundNeutral=224,163,58
+ForegroundPositive=63,185,104
+DecorationFocus=206,40,103
+DecorationHover=206,40,103
+
+[Colors:Complementary]
+BackgroundNormal=22,25,29
+BackgroundAlternate=33,38,45
+ForegroundNormal=236,239,243
+ForegroundInactive=154,164,177
+ForegroundActive=206,40,103
+ForegroundLink=206,40,103
+ForegroundVisited=206,40,103
+ForegroundNegative=240,86,75
+ForegroundNeutral=224,163,58
+ForegroundPositive=63,185,104
+DecorationFocus=206,40,103
+DecorationHover=206,40,103
+
+[Colors:Header]
+BackgroundNormal=33,38,45
+BackgroundAlternate=22,25,29
+ForegroundNormal=236,239,243
+ForegroundInactive=154,164,177
+ForegroundActive=206,40,103
+ForegroundLink=206,40,103
+ForegroundVisited=206,40,103
+ForegroundNegative=240,86,75
+ForegroundNeutral=224,163,58
+ForegroundPositive=63,185,104
+DecorationFocus=206,40,103
+DecorationHover=206,40,103
+
+[Colors:Selection]
+BackgroundNormal=206,40,103
+BackgroundAlternate=206,40,103
+ForegroundNormal=236,239,243
+ForegroundInactive=236,239,243
+ForegroundActive=206,40,103
+ForegroundLink=206,40,103
+ForegroundVisited=206,40,103
+ForegroundNegative=240,86,75
+ForegroundNeutral=224,163,58
+ForegroundPositive=63,185,104
+DecorationFocus=206,40,103
+DecorationHover=206,40,103
+
+[WM]
+activeBackground=33,38,45
+activeForeground=236,239,243
+activeBlend=206,40,103
+inactiveBackground=22,25,29
+inactiveForeground=154,164,177
+inactiveBlend=45,51,59
