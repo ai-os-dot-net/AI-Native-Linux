@@ -156,7 +156,8 @@ fn spacing_radius_typography_are_present_and_scale_correctly() {
     }
 
     // Every enum has the expected closed cardinality (guards silent additions).
-    assert_eq!(ColorToken::COUNT, 9);
+    // 9 base palette + 11 constitutional (4 action-provenance, 4 trust, 3 evidence).
+    assert_eq!(ColorToken::COUNT, 20);
     assert_eq!(SpacingToken::COUNT, 5);
     assert_eq!(RadiusToken::COUNT, 5);
     assert_eq!(TypographyToken::COUNT, 5);
