@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod approval;
+pub mod component_render;
 pub mod enums;
 pub mod offline_token;
 pub mod pocket_node;

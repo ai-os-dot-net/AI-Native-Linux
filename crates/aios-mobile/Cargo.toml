@@ -9,6 +9,7 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+aios-design-tokens = { path = "../aios-design-tokens" }
 aios-action = { path = "../aios-action" }
 aios-policy = { path = "../aios-policy" }
 aios-cognitive = { path = "../aios-cognitive" }

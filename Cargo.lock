@@ -539,6 +539,7 @@ version = "0.1.0"
 dependencies = [
  "aios-action",
  "aios-cognitive",
+ "aios-design-tokens",
  "aios-evidence",
  "aios-policy",
  "aios-vault",
@@ -723,6 +724,7 @@ version = "0.1.0"
 dependencies = [
  "aios-action",
  "aios-cognitive",
+ "aios-design-tokens",
  "aios-evidence",
  "aios-policy",
  "aios-terminal",
