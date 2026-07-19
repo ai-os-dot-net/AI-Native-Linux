@@ -1,0 +1,33 @@
+[Unit]
+Description=AIOS Selkies Browser Desktop Stream (KDE Plasma Wayland) — policy-gated, OFF by default
+Documentation=https://ai-os.net/docs/remote/selkies
+Documentation=file:///usr/share/doc/aios/remote/selkies/DESIGN.md
+# Fail-closed gate: this unit refuses to start unless an operator has
+# explicitly created the policy flag file below. See aios-selkies-ctl.sh
+# `enable` and DESIGN.md §3/§6. This is a scaffold-level gate, not yet the
+# real L4 Policy Kernel WEB_EXPOSURE_GRANTED evidence chain — see DESIGN.md §7.
+ConditionPathExists=/etc/aios/policy/remote-desktop.enabled
+After=aios-policy-kernel.service network.target
+Wants=aios-policy-kernel.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/aios/remote/selkies.env
+ExecStartPre=/usr/lib/aios/remote/aios-selkies-ctl.sh preflight
+# NOTE: the real Selkies/Smithay/KWin launch command is not yet packaged for
+# AIOS (openSUSE Leap 16 RPM packaging is deferred — see DESIGN.md §2.3/§7).
+# ExecStart intentionally points at the control script rather than a
+# fabricated binary path; `start` currently re-runs preflight and reports
+# NOT_PACKAGED so the unit fails loudly instead of pretending to succeed.
+ExecStart=/usr/lib/aios/remote/aios-selkies-ctl.sh start
+Restart=no
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/var/lib/aios/remote/selkies /run/aios
+
+[Install]
+# Intentionally no WantedBy=. This unit must never be pulled in by
+# aios.target or multi-user.target automatically; `systemctl enable` is a
+# distinct, explicit operator action on top of the ConditionPathExists gate.
