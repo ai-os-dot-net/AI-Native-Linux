@@ -21,8 +21,8 @@ use std::fmt::Write as _;
 use strum::EnumCount as _;
 use strum_macros::{EnumCount, EnumIter};
 
-use crate::emit::{css_var_color, qml_prop_color};
-use crate::ColorToken;
+use crate::emit::{css_var_color, css_var_elevation, qml_prop_color, qml_prop_elevation};
+use crate::{ColorToken, ElevationToken};
 
 /// The closed axes across which a constitutional distinction is encoded
 /// (S7.3 §5). A constitutional distinction (AI/human, trust, recovery) MUST be
@@ -121,6 +121,9 @@ pub struct ComponentRecipe {
     pub required_axes: &'static [DistinctionAxis],
     /// The primary semantic colour role the component speaks in.
     pub primary_color: ColorToken,
+    /// Surface elevation — the card-vs-flat signal (S7.4 §5). `None` for flat
+    /// chrome/pills, higher for cards that demand a decision or attention.
+    pub elevation: ElevationToken,
 }
 
 impl ComponentRecipe {
@@ -147,6 +150,7 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         root_node_kind: "SecurityIndicator",
         required_axes: &[Hue, Pattern, Position],
         primary_color: TrustVerified,
+        elevation: ElevationToken::None,
     },
     ComponentRecipe {
         name: ComponentName::RecoveryShield,
@@ -154,6 +158,7 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         root_node_kind: "SecurityIndicator",
         required_axes: &[Hue, Pattern, Outline, Typography],
         primary_color: Recovery,
+        elevation: ElevationToken::High,
     },
     ComponentRecipe {
         name: ComponentName::AiSubjectBadge,
@@ -161,6 +166,7 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         root_node_kind: "SecurityIndicator",
         required_axes: &[Hue, Pattern, Outline, Typography],
         primary_color: ActionAi,
+        elevation: ElevationToken::None,
     },
     ComponentRecipe {
         name: ComponentName::HumanSubjectBadge,
@@ -168,6 +174,7 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         root_node_kind: "SecurityIndicator",
         required_axes: &[Hue, Pattern, Outline],
         primary_color: ActionHuman,
+        elevation: ElevationToken::None,
     },
     ComponentRecipe {
         name: ComponentName::TrustIndicator,
@@ -175,6 +182,7 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         root_node_kind: "SecurityIndicator",
         required_axes: &[Hue, Pattern],
         primary_color: TrustVerified,
+        elevation: ElevationToken::None,
     },
     ComponentRecipe {
         name: ComponentName::EvidenceLinkTile,
@@ -182,6 +190,7 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         root_node_kind: "EvidenceLink",
         required_axes: &[Hue, Pattern],
         primary_color: EvidencePermanent,
+        elevation: ElevationToken::Low,
     },
     ComponentRecipe {
         name: ComponentName::TamperWarning,
@@ -189,6 +198,7 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         root_node_kind: "SecurityIndicator",
         required_axes: &[Hue, Pattern, Outline],
         primary_color: TrustDenied,
+        elevation: ElevationToken::Medium,
     },
     ComponentRecipe {
         name: ComponentName::AgentMessage,
@@ -196,6 +206,7 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         root_node_kind: "AgentMessage",
         required_axes: &[Hue, Outline, Typography],
         primary_color: ActionAi,
+        elevation: ElevationToken::None,
     },
     ComponentRecipe {
         name: ComponentName::ApprovalPrompt,
@@ -203,6 +214,7 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         root_node_kind: "ApprovalPrompt",
         required_axes: &[Hue, Pattern, Position],
         primary_color: ActionHuman,
+        elevation: ElevationToken::Medium,
     },
     ComponentRecipe {
         name: ComponentName::AuditTrail,
@@ -210,6 +222,7 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         root_node_kind: "Table",
         required_axes: &[Typography, Hue],
         primary_color: ActionSystem,
+        elevation: ElevationToken::None,
     },
     ComponentRecipe {
         name: ComponentName::ActionEnvelopeView,
@@ -217,6 +230,7 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         root_node_kind: "Card",
         required_axes: &[Pattern, Hue],
         primary_color: Accent,
+        elevation: ElevationToken::Low,
     },
     ComponentRecipe {
         name: ComponentName::GroupHeader,
@@ -224,6 +238,7 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         root_node_kind: "Heading",
         required_axes: &[Position, Outline],
         primary_color: Accent,
+        elevation: ElevationToken::None,
     },
     ComponentRecipe {
         name: ComponentName::InboxTile,
@@ -231,6 +246,7 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         root_node_kind: "Card",
         required_axes: &[Hue, Pattern, Position],
         primary_color: Warning,
+        elevation: ElevationToken::Low,
     },
 ];
 
@@ -279,6 +295,13 @@ pub fn recipe_to_css(recipe: &ComponentRecipe) -> String {
         let _ = writeln!(out, "  opacity: 0.72;");
     }
     let _ = writeln!(out, "  border-radius: var(--aios-radius-md);");
+    if recipe.elevation != ElevationToken::None {
+        let _ = writeln!(
+            out,
+            "  box-shadow: var({});",
+            css_var_elevation(recipe.elevation)
+        );
+    }
     out.push_str("}\n");
     out
 }
@@ -304,6 +327,13 @@ pub fn recipe_to_qml(recipe: &ComponentRecipe) -> String {
     }
     if recipe.required_axes.contains(&DistinctionAxis::Opacity) {
         let _ = writeln!(out, "  property real aiosOpacity: 0.72");
+    }
+    if recipe.elevation != ElevationToken::None {
+        let _ = writeln!(
+            out,
+            "  property string aiosElevation: AiosTokens.{}",
+            qml_prop_elevation(recipe.elevation)
+        );
     }
     out.push_str("}\n");
     out
@@ -475,5 +505,36 @@ mod tests {
                 "{name:?} missing from the component stylesheet"
             );
         }
+    }
+
+    #[test]
+    fn elevation_emits_a_box_shadow_exactly_when_raised() {
+        // A raised recipe (card / attention component) emits box-shadow; a flat
+        // one (chrome banner, pill badge, table) does not. This is the card-vs-
+        // flat identity signal, driven purely from the recipe's elevation token.
+        for r in &AIOS_RECIPES {
+            let raised = r.elevation != ElevationToken::None;
+            assert_eq!(
+                raised,
+                recipe_to_css(r).contains("box-shadow: var("),
+                "{:?} elevation / box-shadow mismatch",
+                r.name
+            );
+            assert_eq!(
+                raised,
+                recipe_to_qml(r).contains("aiosElevation"),
+                "{:?} qml elevation mismatch",
+                r.name
+            );
+        }
+        // The decision surfaces are raised; the inline badges are flat.
+        assert_ne!(
+            recipe_for(ComponentName::ApprovalPrompt).elevation,
+            ElevationToken::None
+        );
+        assert_eq!(
+            recipe_for(ComponentName::AiSubjectBadge).elevation,
+            ElevationToken::None
+        );
     }
 }
