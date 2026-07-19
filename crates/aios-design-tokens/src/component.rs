@@ -22,7 +22,7 @@ use strum::EnumCount as _;
 use strum_macros::{EnumCount, EnumIter};
 
 use crate::emit::{css_var_color, css_var_elevation, qml_prop_color, qml_prop_elevation};
-use crate::{ColorToken, ElevationToken};
+use crate::{ColorToken, ElevationToken, SpacingToken};
 
 /// The closed axes across which a constitutional distinction is encoded
 /// (S7.3 §5). A constitutional distinction (AI/human, trust, recovery) MUST be
@@ -124,6 +124,11 @@ pub struct ComponentRecipe {
     /// Surface elevation — the card-vs-flat signal (S7.4 §5). `None` for flat
     /// chrome/pills, higher for cards that demand a decision or attention.
     pub elevation: ElevationToken,
+    /// Internal padding, from the shared spacing scale (S7.3 §4.3).
+    pub padding: SpacingToken,
+    /// Layout flow: `true` for block surfaces (banners, cards, messages),
+    /// `false` for inline pills (badges, trust/evidence chips).
+    pub block: bool,
 }
 
 impl ComponentRecipe {
@@ -151,6 +156,8 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         required_axes: &[Hue, Pattern, Position],
         primary_color: TrustVerified,
         elevation: ElevationToken::None,
+        padding: SpacingToken::Sm,
+        block: true,
     },
     ComponentRecipe {
         name: ComponentName::RecoveryShield,
@@ -159,6 +166,8 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         required_axes: &[Hue, Pattern, Outline, Typography],
         primary_color: Recovery,
         elevation: ElevationToken::High,
+        padding: SpacingToken::Md,
+        block: true,
     },
     ComponentRecipe {
         name: ComponentName::AiSubjectBadge,
@@ -167,6 +176,8 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         required_axes: &[Hue, Pattern, Outline, Typography],
         primary_color: ActionAi,
         elevation: ElevationToken::None,
+        padding: SpacingToken::Xs,
+        block: false,
     },
     ComponentRecipe {
         name: ComponentName::HumanSubjectBadge,
@@ -175,6 +186,8 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         required_axes: &[Hue, Pattern, Outline],
         primary_color: ActionHuman,
         elevation: ElevationToken::None,
+        padding: SpacingToken::Xs,
+        block: false,
     },
     ComponentRecipe {
         name: ComponentName::TrustIndicator,
@@ -183,6 +196,8 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         required_axes: &[Hue, Pattern],
         primary_color: TrustVerified,
         elevation: ElevationToken::None,
+        padding: SpacingToken::Xs,
+        block: false,
     },
     ComponentRecipe {
         name: ComponentName::EvidenceLinkTile,
@@ -191,6 +206,8 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         required_axes: &[Hue, Pattern],
         primary_color: EvidencePermanent,
         elevation: ElevationToken::Low,
+        padding: SpacingToken::Sm,
+        block: false,
     },
     ComponentRecipe {
         name: ComponentName::TamperWarning,
@@ -199,6 +216,8 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         required_axes: &[Hue, Pattern, Outline],
         primary_color: TrustDenied,
         elevation: ElevationToken::Medium,
+        padding: SpacingToken::Sm,
+        block: true,
     },
     ComponentRecipe {
         name: ComponentName::AgentMessage,
@@ -207,6 +226,8 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         required_axes: &[Hue, Outline, Typography],
         primary_color: ActionAi,
         elevation: ElevationToken::None,
+        padding: SpacingToken::Md,
+        block: true,
     },
     ComponentRecipe {
         name: ComponentName::ApprovalPrompt,
@@ -215,6 +236,8 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         required_axes: &[Hue, Pattern, Position],
         primary_color: ActionHuman,
         elevation: ElevationToken::Medium,
+        padding: SpacingToken::Md,
+        block: true,
     },
     ComponentRecipe {
         name: ComponentName::AuditTrail,
@@ -223,6 +246,8 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         required_axes: &[Typography, Hue],
         primary_color: ActionSystem,
         elevation: ElevationToken::None,
+        padding: SpacingToken::Sm,
+        block: true,
     },
     ComponentRecipe {
         name: ComponentName::ActionEnvelopeView,
@@ -231,6 +256,8 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         required_axes: &[Pattern, Hue],
         primary_color: Accent,
         elevation: ElevationToken::Low,
+        padding: SpacingToken::Md,
+        block: true,
     },
     ComponentRecipe {
         name: ComponentName::GroupHeader,
@@ -239,6 +266,8 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         required_axes: &[Position, Outline],
         primary_color: Accent,
         elevation: ElevationToken::None,
+        padding: SpacingToken::Sm,
+        block: true,
     },
     ComponentRecipe {
         name: ComponentName::InboxTile,
@@ -247,6 +276,8 @@ pub const AIOS_RECIPES: [ComponentRecipe; ComponentName::COUNT] = [
         required_axes: &[Hue, Pattern, Position],
         primary_color: Warning,
         elevation: ElevationToken::Low,
+        padding: SpacingToken::Md,
+        block: true,
     },
 ];
 
@@ -284,6 +315,20 @@ pub fn recipe_to_css(recipe: &ComponentRecipe) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "/* {slug} — {kind} */");
     let _ = writeln!(out, ".aios-{slug} {{");
+    let _ = writeln!(
+        out,
+        "  display: {};",
+        if recipe.block {
+            "block"
+        } else {
+            "inline-block"
+        }
+    );
+    let _ = writeln!(
+        out,
+        "  padding: var(--aios-spacing-{});",
+        recipe.padding.slug()
+    );
     let _ = writeln!(out, "  color: var({var});");
     if recipe.required_axes.contains(&DistinctionAxis::Outline) {
         let _ = writeln!(out, "  border: 1px solid var({var});");
@@ -319,6 +364,12 @@ pub fn recipe_to_qml(recipe: &ComponentRecipe) -> String {
     let _ = writeln!(out, "// {slug}");
     let _ = writeln!(out, "Item {{");
     let _ = writeln!(out, "  property color aiosColor: AiosTokens.{prop}");
+    let _ = writeln!(out, "  property bool aiosBlock: {}", recipe.block);
+    let _ = writeln!(
+        out,
+        "  property string aiosPadding: \"{}\"",
+        recipe.padding.slug()
+    );
     if recipe.required_axes.contains(&DistinctionAxis::Outline) {
         let _ = writeln!(out, "  property int aiosBorderWidth: 1");
     }
@@ -536,5 +587,32 @@ mod tests {
             recipe_for(ComponentName::AiSubjectBadge).elevation,
             ElevationToken::None
         );
+    }
+
+    #[test]
+    fn layout_emits_display_and_token_padding() {
+        // Every recipe emits a display (block for surfaces, inline-block for
+        // pills) and a padding drawn from the shared spacing scale — so a
+        // component is a complete, self-contained style, not colour-only.
+        for r in &AIOS_RECIPES {
+            let css = recipe_to_css(r);
+            let want_display = if r.block {
+                "display: block;"
+            } else {
+                "display: inline-block;"
+            };
+            assert!(css.contains(want_display), "{:?} wrong display", r.name);
+            assert!(
+                css.contains(&format!(
+                    "padding: var(--aios-spacing-{});",
+                    r.padding.slug()
+                )),
+                "{:?} missing token padding",
+                r.name
+            );
+        }
+        // Badges are inline pills; decision surfaces are blocks.
+        assert!(!recipe_for(ComponentName::AiSubjectBadge).block);
+        assert!(recipe_for(ComponentName::ApprovalPrompt).block);
     }
 }
