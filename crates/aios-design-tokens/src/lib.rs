@@ -30,6 +30,7 @@
 //! a visual/E2E check. See `DESIGN.md`.
 
 pub mod color;
+pub mod component;
 pub mod elevation;
 pub mod emit;
 pub mod motion;
