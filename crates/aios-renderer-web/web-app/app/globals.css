@@ -1,0 +1,131 @@
+/* AIOS Web renderer base element styling.
+ *
+ * This file is hand-authored, but every value it uses is a shared design
+ * token (`var(--aios-*)`) emitted from the `aios-design-tokens` crate into the
+ * generated `aios-tokens.css`. No literal colors, sizes, or fonts live here —
+ * that is what keeps the Web renderer visually identical to the KDE renderer.
+ *
+ * Theme: `aios-tokens.css` scopes light values to `:root`, dark values to
+ * `:root[data-theme="dark"]`, and mirrors the dark values under
+ * `@media (prefers-color-scheme: dark)` for viewers with no explicit choice.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--aios-color-surface);
+  color: var(--aios-color-text-primary);
+  font-family: var(--aios-font-body-family), system-ui, sans-serif;
+  font-size: var(--aios-font-body-size);
+  font-weight: var(--aios-font-body-weight);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--aios-color-text-primary);
+  margin: 0 0 var(--aios-spacing-md);
+  font-family: var(--aios-font-heading-family), system-ui, sans-serif;
+}
+
+h1 {
+  font-family: var(--aios-font-display-family), system-ui, sans-serif;
+  font-size: var(--aios-font-display-size);
+  font-weight: var(--aios-font-display-weight);
+}
+
+h2 {
+  font-size: var(--aios-font-heading-size);
+  font-weight: var(--aios-font-heading-weight);
+}
+
+p {
+  margin: 0 0 var(--aios-spacing-md);
+}
+
+a {
+  color: var(--aios-color-accent);
+  text-decoration: none;
+  transition: opacity var(--aios-motion-fast) var(--aios-easing-standard);
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+a:focus-visible {
+  outline: 2px solid var(--aios-color-accent);
+  outline-offset: 2px;
+  border-radius: var(--aios-radius-sm);
+}
+
+code,
+kbd,
+samp {
+  font-family: var(--aios-font-code-family), ui-monospace, monospace;
+  font-size: var(--aios-font-code-size);
+}
+
+/* ── Layout primitives used by the landing + recovery routes ─────────────── */
+
+.aios-shell {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: var(--aios-spacing-xl) var(--aios-spacing-lg);
+}
+
+.aios-caption {
+  color: var(--aios-color-text-secondary);
+  font-size: var(--aios-font-caption-size);
+  font-weight: var(--aios-font-caption-weight);
+}
+
+.aios-card {
+  background-color: var(--aios-color-surface-variant);
+  border: 1px solid var(--aios-color-border);
+  border-radius: var(--aios-radius-lg);
+  box-shadow: var(--aios-elevation-low);
+  padding: var(--aios-spacing-lg);
+}
+
+.aios-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--aios-spacing-sm);
+}
+
+.aios-nav-link {
+  display: inline-block;
+  padding: var(--aios-spacing-sm) var(--aios-spacing-md);
+  border: 1px solid var(--aios-color-border);
+  border-radius: var(--aios-radius-md);
+  color: var(--aios-color-text-primary);
+  background-color: var(--aios-color-surface);
+  transition: border-color var(--aios-motion-fast) var(--aios-easing-standard);
+}
+
+.aios-nav-link:hover {
+  border-color: var(--aios-color-accent);
+  text-decoration: none;
+}
+
+/* Recovery route uses the warning role to signal the recovery origin. */
+.aios-recovery-banner {
+  border-left: 4px solid var(--aios-color-warning);
+  padding-left: var(--aios-spacing-md);
+}

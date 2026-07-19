@@ -20,6 +20,7 @@ pub mod origin;
 pub mod origin_verifier;
 pub mod renderer;
 pub mod service;
+pub mod token_css;
 pub mod types;
 
 pub use chrome_integrity::{
@@ -52,6 +53,7 @@ pub use renderer::{
     AllocateWebSurfaceRequest, InMemoryWebRenderer, RecoveryEntryReceipt, TokenApplicationReceipt,
     WebRenderer, WebSurfaceFilter, WebSurfaceReleaseReceipt,
 };
+pub use token_css::{generated_tokens_css, GENERATED_TOKENS_CSS_PATH};
 pub use types::{
     ChromeShadowRootMarker, RouteDescriptor, ShadowRootMode, WebRendererMode, WebSurfaceDescriptor,
     WebSurfaceId,

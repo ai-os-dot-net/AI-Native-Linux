@@ -1,4 +1,9 @@
 import type { Metadata } from "next";
+// Generated design-token custom properties (:root light / dark / prefers dark).
+// Source of truth: `aios-design-tokens` crate — see aios-tokens.css header.
+import "./aios-tokens.css";
+// Base element styling that consumes the tokens above.
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "AIOS Renderer",

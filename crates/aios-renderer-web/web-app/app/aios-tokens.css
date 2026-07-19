@@ -1,0 +1,154 @@
+/* GENERATED FILE — do not edit by hand.
+* Source of truth: crate `aios-design-tokens` via
+* `aios_renderer_web::css_compile::aios_default_stylesheet`.
+* Regenerate: `cargo run -p aios-renderer-web --example generate-tokens-css`.
+* Drift is guarded by `tests/token_css_generated.rs`. */
+
+/* AIOS design tokens — theme: light. Generated from aios-design-tokens TokenSet. */
+:root {
+  --aios-color-surface: #ffffffff;
+  --aios-color-surface-variant: #f2f4f7ff;
+  --aios-color-text-primary: #1a1d21ff;
+  --aios-color-text-secondary: #5a626eff;
+  --aios-color-accent: #ce2867ff;
+  --aios-color-success: #1f9d55ff;
+  --aios-color-warning: #c47f17ff;
+  --aios-color-danger: #d5372eff;
+  --aios-color-border: #d7dce2ff;
+  --aios-spacing-xs: 4px;
+  --aios-spacing-sm: 8px;
+  --aios-spacing-md: 16px;
+  --aios-spacing-lg: 24px;
+  --aios-spacing-xl: 40px;
+  --aios-radius-none: 0px;
+  --aios-radius-sm: 4px;
+  --aios-radius-md: 8px;
+  --aios-radius-lg: 16px;
+  --aios-radius-full: 9999px;
+  --aios-font-display-family: "Noto Sans";
+  --aios-font-display-size: 32px;
+  --aios-font-display-weight: 700;
+  --aios-font-heading-family: "Noto Sans";
+  --aios-font-heading-size: 20px;
+  --aios-font-heading-weight: 600;
+  --aios-font-body-family: "Noto Sans";
+  --aios-font-body-size: 14px;
+  --aios-font-body-weight: 400;
+  --aios-font-caption-family: "Noto Sans";
+  --aios-font-caption-size: 12px;
+  --aios-font-caption-weight: 400;
+  --aios-font-code-family: "Noto Sans Mono";
+  --aios-font-code-size: 13px;
+  --aios-font-code-weight: 400;
+  --aios-elevation-none: none;
+  --aios-elevation-low: 0px 1px 2px 0px #0000001f;
+  --aios-elevation-medium: 0px 2px 10px 0px #00000026;
+  --aios-elevation-high: 0px 12px 32px 0px #00000033;
+  --aios-motion-instant: 0ms;
+  --aios-motion-fast: 120ms;
+  --aios-motion-base: 200ms;
+  --aios-motion-slow: 320ms;
+  --aios-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --aios-easing-decelerate: cubic-bezier(0, 0, 0, 1);
+  --aios-easing-accelerate: cubic-bezier(0.3, 0, 1, 1);
+}
+
+/* AIOS design tokens — theme: dark. Generated from aios-design-tokens TokenSet. */
+:root[data-theme="dark"] {
+  --aios-color-surface: #16191dff;
+  --aios-color-surface-variant: #21262dff;
+  --aios-color-text-primary: #eceff3ff;
+  --aios-color-text-secondary: #9aa4b1ff;
+  --aios-color-accent: #ce2867ff;
+  --aios-color-success: #3fb968ff;
+  --aios-color-warning: #e0a33aff;
+  --aios-color-danger: #f0564bff;
+  --aios-color-border: #2d333bff;
+  --aios-spacing-xs: 4px;
+  --aios-spacing-sm: 8px;
+  --aios-spacing-md: 16px;
+  --aios-spacing-lg: 24px;
+  --aios-spacing-xl: 40px;
+  --aios-radius-none: 0px;
+  --aios-radius-sm: 4px;
+  --aios-radius-md: 8px;
+  --aios-radius-lg: 16px;
+  --aios-radius-full: 9999px;
+  --aios-font-display-family: "Noto Sans";
+  --aios-font-display-size: 32px;
+  --aios-font-display-weight: 700;
+  --aios-font-heading-family: "Noto Sans";
+  --aios-font-heading-size: 20px;
+  --aios-font-heading-weight: 600;
+  --aios-font-body-family: "Noto Sans";
+  --aios-font-body-size: 14px;
+  --aios-font-body-weight: 400;
+  --aios-font-caption-family: "Noto Sans";
+  --aios-font-caption-size: 12px;
+  --aios-font-caption-weight: 400;
+  --aios-font-code-family: "Noto Sans Mono";
+  --aios-font-code-size: 13px;
+  --aios-font-code-weight: 400;
+  --aios-elevation-none: none;
+  --aios-elevation-low: 0px 1px 2px 0px #00000040;
+  --aios-elevation-medium: 0px 2px 10px 0px #00000059;
+  --aios-elevation-high: 0px 12px 32px 0px #00000080;
+  --aios-motion-instant: 0ms;
+  --aios-motion-fast: 120ms;
+  --aios-motion-base: 200ms;
+  --aios-motion-slow: 320ms;
+  --aios-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --aios-easing-decelerate: cubic-bezier(0, 0, 0, 1);
+  --aios-easing-accelerate: cubic-bezier(0.3, 0, 1, 1);
+}
+
+/* AIOS design tokens — prefers-color-scheme: dark (no explicit data-theme). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+  --aios-color-surface: #16191dff;
+  --aios-color-surface-variant: #21262dff;
+  --aios-color-text-primary: #eceff3ff;
+  --aios-color-text-secondary: #9aa4b1ff;
+  --aios-color-accent: #ce2867ff;
+  --aios-color-success: #3fb968ff;
+  --aios-color-warning: #e0a33aff;
+  --aios-color-danger: #f0564bff;
+  --aios-color-border: #2d333bff;
+  --aios-spacing-xs: 4px;
+  --aios-spacing-sm: 8px;
+  --aios-spacing-md: 16px;
+  --aios-spacing-lg: 24px;
+  --aios-spacing-xl: 40px;
+  --aios-radius-none: 0px;
+  --aios-radius-sm: 4px;
+  --aios-radius-md: 8px;
+  --aios-radius-lg: 16px;
+  --aios-radius-full: 9999px;
+  --aios-font-display-family: "Noto Sans";
+  --aios-font-display-size: 32px;
+  --aios-font-display-weight: 700;
+  --aios-font-heading-family: "Noto Sans";
+  --aios-font-heading-size: 20px;
+  --aios-font-heading-weight: 600;
+  --aios-font-body-family: "Noto Sans";
+  --aios-font-body-size: 14px;
+  --aios-font-body-weight: 400;
+  --aios-font-caption-family: "Noto Sans";
+  --aios-font-caption-size: 12px;
+  --aios-font-caption-weight: 400;
+  --aios-font-code-family: "Noto Sans Mono";
+  --aios-font-code-size: 13px;
+  --aios-font-code-weight: 400;
+  --aios-elevation-none: none;
+  --aios-elevation-low: 0px 1px 2px 0px #00000040;
+  --aios-elevation-medium: 0px 2px 10px 0px #00000059;
+  --aios-elevation-high: 0px 12px 32px 0px #00000080;
+  --aios-motion-instant: 0ms;
+  --aios-motion-fast: 120ms;
+  --aios-motion-base: 200ms;
+  --aios-motion-slow: 320ms;
+  --aios-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --aios-easing-decelerate: cubic-bezier(0, 0, 0, 1);
+  --aios-easing-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  }
+}
