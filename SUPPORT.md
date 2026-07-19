@@ -1,6 +1,10 @@
 # Support
 
-AI-Native Linux is currently specification-first. There is no installable operating system or production runtime yet.
+AI-OS.NET has a bootable enterprise distribution (openSUSE Leap 16 base, signed
+repository, installer, first-boot, and update/rollback). The authoritative support
+window, release/security cadence, end-of-life date, emergency-patch path, backport
+policy, deprecated-feature policy, and supported upgrade path are defined in
+**[distro/SUPPORT-LIFECYCLE.md](distro/SUPPORT-LIFECYCLE.md)**.
 
 Use GitHub issues for:
 
