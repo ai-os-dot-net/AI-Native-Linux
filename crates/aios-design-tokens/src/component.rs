@@ -16,9 +16,12 @@
 //! module is the stage-2 contract: names, constitutionality, axes, and the
 //! token roles each component is allowed to speak in.
 
+use std::fmt::Write as _;
+
 use strum::EnumCount as _;
 use strum_macros::{EnumCount, EnumIter};
 
+use crate::emit::{css_var_color, qml_prop_color};
 use crate::ColorToken;
 
 /// The closed axes across which a constitutional distinction is encoded
@@ -247,6 +250,77 @@ pub fn recipe_for(name: ComponentName) -> ComponentRecipe {
     AIOS_RECIPES[0]
 }
 
+/// Emit the shared CSS rule for one component recipe. The class name and every
+/// value derive from the recipe + tokens via [`css_var_color`] — the SAME
+/// helper the token stylesheet uses, so the colour reference can never drift
+/// off-token. The distinction axes drive real CSS: `Outline` → a token-coloured
+/// border, `Typography` → italic (the AI-origin axis that separates an AI badge
+/// from a human one even under colourblindness), `Opacity` → reduced alpha.
+#[must_use]
+pub fn recipe_to_css(recipe: &ComponentRecipe) -> String {
+    let var = css_var_color(recipe.primary_color);
+    let slug = recipe.name.slug();
+    let kind = if recipe.constitutional {
+        "constitutional"
+    } else {
+        "recognizable"
+    };
+    let mut out = String::new();
+    let _ = writeln!(out, "/* {slug} — {kind} */");
+    let _ = writeln!(out, ".aios-{slug} {{");
+    let _ = writeln!(out, "  color: var({var});");
+    if recipe.required_axes.contains(&DistinctionAxis::Outline) {
+        let _ = writeln!(out, "  border: 1px solid var({var});");
+    }
+    if recipe.required_axes.contains(&DistinctionAxis::Typography) {
+        let _ = writeln!(out, "  font-style: italic;");
+    }
+    if recipe.required_axes.contains(&DistinctionAxis::Opacity) {
+        let _ = writeln!(out, "  opacity: 0.72;");
+    }
+    let _ = writeln!(out, "  border-radius: var(--aios-radius-md);");
+    out.push_str("}\n");
+    out
+}
+
+/// Emit the shared QML fragment for one component recipe — the KDE counterpart
+/// of [`recipe_to_css`]. Colour binds `AiosTokens.<prop>` via [`qml_prop_color`]
+/// (the same helper the QML token singleton uses); the same axes drive the
+/// border / italic / opacity properties, so KDE renders the component with the
+/// identical token bindings the Web rule uses.
+#[must_use]
+pub fn recipe_to_qml(recipe: &ComponentRecipe) -> String {
+    let prop = qml_prop_color(recipe.primary_color);
+    let slug = recipe.name.slug();
+    let mut out = String::new();
+    let _ = writeln!(out, "// {slug}");
+    let _ = writeln!(out, "Item {{");
+    let _ = writeln!(out, "  property color aiosColor: AiosTokens.{prop}");
+    if recipe.required_axes.contains(&DistinctionAxis::Outline) {
+        let _ = writeln!(out, "  property int aiosBorderWidth: 1");
+    }
+    if recipe.required_axes.contains(&DistinctionAxis::Typography) {
+        let _ = writeln!(out, "  property bool aiosItalic: true");
+    }
+    if recipe.required_axes.contains(&DistinctionAxis::Opacity) {
+        let _ = writeln!(out, "  property real aiosOpacity: 0.72");
+    }
+    out.push_str("}\n");
+    out
+}
+
+/// Emit the full component stylesheet — every recipe's CSS rule in
+/// `AIOS_RECIPES` order. The Web renderer imports this alongside the token
+/// custom-properties; the component layer thus comes from one shared source.
+#[must_use]
+pub fn all_component_css() -> String {
+    let mut out = String::from("/* AIOS components — generated from ComponentRecipes. */\n");
+    for r in &AIOS_RECIPES {
+        out.push_str(&recipe_to_css(r));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -346,5 +420,60 @@ mod tests {
         let n = slugs.len();
         slugs.dedup();
         assert_eq!(slugs.len(), n, "component slugs must be unique");
+    }
+
+    #[test]
+    fn css_and_qml_reference_the_same_primary_color_by_the_token_name() {
+        // The emitters can never drift off-token: both reference the recipe's
+        // primary colour by the exact name the token emitters produce.
+        for r in &AIOS_RECIPES {
+            let css = recipe_to_css(r);
+            let qml = recipe_to_qml(r);
+            assert!(
+                css.contains(&crate::emit::css_var_color(r.primary_color)),
+                "{:?} css missing its primary colour var",
+                r.name
+            );
+            assert!(
+                qml.contains(&crate::emit::qml_prop_color(r.primary_color)),
+                "{:?} qml missing its primary colour prop",
+                r.name
+            );
+        }
+    }
+
+    #[test]
+    fn typography_axis_drives_italic_and_separates_ai_from_human() {
+        // The AI badge carries the Typography axis -> italic; the human badge
+        // does not. So even with identical borders they stay distinguishable
+        // (INV-021 survives loss of the hue axis).
+        let ai = recipe_to_css(&recipe_for(ComponentName::AiSubjectBadge));
+        let human = recipe_to_css(&recipe_for(ComponentName::HumanSubjectBadge));
+        assert!(ai.contains("font-style: italic"));
+        assert!(!human.contains("font-style: italic"));
+        assert_ne!(ai, human);
+    }
+
+    #[test]
+    fn outline_axis_maps_exactly_to_a_border() {
+        for r in &AIOS_RECIPES {
+            assert_eq!(
+                r.required_axes.contains(&DistinctionAxis::Outline),
+                recipe_to_css(r).contains("border: 1px solid"),
+                "{:?} outline-axis / border mismatch",
+                r.name
+            );
+        }
+    }
+
+    #[test]
+    fn component_stylesheet_covers_every_recipe() {
+        let sheet = all_component_css();
+        for name in ComponentName::iter() {
+            assert!(
+                sheet.contains(&format!(".aios-{}", name.slug())),
+                "{name:?} missing from the component stylesheet"
+            );
+        }
     }
 }
