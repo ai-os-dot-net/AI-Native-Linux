@@ -1,0 +1,2 @@
+module aios.generated
+singleton AiosTokens 1.0 AiosTokens.qml
