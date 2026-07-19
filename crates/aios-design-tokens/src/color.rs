@@ -123,6 +123,35 @@ pub enum ColorToken {
     Danger,
     /// Hairline borders and dividers.
     Border,
+
+    // ── Constitutional layer (S7.3 §4.1) — action provenance (INV-021) ──
+    /// Action originated by a human operator.
+    ActionHuman,
+    /// Action proposed by an AI subject. Never authored by AI themes; paired
+    /// with the AI badge / dashed outline / italic axes for multi-axis distinction.
+    ActionAi,
+    /// Action originated by the system itself (schedulers, health, first-boot).
+    ActionSystem,
+    /// Recovery namespace (INV-022) — recovery-mode surfaces only.
+    Recovery,
+
+    // ── Constitutional layer — trust posture (INV-020) ──
+    /// Trust verified — evidence chain intact, signature valid.
+    TrustVerified,
+    /// Trust not yet established / unproven.
+    TrustUnverified,
+    /// Trust degraded — partial or expiring assurance.
+    TrustDegraded,
+    /// Trust denied — policy block or failed verification.
+    TrustDenied,
+
+    // ── Constitutional layer — evidence retention class ──
+    /// FOREVER retention — visually the most prominent evidence class.
+    EvidencePermanent,
+    /// Extended retention.
+    EvidenceExtended,
+    /// Standard retention.
+    EvidenceStandard,
 }
 
 impl ColorToken {
@@ -140,6 +169,17 @@ impl ColorToken {
             Self::Warning => "warning",
             Self::Danger => "danger",
             Self::Border => "border",
+            Self::ActionHuman => "action-human",
+            Self::ActionAi => "action-ai",
+            Self::ActionSystem => "action-system",
+            Self::Recovery => "recovery",
+            Self::TrustVerified => "trust-verified",
+            Self::TrustUnverified => "trust-unverified",
+            Self::TrustDegraded => "trust-degraded",
+            Self::TrustDenied => "trust-denied",
+            Self::EvidencePermanent => "evidence-permanent",
+            Self::EvidenceExtended => "evidence-extended",
+            Self::EvidenceStandard => "evidence-standard",
         }
     }
 }

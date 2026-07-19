@@ -84,6 +84,21 @@ impl TokenSet {
             ColorToken::Warning => ColorValue::rgb(0xc4, 0x7f, 0x17),
             ColorToken::Danger => ColorValue::rgb(0xd5, 0x37, 0x2e),
             ColorToken::Border => ColorValue::rgb(0xd7, 0xdc, 0xe2),
+            // Constitutional layer (S7.3 §4.1). Action provenance is multi-axis:
+            // human=blue, AI=violet (distinct from both human AND the raspberry
+            // brand accent), plus the AI badge/dashed-outline/italic axes carry
+            // the distinction beyond hue for colorblind safety (INV-021 / I4).
+            ColorToken::ActionHuman => ColorValue::rgb(0x2f, 0x6f, 0xeb),
+            ColorToken::ActionAi => ColorValue::rgb(0x8b, 0x5c, 0xf6),
+            ColorToken::ActionSystem => ColorValue::rgb(0x5a, 0x62, 0x6e),
+            ColorToken::Recovery => ColorValue::rgb(0xd9, 0x82, 0x2b),
+            ColorToken::TrustVerified => ColorValue::rgb(0x1f, 0x9d, 0x55),
+            ColorToken::TrustUnverified => ColorValue::rgb(0x8a, 0x8f, 0x98),
+            ColorToken::TrustDegraded => ColorValue::rgb(0xc4, 0x7f, 0x17),
+            ColorToken::TrustDenied => ColorValue::rgb(0xd5, 0x37, 0x2e),
+            ColorToken::EvidencePermanent => ColorValue::rgb(0xce, 0x28, 0x67),
+            ColorToken::EvidenceExtended => ColorValue::rgb(0x8b, 0x5c, 0xf6),
+            ColorToken::EvidenceStandard => ColorValue::rgb(0x8a, 0x8f, 0x98),
         }
     }
 
@@ -100,6 +115,20 @@ impl TokenSet {
             ColorToken::Warning => ColorValue::rgb(0xe0, 0xa3, 0x3a),
             ColorToken::Danger => ColorValue::rgb(0xf0, 0x56, 0x4b),
             ColorToken::Border => ColorValue::rgb(0x2d, 0x33, 0x3b),
+            // Constitutional layer (dark). Same semantic roles as light, lifted
+            // for legibility on the dark surface; AI stays violet, human blue,
+            // recovery amber — kept distinct from each other and from the accent.
+            ColorToken::ActionHuman => ColorValue::rgb(0x4f, 0x8b, 0xff),
+            ColorToken::ActionAi => ColorValue::rgb(0xa7, 0x8b, 0xfa),
+            ColorToken::ActionSystem => ColorValue::rgb(0x9a, 0xa4, 0xb1),
+            ColorToken::Recovery => ColorValue::rgb(0xe0, 0xa3, 0x3a),
+            ColorToken::TrustVerified => ColorValue::rgb(0x3f, 0xb9, 0x68),
+            ColorToken::TrustUnverified => ColorValue::rgb(0x6b, 0x72, 0x80),
+            ColorToken::TrustDegraded => ColorValue::rgb(0xe0, 0xa3, 0x3a),
+            ColorToken::TrustDenied => ColorValue::rgb(0xf0, 0x56, 0x4b),
+            ColorToken::EvidencePermanent => ColorValue::rgb(0xce, 0x28, 0x67),
+            ColorToken::EvidenceExtended => ColorValue::rgb(0xa7, 0x8b, 0xfa),
+            ColorToken::EvidenceStandard => ColorValue::rgb(0x6b, 0x72, 0x80),
         }
     }
 
