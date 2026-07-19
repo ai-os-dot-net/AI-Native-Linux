@@ -1,0 +1,181 @@
+#!/bin/sh
+#
+# AI-OS.NET Remote Desktop (KRDP + Guacamole) control helper — Stream B2.
+#
+# Enforces Rev.2 INV-006 (web/remote renderer surfaces are localhost-only by
+# default; LAN/remote exposure requires explicit policy approval) at the
+# only point that matters: this helper is the sole path by which the
+# guacd/Guacamole stack and the KRDP user-session approval marker are
+# turned on. It fails closed on both required gates:
+#
+#   1. Policy gate  — AIOS_POLICY_FLAG must exist.
+#   2. TLS gate     — AIOS_TLS_CERT and AIOS_TLS_KEY must both exist and be
+#                      non-empty.
+#
+# Style matches distro/desktop/session-manager.sh: POSIX sh, env-overridable
+# paths, msg/warn/err/ok/die helpers. Paths are overridable so this script
+# can be exercised against a scratch directory in tests without touching
+# /etc or requiring a live systemd/session (see
+# distro/build/tests/test-remote-krdp.sh).
+#
+# Usage:
+#   aios-remote-krdp-ctl status
+#   aios-remote-krdp-ctl enable [--dry-run]
+#   aios-remote-krdp-ctl disable [--dry-run]
+
+set -e
+
+# ── Paths (env-overridable) ─────────────────────────────────────────────────
+
+AIOS_CONFIG_DIR="${AIOS_CONFIG_DIR:-/etc/aios}"
+AIOS_STATE_DIR="${AIOS_STATE_DIR:-/var/lib/aios}"
+AIOS_RUN_DIR="${AIOS_RUN_DIR:-/run/aios}"
+
+AIOS_POLICY_FLAG="${AIOS_POLICY_FLAG:-${AIOS_CONFIG_DIR}/policy/remote-krdp.enabled}"
+AIOS_TLS_CERT="${AIOS_TLS_CERT:-${AIOS_CONFIG_DIR}/remote/krdp/guacd-tls.crt}"
+AIOS_TLS_KEY="${AIOS_TLS_KEY:-${AIOS_CONFIG_DIR}/remote/krdp/guacd-tls.key}"
+AIOS_REMOTE_KRDP_STATE="${AIOS_REMOTE_KRDP_STATE:-${AIOS_STATE_DIR}/remote/krdp/enabled}"
+
+# ── Message helpers ──────────────────────────────────────────────────────────
+
+msg()  { printf '\033[1;34m[AIOS-REMOTE-KRDP]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[AIOS-REMOTE-KRDP]\033[0m %s\n' "$*" >&2; }
+err()  { printf '\033[1;31m[AIOS-REMOTE-KRDP]\033[0m %s\n' "$*" >&2; }
+ok()   { printf '\033[1;32m[AIOS-REMOTE-KRDP]\033[0m %s\n' "$*"; }
+
+die() {
+    err "$*"
+    exit 1
+}
+
+# ── Gate checks ───────────────────────────────────────────────────────────────
+
+# Non-empty regular file check (an empty cert/key is as useless as a
+# missing one, and "touch"-created placeholders must not pass).
+_nonempty_file() {
+    [ -s "$1" ]
+}
+
+check_policy_gate() {
+    if [ ! -e "${AIOS_POLICY_FLAG}" ]; then
+        return 1
+    fi
+    return 0
+}
+
+check_tls_gate() {
+    if ! _nonempty_file "${AIOS_TLS_CERT}"; then
+        return 1
+    fi
+    if ! _nonempty_file "${AIOS_TLS_KEY}"; then
+        return 1
+    fi
+    return 0
+}
+
+# ── status ────────────────────────────────────────────────────────────────────
+
+cmd_status() {
+    msg "Policy flag:  ${AIOS_POLICY_FLAG}"
+    if check_policy_gate; then
+        ok "  present — policy gate OPEN"
+    else
+        warn "  absent — policy gate CLOSED (Rev.2 INV-006 default-deny)"
+    fi
+
+    msg "TLS cert:     ${AIOS_TLS_CERT}"
+    msg "TLS key:      ${AIOS_TLS_KEY}"
+    if check_tls_gate; then
+        ok "  both present and non-empty — TLS gate OPEN"
+    else
+        warn "  missing or empty — TLS gate CLOSED"
+    fi
+
+    if command -v systemctl >/dev/null 2>&1; then
+        msg "guacd unit state (best effort, non-fatal):"
+        systemctl is-active guacd.service 2>/dev/null || true
+    else
+        warn "systemctl not available — cannot report live unit state"
+    fi
+}
+
+# ── enable ────────────────────────────────────────────────────────────────────
+
+cmd_enable() {
+    _dry_run="$1"
+
+    if ! check_policy_gate; then
+        die "REFUSED: policy flag ${AIOS_POLICY_FLAG} is absent. Remote KRDP+Guacamole access stays OFF by default (Rev.2 INV-006). An explicit L4 policy-kernel approval (WEB_EXPOSURE_GRANTED evidence) must create this file before enable is permitted."
+    fi
+
+    if ! check_tls_gate; then
+        die "REFUSED: TLS material missing or empty (cert=${AIOS_TLS_CERT} key=${AIOS_TLS_KEY}). Refusing to enable guacd<->Guacamole without real TLS — see DESIGN.md sec 3. Policy flag was present but this is an independent, unwaivable gate."
+    fi
+
+    ok "Both gates OPEN — policy flag present, TLS material present and non-empty."
+
+    if [ "${_dry_run}" = "yes" ]; then
+        msg "[dry-run] would run: systemctl enable --now guacd.service"
+        msg "[dry-run] would run: systemctl enable --now aios-guacamole-webapp.service"
+        msg "[dry-run] would write: ${AIOS_REMOTE_KRDP_STATE} (marks KRDP user-session approval)"
+        ok "[dry-run] would enable remote KRDP+Guacamole access"
+        return 0
+    fi
+
+    if ! command -v systemctl >/dev/null 2>&1; then
+        die "systemctl not available on this host — cannot enable guacd/Guacamole units. Re-run with --dry-run to validate gate logic without a live systemd."
+    fi
+
+    mkdir -p "$(dirname "${AIOS_REMOTE_KRDP_STATE}")"
+    systemctl enable --now guacd.service
+    systemctl enable --now aios-guacamole-webapp.service
+    date -u +%Y-%m-%dT%H:%M:%SZ > "${AIOS_REMOTE_KRDP_STATE}"
+    ok "Remote KRDP+Guacamole access enabled."
+}
+
+# ── disable ───────────────────────────────────────────────────────────────────
+
+cmd_disable() {
+    _dry_run="$1"
+
+    if [ "${_dry_run}" = "yes" ]; then
+        msg "[dry-run] would run: systemctl disable --now aios-guacamole-webapp.service"
+        msg "[dry-run] would run: systemctl disable --now guacd.service"
+        msg "[dry-run] would remove: ${AIOS_REMOTE_KRDP_STATE}"
+        ok "[dry-run] would disable remote KRDP+Guacamole access"
+        return 0
+    fi
+
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl disable --now aios-guacamole-webapp.service 2>/dev/null || true
+        systemctl disable --now guacd.service 2>/dev/null || true
+    else
+        warn "systemctl not available — only clearing local state marker"
+    fi
+    rm -f "${AIOS_REMOTE_KRDP_STATE}"
+    ok "Remote KRDP+Guacamole access disabled."
+}
+
+# ── main ──────────────────────────────────────────────────────────────────────
+
+_cmd="${1:-}"
+_dry_run="no"
+if [ "${2:-}" = "--dry-run" ] || [ "${1:-}" = "--dry-run" ]; then
+    _dry_run="yes"
+fi
+
+case "${_cmd}" in
+    status)
+        cmd_status
+        ;;
+    enable)
+        cmd_enable "${_dry_run}"
+        ;;
+    disable)
+        cmd_disable "${_dry_run}"
+        ;;
+    *)
+        err "Usage: $0 {status|enable|disable} [--dry-run]"
+        exit 2
+        ;;
+esac

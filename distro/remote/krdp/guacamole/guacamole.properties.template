@@ -1,0 +1,23 @@
+# AI-OS.NET Guacamole web-application configuration template (Stream B2).
+#
+# This is a TEMPLATE, not a live config. It is installed to
+# /etc/guacamole/guacamole.properties only by aios-remote-krdp-ctl enable,
+# and only after the policy gate + TLS gate both pass (see DESIGN.md §4-5).
+#
+# Reference: Apache Guacamole Manual, "Configuring Guacamole"
+# https://guacamole.apache.org/doc/gug/configuring-guacamole.html
+
+# guacd is co-located on the same host as the AIOS renderer stack and is
+# never exposed off-loopback.
+guacd-hostname: 127.0.0.1
+guacd-port: 4822
+
+# TLS is REQUIRED between the web app and guacd. AIOS never ships this as
+# false; aios-remote-krdp-ctl refuses to enable the stack if the TLS
+# material this depends on is missing (DESIGN.md §5).
+guacd-ssl: true
+
+# Where connections are defined. Rev.13 SECURE_DEFAULT profile uses the
+# static user-mapping.xml template shipped alongside this file; a
+# database-backed auth extension is a future, separately-reviewed change.
+user-mapping: /etc/guacamole/user-mapping.xml

@@ -1,0 +1,28 @@
+[Unit]
+Description=AI-OS.NET Remote Desktop (KRDP + Guacamole) Policy Gate
+Documentation=https://ai-os.net/docs/remote-krdp
+# Rev.2 INV-006: web/remote renderer surfaces are localhost-only by default.
+# This unit executes ONLY when the policy kernel has written the flag file
+# below — its absence is itself the deny state, enforced by systemd, not by
+# application logic that could be bypassed.
+ConditionPathExists=/etc/aios/policy/remote-krdp.enabled
+After=network.target aios-vault-broker.service aios-policy-kernel.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/aios/remote/krdp/aios-remote-krdp-ctl enable
+ExecStop=/usr/lib/aios/remote/krdp/aios-remote-krdp-ctl disable
+RemainAfterExit=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/aios/remote/krdp /run/aios
+ReadOnlyPaths=/etc/aios/policy /etc/aios/remote/krdp
+NoNewPrivileges=yes
+
+# NOTE: intentionally NO [Install] section. This unit is not linked into
+# aios.target (see distro/systemd/aios.target) and is not enabled by any
+# `systemctl enable` call anywhere in the AIOS build or install path. It is
+# started only by an explicit policy-kernel action (or, for scaffold
+# testing, an explicit `systemctl start`, which ConditionPathExists still
+# blocks without the flag file). Off by default is a structural property of
+# this file, not an operator convention.

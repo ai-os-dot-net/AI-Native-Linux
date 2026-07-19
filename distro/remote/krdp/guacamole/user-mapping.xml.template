@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AI-OS.NET Guacamole connection template (Stream B2: KRDP + Guacamole).
+
+  This is a TEMPLATE, not a live config. aios-remote-krdp-ctl only installs
+  it after the policy gate + TLS gate both pass (DESIGN.md sec 4-5), and only
+  after a provisioning step substitutes the __AIOS_...__ placeholder tokens
+  below with real, per-deployment credentials sourced from the Vault Broker
+  (see the L4_Policy_Identity_Vault spec layer). A file with the placeholder
+  tokens still present is not usable as a real config.
+
+  Reference: Apache Guacamole Manual, "Configuring Guacamole"
+  https://guacamole.apache.org/doc/gug/configuring-guacamole.html
+-->
+<user-mapping>
+    <authorize username="__AIOS_GUAC_USERNAME__" password="__AIOS_GUAC_PASSWORD_TOKEN__">
+        <connection name="aios-desktop-krdp">
+            <protocol>rdp</protocol>
+
+            <!-- KRDP is never reachable off-loopback; guacd is the only
+                 intended path to it (DESIGN.md sec 4, item 4). -->
+            <param name="hostname">127.0.0.1</param>
+            <param name="port">3389</param>
+
+            <!-- NLA authenticates before a desktop session starts, over
+                 TLS. This is the AIOS default; downgrading to "tls" or
+                 "rdp" is a separately-reviewed operator action. -->
+            <param name="security">nla</param>
+
+            <!-- Certificate verification stays ON. AIOS does not ship
+                 ignore-cert=true as a default (DESIGN.md sec 3). -->
+            <param name="ignore-cert">false</param>
+
+            <!-- KRDP single-user credential pair, provisioned via the
+                 Vault Broker — never hard-coded outside this substituted
+                 template. -->
+            <param name="username">__AIOS_KRDP_USERNAME__</param>
+            <param name="password">__AIOS_KRDP_PASSWORD_TOKEN__</param>
+        </connection>
+    </authorize>
+</user-mapping>
